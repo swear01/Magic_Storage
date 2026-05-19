@@ -1,0 +1,23 @@
+{
+  "name": "Energy Overview",
+  "category": "magic_storage:energy",
+  "icon": "minecraft:furnace",
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "The Storage Core maintains $(thing)8 energy pools$() used to power various recipe types. Energy is required for smelting, blasting, smoking, campfire cooking, and brewing operations performed through the Crafting Terminal."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Auto-Fill Pools$() (regenerate +1 per tick):$(br)$(li)$(thing)Smelting Energy$() - used for furnace smelting$(li)$(thing)Blasting Energy$() - used for blast furnace$(li)$(thing)Smoking Energy$() - used for smoker$(li)$(thing)Campfire Energy$() - used for campfire cooking$(li)$(thing)Brew Energy$() - used for brewing stands($(thing)+1/tick auto$())"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Fuel Pools$() (require fuel items):$(br)$(li)$(thing)Furnace Fuel$() - inserted via fuel items like Coal$(li)$(thing)Blaze Fuel$() - inserted via Blaze Rods/Powder$(li)$(thing)Bottle Fuel$() - inserted via Glass Bottles/Potions$(br2)Fuel pools have $(thing)unlimited capacity$() - stockpile as much as you want."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "All energy pools are stored in the Storage Core's $(thing)NBT data$() and persist across world saves. Energy generates every tick automatically for auto-fill pools, giving you passive energy generation over time.$(br2)See $(l:magic_storage:fuel_conversion)Fuel Conversion$() for how to add fuel, and $(l:magic_storage:recipe_costs)Recipe Costs$() for exact energy costs."
+    }
+  ]
+}

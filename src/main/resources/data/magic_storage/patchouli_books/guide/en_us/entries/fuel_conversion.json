@@ -1,0 +1,23 @@
+{
+  "name": "Fuel Conversion",
+  "category": "magic_storage:energy",
+  "icon": "minecraft:coal_block",
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "Fuel items are inserted into the network to fill the $(thing)Furnace Fuel$(), $(thing)Blaze Fuel$(), and $(thing)Bottle Fuel$() pools. Shift-click fuel items from your inventory in any terminal to convert them."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Furnace Fuel values:$()$(br)$(li)$(item:minecraft:coal) Coal: $(thing)1,600$() fuel$(li)$(item:minecraft:charcoal) Charcoal: $(thing)1,600$() fuel$(li)$(item:minecraft:coal_block) Coal Block: $(thing)16,000$() fuel$(li)$(item:minecraft:lava_bucket) Lava Bucket: $(thing)20,000$() fuel"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Blaze Fuel values:$()$(br)$(li)$(item:minecraft:blaze_rod) Blaze Rod: $(thing)2,400$() furnace + $(thing)1,200$() blaze$(li)$(item:minecraft:blaze_powder) Blaze Powder: $(thing)600$() blaze$(br2)A Blaze Rod gives $(thing)both$() furnace and blaze fuel simultaneously!"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Bottle Fuel:$()$(br)$(li)Glass Bottle or any Potion: $(thing)1$() bottle fuel per item.$(br2)$(thing)Multi-pool items:$() When an item can fuel multiple pools, you'll see a selection popup to choose which pool to fill. For example, Blaze Rods can go into either Furnace Fuel or Blaze Fuel."
+    }
+  ]
+}

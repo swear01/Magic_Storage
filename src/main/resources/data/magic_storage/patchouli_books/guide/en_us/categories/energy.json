@@ -1,0 +1,6 @@
+{
+  "name": "Energy System",
+  "description": "Crafting Energy pools and fuel conversion.",
+  "icon": "minecraft:coal",
+  "sortnum": 3
+}

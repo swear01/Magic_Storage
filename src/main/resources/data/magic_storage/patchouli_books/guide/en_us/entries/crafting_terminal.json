@@ -1,0 +1,24 @@
+{
+  "name": "Crafting Terminal",
+  "category": "magic_storage:terminals",
+  "icon": "magic_storage:crafting_terminal",
+  "pages": [
+    {
+      "type": "patchouli:spotlight",
+      "item": "magic_storage:crafting_terminal",
+      "text": "The $(thing)Crafting Terminal$() is the Tier 2 terminal. It adds a $(thing)recipe panel$() below the item grid, allowing you to view and execute recipes for any stored item."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)How to craft:$()$(br)1. Click any item in the display grid to select it.$(br)2. The recipe panel shows the item's recipe.$(br)3. Use the craft buttons: $(thing)x1$(), $(thing)x8$(), $(thing)x64$().$(br)4. Materials are consumed from network storage (or player inventory if enabled).$(br)5. Crafted items go directly to your inventory."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Recipe navigation:$() Use $(thing)arrow buttons$() (◀/▶) to cycle through different recipes for the same output item (e.g. crafting vs. smelting). Recipes are grouped by type: Crafting → Smelting → Blasting → Smoking → Campfire → Stonecutting → Smithing."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Toggle options:$()$(br)$(li)$(thing)Craftable Only$() - Filter the grid to show only items you have materials for.$(li)$(thing)Use Player Inventory$() - Pull ingredients from your inventory as well.$(li)$(thing)Compact/Expanded$() - Compact mode groups identical items together, showing total count. Expanded mode shows each item variant separately."
+    }
+  ]
+}

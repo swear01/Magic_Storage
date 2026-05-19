@@ -1,0 +1,16 @@
+{
+  "replace": false,
+  "values": [
+    "magic_storage:storage_core",
+    "magic_storage:storage_unit_t1",
+    "magic_storage:storage_unit_t2",
+    "magic_storage:storage_unit_t3",
+    "magic_storage:storage_unit_t4",
+    "magic_storage:storage_unit_t5",
+    "magic_storage:storage_unit_t6",
+    "magic_storage:storage_terminal",
+    "magic_storage:crafting_terminal",
+    "magic_storage:import_bus",
+    "magic_storage:export_bus"
+  ]
+}

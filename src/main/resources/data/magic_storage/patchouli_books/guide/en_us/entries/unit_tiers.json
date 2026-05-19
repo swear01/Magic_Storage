@@ -1,0 +1,20 @@
+{
+  "name": "Storage Units",
+  "category": "magic_storage:storage_system",
+  "icon": "magic_storage:storage_unit_t1",
+  "pages": [
+    {
+      "type": "patchouli:spotlight",
+      "item": "magic_storage:storage_unit_t1",
+      "text": "$(item:magic_storage:storage_unit_t1) expand your network's capacity for storing $(thing)different item types$(). Each Unit contributes type slots based on its tier."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Storage Units do $(thing)not$() limit item quantity - they only limit how many $(thing)different types$() of items you can store. Once a type is registered, you can store unlimited amounts of that item.$(br2)Items with different $(thing)NBT data$() (damage, enchantments, etc.) count as separate types."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "When a Storage Unit is broken, it drops the basic $(thing)Storage Unit$() block regardless of tier. All type slots remain in the Core - breaking a Unit $(thing)does not delete items$().$(br2)You can freely add or remove Units to adjust your network's type capacity."
+    }
+  ]
+}

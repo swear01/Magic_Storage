@@ -1,0 +1,24 @@
+{
+  "name": "Export Bus",
+  "category": "magic_storage:automation",
+  "icon": "magic_storage:export_bus",
+  "pages": [
+    {
+      "type": "patchouli:spotlight",
+      "item": "magic_storage:export_bus",
+      "text": "The $(thing)Export Bus$() automatically pushes items from the Magic Storage network into an adjacent container, filtered by item type."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Setting a filter:$() $(thing)Right-click$() the Export Bus with any item in hand to set it as the filter. The bus will only export that specific item type.$(br2)To $(thing)clear$() the filter, right-click with an empty hand.$(br2)The filter checks item type and NBT data - an enchanted pickaxe won't match a plain one."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Operation:$()$(br)$(li)Works every $(thing)10 ticks$() (0.5 seconds)$(li)Exports $(thing)1 item$() per operation$(li)Only exports when the filter item matches$(li)Target container must accept the item$(li)Auto-finds network Core via BFS scanning$(br2)If the target container is full, items stay in the network."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Use cases:$()$(br)$(li)Auto-feed furnaces from network storage$(li)Sort specific items out of the network$(li)Fill up machines that need constant input$(li)Connect to other mods' automation systems$(br2)Place multiple Export Buses with different filters to sort items into labeled chests!"
+    }
+  ]
+}

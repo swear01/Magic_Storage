@@ -1,0 +1,19 @@
+{
+  "name": "Connecting Blocks",
+  "category": "magic_storage:getting_started",
+  "icon": "minecraft:chain",
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "All Magic Storage blocks must connect by $(thing)direct adjacency$() - they must share a face (up, down, north, south, east, or west).$(br2)Cables or conduits are $(thing)not needed$(). Simply place blocks next to each other."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "When you place or break any network block, the Core runs a $(thing)BFS (Breadth-First Search)$() to rediscover connected blocks. It scans outward up to $(thing)64 blocks$() in any direction.$(br2)The Core will skip past another Core it encounters, preventing network merging. Each Core maintains its own independent network."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Pro tips:$()$(br2)$(li)You can build in any shape you like - lines, cubes, or sprawling webs.$(li)All network blocks (Units, Terminals, Buses) must be in the same chunk-forceloaded area for reliable operation.$(li)Breaking the Storage Core will detach the entire network, but items remain saved in the Core."
+    }
+  ]
+}

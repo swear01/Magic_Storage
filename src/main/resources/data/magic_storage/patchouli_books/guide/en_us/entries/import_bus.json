@@ -1,0 +1,24 @@
+{
+  "name": "Import Bus",
+  "category": "magic_storage:automation",
+  "icon": "magic_storage:import_bus",
+  "pages": [
+    {
+      "type": "patchouli:spotlight",
+      "item": "magic_storage:import_bus",
+      "text": "The $(thing)Import Bus$() automatically pulls items from an adjacent container (chest, hopper, other mod's storage) into the Magic Storage network."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Placement:$() Place the Import Bus $(thing)facing toward$() the container you want to pull from. The front face (as placed) must be against the container.$(br2)The bus connects to the network by being adjacent to any other Magic Storage block."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Operation:$()$(br)$(li)Works every $(thing)10 ticks$() (0.5 seconds)$(li)Pulls $(thing)1 item$() per operation$(li)Uses the container's $(thing)item handler capability$() for extraction$(li)Auto-finds network Core via BFS scanning$(br2)The bus will not pull from other Magic Storage blocks - it only interacts with non-network containers."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Use cases:$()$(br)$(li)Auto-dump chest contents into the network$(li)Connect quarry/farm outputs directly to storage$(li)Chain multiple buses for high-throughput imports$(br2)Each bus operates independently with its own 10-tick cooldown. Multiple buses mean faster import rates!"
+    }
+  ]
+}

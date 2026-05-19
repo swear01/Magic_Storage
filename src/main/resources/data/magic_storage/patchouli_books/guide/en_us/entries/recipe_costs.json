@@ -1,0 +1,23 @@
+{
+  "name": "Recipe Energy Costs",
+  "category": "magic_storage:energy",
+  "icon": "minecraft:blast_furnace",
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "Each recipe type has specific energy costs when crafting through the Crafting Terminal. Costs are $(thing)per item$() crafted."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Energy Costs Table:$()$(br2)$(thing)Smelting$(): 200 smelting_energy + 200 furnace_fuel$(br)$(thing)Blasting$(): 100 blasting_energy + 100 furnace_fuel$(br)$(thing)Smoking$(): 100 smoking_energy + 100 furnace_fuel$(br)$(thing)Campfire$(): 600 campfire_energy + 600 furnace_fuel$(br)$(thing)Brewing$(): 400 brew_energy + 20 blaze_fuel"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Free recipes (0 energy):$()$(br)$(li)Crafting Table recipes$(li)Stonecutting recipes$(li)Smithing Table recipes$(br2)These use no energy at all - craft freely!"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "When you click the craft button, the terminal checks if you have enough energy. If not, the craft is cancelled. The $(thing)energy indicators$() in the recipe panel show $(thing)current/total$() - green means ready, red means insufficient.$(br2)Tip: Build your energy buffer before bulk-crafting. One coal gives enough furnace fuel for 8 smelting operations!"
+    }
+  ]
+}

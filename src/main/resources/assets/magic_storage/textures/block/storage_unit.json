@@ -1,0 +1,26 @@
+{
+  "created_at_utc": "20260518T073613Z",
+  "type": "block",
+  "subject": "metal storage container block, gray industrial panel with small hatch, Minecraft pixel art",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": true,
+  "prompt": "metal storage container block, gray industrial panel with small hatch, Minecraft pixel art",
+  "size": 32,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "metal storage container block, gray industrial panel with small hatch, Minecraft pixel art",
+    "style": "mc_texture",
+    "width": 32,
+    "height": 32,
+    "num_images": 1,
+    "tile_x": true,
+    "tile_y": true,
+    "remove_bg": false,
+    "bypass_prompt_expansion": false
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/block/storage_unit.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/block/storage_unit.preview.png",
+  "raw_png": null
+}

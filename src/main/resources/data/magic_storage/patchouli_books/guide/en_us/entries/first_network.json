@@ -1,0 +1,24 @@
+{
+  "name": "Your First Network",
+  "category": "magic_storage:getting_started",
+  "icon": "magic_storage:storage_core",
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "Magic Storage is a powerful storage system that lets you store unlimited quantities of items in a single network. All you need is a $(l:magic_storage:storage_core)$(thing)Storage Core$()$(), some $(l:magic_storage:unit_tiers)$(thing)Storage Units$()$(), and a $(l:magic_storage:storage_terminal)$(thing)Terminal$()$()."
+    },
+    {
+      "type": "patchouli:spotlight",
+      "item": "magic_storage:storage_core",
+      "text": "Start by placing a $(item:magic_storage:storage_core) on the ground. This is the heart of your network - it holds all stored items and energy pools."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Next, place one or more $(item:magic_storage:storage_unit_t1) adjacent to the Core. Each Storage Unit adds $(thing)type slots$() to your network, allowing you to store different kinds of items.$(br2)Finally, attach a $(item:magic_storage:storage_terminal) to any block in the network to access your items."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "All blocks in a Magic Storage network must be $(thing)adjacent$() (touching one of the 6 faces). The network scans outwards from the Core up to 64 blocks deep.$(br2)You can have only $(thing)one Storage Core$() per network. If two Cores touch, they will be treated as separate networks."
+    }
+  ]
+}

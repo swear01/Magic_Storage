@@ -1,0 +1,26 @@
+{
+  "created_at_utc": "20260518T114940Z",
+  "type": "item",
+  "subject": "handheld futuristic remote control pad, dark metal case, glowing blue screen in center, blue accent lights, Minecraft pixel art item icon",
+  "model": "retro-diffusion/rd-plus",
+  "style": "mc_item",
+  "tileable": false,
+  "prompt": "handheld futuristic remote control pad, dark metal case, glowing blue screen in center, blue accent lights, Minecraft pixel art item icon",
+  "size": 32,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "handheld futuristic remote control pad, dark metal case, glowing blue screen in center, blue accent lights, Minecraft pixel art item icon",
+    "style": "mc_item",
+    "width": 32,
+    "height": 32,
+    "num_images": 1,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": true,
+    "bypass_prompt_expansion": false
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/item/remote_terminal.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/item/remote_terminal.preview.png",
+  "raw_png": null
+}

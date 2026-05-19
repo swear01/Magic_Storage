@@ -1,0 +1,6 @@
+{
+  "name": "Automation",
+  "description": "Import and Export Buses for automatic item transfer.",
+  "icon": "magic_storage:import_bus",
+  "sortnum": 4
+}

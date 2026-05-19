@@ -1,0 +1,26 @@
+{
+  "created_at_utc": "20260518T075347Z",
+  "type": "block",
+  "subject": "dark gray futuristic terminal panel with crafting area below grid, subtle blue accent line, clean tech interface",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": true,
+  "prompt": "dark gray futuristic terminal panel with crafting area below grid, subtle blue accent line, clean tech interface",
+  "size": 256,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "dark gray futuristic terminal panel with crafting area below grid, subtle blue accent line, clean tech interface",
+    "style": "mc_texture",
+    "width": 256,
+    "height": 256,
+    "num_images": 1,
+    "tile_x": true,
+    "tile_y": true,
+    "remove_bg": false,
+    "bypass_prompt_expansion": false
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/gui/crafting_grid.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/gui/crafting_grid.preview.png",
+  "raw_png": null
+}
