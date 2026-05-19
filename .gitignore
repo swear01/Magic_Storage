@@ -1,0 +1,17 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# NeoForge / Minecraft run dirs
+run/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
