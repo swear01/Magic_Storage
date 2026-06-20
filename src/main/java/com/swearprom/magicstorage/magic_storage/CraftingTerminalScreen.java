@@ -4,7 +4,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -19,12 +18,9 @@ import java.util.List;
 
 public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTerminalMenu> {
 
-    private static final ResourceLocation CRAFTING_GUI_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "textures/gui/crafting_grid.png");
-
-    private static final int RECIPE_TOP = 131;
+    private static final int GRID_TOP = 17;
     private static final int RECIPE_H = 42;
-    private static final int EXTRA_HEIGHT = 30;
+    private static final int CRAFTING_BOTTOM_HEIGHT = 183;
 
     private Button prevRecipeBtn;
     private Button nextRecipeBtn;
@@ -37,37 +33,57 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     public CraftingTerminalScreen(CraftingTerminalMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
-        this.imageHeight = 256;
-        this.inventoryLabelY = 178;
+    }
+
+    @Override
+    protected int getBottomHeight() { return CRAFTING_BOTTOM_HEIGHT; }
+
+    @Override
+    protected int gridTopLocal() { return GRID_TOP; }
+
+    @Override
+    protected int playerInvLocalLeft() { return 7; }
+
+    @Override
+    protected int playerInvLocalTop() {
+        return navYLocal() + 18 + 39;
+    }
+
+    private int recipeTopLocal() {
+        return GRID_TOP + visibleRows * ROW_HEIGHT + 4;
+    }
+
+    private int navYLocal() {
+        return recipeTopLocal() + RECIPE_H + 2;
     }
 
     @Override
     protected void init() {
         super.init();
+        this.inventoryLabelY = playerInvLocalTop() - 12;
         int x = leftPos;
-        int y = topPos;
-        int navY = y + RECIPE_TOP + RECIPE_H + 2;
+        int navY = topPos + navYLocal();
 
         prevRecipeBtn = Button.builder(Component.literal("\u25C0"), b -> clickMenuButton(8))
-                .bounds(x + 8, navY, 16, 16).build();
+                .bounds(x + 7, navY, 16, 16).build();
         nextRecipeBtn = Button.builder(Component.literal("\u25B6"), b -> clickMenuButton(9))
-                .bounds(x + 105, navY, 16, 16).build();
+                .bounds(x + 104, navY, 16, 16).build();
         craft1Btn = Button.builder(Component.literal("\u00D71"), b -> clickMenuButton(2))
-                .bounds(x + 130, navY, 18, 16).build();
+                .bounds(x + 129, navY, 18, 16).build();
         craft8Btn = Button.builder(Component.literal("\u00D78"), b -> clickMenuButton(3))
-                .bounds(x + 150, navY, 18, 16).build();
+                .bounds(x + 149, navY, 18, 16).build();
         craft64Btn = Button.builder(Component.literal("\u00D764"), b -> clickMenuButton(4))
-                .bounds(x + 170, navY, 20, 16).build();
+                .bounds(x + 169, navY, 20, 16).build();
 
         int checkY = navY + 18;
         craftableOnlyCheck = Checkbox.builder(Component.translatable("gui.magic_storage.craftable_only"), font)
-                .pos(x + 8, checkY).selected(getCraftMenu().isShowOnlyCraftable())
+                .pos(x + 7, checkY).selected(getCraftMenu().isShowOnlyCraftable())
                 .onValueChange((cb, v) -> clickMenuButton(6)).build();
         usePlayerInvCheck = Checkbox.builder(Component.translatable("gui.magic_storage.use_player_inv"), font)
-                .pos(x + 8, checkY + 14).selected(getCraftMenu().isUsePlayerInventory())
+                .pos(x + 7, checkY + 14).selected(getCraftMenu().isUsePlayerInventory())
                 .onValueChange((cb, v) -> clickMenuButton(7)).build();
         compactModeCheck = Checkbox.builder(Component.literal("Compact"), font)
-                .pos(x + 100, checkY).selected(getCraftMenu().isCompactMode())
+                .pos(x + 99, checkY).selected(getCraftMenu().isCompactMode())
                 .onValueChange((cb, v) -> clickMenuButton(10)).build();
 
         addRenderableWidget(prevRecipeBtn);
@@ -90,14 +106,14 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     @Override
     protected void renderBg(GuiGraphics g, float partial, int mx, int my) {
         int x = leftPos, y = topPos;
-        g.blit(CRAFTING_GUI_TEXTURE, x, y, 0, 0, imageWidth, imageHeight);
+        drawPanels(g, x, y);
         renderRecipePanel(g, x, y);
 
         int totalItems = menu.getTotalItemTypes();
-        int maxOffset = Math.max(0, totalItems - VISIBLE_ROWS * 9);
+        int maxOffset = Math.max(0, totalItems - visibleRows * 9);
         if (maxOffset > 0) {
             int sbY = y + getTopHeight();
-            int sbH = VISIBLE_ROWS * 18;
+            int sbH = visibleRows * 18;
             float ratio = (float) menu.getScrollOffset() / maxOffset;
             int thumbY = sbY + (int) (ratio * (sbH - 15));
             g.blit(ICONS_TEXTURE, x + SB_X, thumbY, 232, 0, 12, 15, 256, 256);
@@ -105,7 +121,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     }
 
     private void renderRecipePanel(GuiGraphics g, int x, int y) {
-        int rx = x + 8, ry = y + RECIPE_TOP, rw = imageWidth - 16;
+        int rx = x + 8, ry = y + recipeTopLocal(), rw = imageWidth - 16;
         g.fill(rx, ry, rx + rw, ry + RECIPE_H, 0xC0101010);
         g.renderOutline(rx, ry, rw, RECIPE_H, 0xFF555555);
 
@@ -173,7 +189,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     @Override
     protected void renderLabels(GuiGraphics g, int mx, int my) {
-        g.drawString(font, title, titleLabelX, titleLabelY, 0x404040);
-        g.drawString(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, 0x404040);
+        g.drawString(font, title, titleLabelX, titleLabelY, 0xCCCCCC);
+        g.drawString(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, 0xAAAAAA);
     }
 }

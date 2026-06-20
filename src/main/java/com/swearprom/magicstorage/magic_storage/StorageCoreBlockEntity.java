@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 
 import java.util.*;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 public class StorageCoreBlockEntity extends BlockEntity {
 
@@ -177,6 +178,25 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 }
             }
         }
+        return result;
+    }
+
+    public List<ItemStack> getDisplayStacks(String filter, SortMode mode, SortOrder order) {
+        List<ItemStack> result = getDisplayStacks(filter);
+        Comparator<ItemStack> cmp = switch (mode) {
+            case NAME -> Comparator.comparing(s -> s.getHoverName().getString());
+            case QUANTITY -> {
+                rebuildCache();
+                yield Comparator.comparingLong(s -> {
+                    ItemKey key = ItemKey.of(s);
+                    Long count = flatCache.get(key);
+                    return count != null ? count : 0L;
+                });
+            }
+            case ID -> Comparator.comparing(s ->
+                    BuiltInRegistries.ITEM.getKey(s.getItem()).toString());
+        };
+        result.sort(order == SortOrder.DESCENDING ? cmp.reversed() : cmp);
         return result;
     }
 

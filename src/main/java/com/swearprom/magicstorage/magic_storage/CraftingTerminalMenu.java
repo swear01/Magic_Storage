@@ -79,7 +79,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     @Override
     protected void setupSlots(Inventory playerInv) {
-        for (int row = 0; row < DISPLAY_ROWS; row++) {
+        for (int row = 0; row < MAX_DISPLAY_ROWS; row++) {
             for (int col = 0; col < DISPLAY_COLS; col++) {
                 int slotIndex = col + row * DISPLAY_COLS;
                 this.addSlot(new GhostSlot(displayInventory, slotIndex, 7 + col * 18, 17 + row * 18));
@@ -328,11 +328,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
 
         totalItemTypes = displayStacks.size();
-        int maxOffset = Math.max(0, totalItemTypes - DISPLAY_SLOTS);
+        int vRows = getVisibleRows();
+        int maxOffset = Math.max(0, totalItemTypes - vRows * DISPLAY_COLS);
         scrollOffset = Math.min(scrollOffset, maxOffset);
         for (int i = 0; i < DISPLAY_SLOTS; i++) {
             int idx = scrollOffset + i;
-            if (idx < displayStacks.size()) {
+            if (idx < displayStacks.size() && i < vRows * DISPLAY_COLS) {
                 displayInventory.setItem(i, displayStacks.get(idx).copy());
             }
         }

@@ -20,6 +20,11 @@ class SelfTest {
         testEnergyCost();
         testFuelValue();
         testEnergyTypeUniqueness();
+        testSortMode();
+        testSortOrder();
+        testSearchMode();
+        testTerminalSettingsPacketCodec();
+        testSearchModeApply();
 
         MagicStorage.LOGGER.info("SelfTest: {} passed, {} failed, {} total",
                 passed, failed, passed + failed);
@@ -120,6 +125,74 @@ class SelfTest {
         assertTrue("8 types total", EnergyType.values().length == 8);
         assertTrue("smelting id", EnergyType.SMELTING_ENERGY.getId().equals("smelting_energy"));
         assertTrue("smelting tickRate 1", EnergyType.SMELTING_ENERGY.getTickRate() == 1);
+    }
+
+    private static void testSortMode() {
+        assertTrue("SortMode has 3 values", SortMode.values().length == 3);
+        assertTrue("SortMode NAME ordinal 0", SortMode.NAME.ordinal() == 0);
+        assertTrue("SortMode QUANTITY ordinal 1", SortMode.QUANTITY.ordinal() == 1);
+        assertTrue("SortMode ID ordinal 2", SortMode.ID.ordinal() == 2);
+        assertTrue("NAME.next() -> QUANTITY", SortMode.NAME.next() == SortMode.QUANTITY);
+        assertTrue("QUANTITY.next() -> ID", SortMode.QUANTITY.next() == SortMode.ID);
+        assertTrue("ID.next() -> NAME", SortMode.ID.next() == SortMode.NAME);
+    }
+
+    private static void testSortOrder() {
+        assertTrue("SortOrder has 2 values", SortOrder.values().length == 2);
+        assertTrue("SortOrder ASCENDING ordinal 0", SortOrder.ASCENDING.ordinal() == 0);
+        assertTrue("SortOrder DESCENDING ordinal 1", SortOrder.DESCENDING.ordinal() == 1);
+        assertTrue("ASCENDING toggle -> DESCENDING",
+                SortOrder.toggle(SortOrder.ASCENDING) == SortOrder.DESCENDING);
+        assertTrue("DESCENDING toggle -> ASCENDING",
+                SortOrder.toggle(SortOrder.DESCENDING) == SortOrder.ASCENDING);
+    }
+
+    private static void testSearchMode() {
+        assertTrue("SearchMode has 3 values", SearchMode.values().length == 3);
+        assertTrue("SearchMode NORMAL ordinal 0", SearchMode.NORMAL.ordinal() == 0);
+        assertTrue("SearchMode TAG ordinal 1", SearchMode.TAG.ordinal() == 1);
+        assertTrue("SearchMode MOD ordinal 2", SearchMode.MOD.ordinal() == 2);
+        assertTrue("NORMAL.next() -> TAG", SearchMode.NORMAL.next() == SearchMode.TAG);
+        assertTrue("TAG.next() -> MOD", SearchMode.TAG.next() == SearchMode.MOD);
+        assertTrue("MOD.next() -> NORMAL", SearchMode.MOD.next() == SearchMode.NORMAL);
+    }
+
+    private static void testTerminalSettingsPacketCodec() {
+        var original = new TerminalSettingsPacket(123, 6);
+        assertTrue("packet containerId 123", original.containerId() == 123);
+        assertTrue("packet visibleRows 6", original.visibleRows() == 6);
+
+        var buf = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        buf.writeVarInt(original.containerId());
+        buf.writeVarInt(original.visibleRows());
+        assertTrue("codec encode order containerId", buf.readVarInt() == 123);
+        assertTrue("codec encode order visibleRows", buf.readVarInt() == 6);
+
+        var extreme = new TerminalSettingsPacket(42, 9);
+        var buf2 = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        buf2.writeVarInt(extreme.containerId());
+        buf2.writeVarInt(extreme.visibleRows());
+        assertTrue("extreme encode containerId", buf2.readVarInt() == 42);
+        assertTrue("extreme encode visibleRows", buf2.readVarInt() == 9);
+    }
+
+    private static void testSearchModeApply() {
+        assertTrue("NORMAL keeps raw text",
+                SearchMode.NORMAL.apply("stone").equals("stone"));
+        assertTrue("NORMAL keeps empty text",
+                SearchMode.NORMAL.apply("").isEmpty());
+        assertTrue("TAG prepends #",
+                SearchMode.TAG.apply("logs").equals("#logs"));
+        assertTrue("TAG does not double-prefix #",
+                SearchMode.TAG.apply("#logs").equals("#logs"));
+        assertTrue("MOD prepends @",
+                SearchMode.MOD.apply("minecraft").equals("@minecraft"));
+        assertTrue("MOD does not double-prefix @",
+                SearchMode.MOD.apply("@minecraft").equals("@minecraft"));
+        assertTrue("TAG empty text stays empty",
+                SearchMode.TAG.apply("").isEmpty());
+        assertTrue("MOD empty text stays empty",
+                SearchMode.MOD.apply("").isEmpty());
     }
 
     private static void assertTrue(String message, boolean condition) {

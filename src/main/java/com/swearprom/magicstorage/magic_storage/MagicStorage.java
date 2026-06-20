@@ -165,6 +165,7 @@ public class MagicStorage {
         modEventBus.addListener((net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) -> {
             var registrar = event.registrar(MODID).versioned("1.0");
             registrar.playToServer(SearchFilterPacket.TYPE, SearchFilterPacket.STREAM_CODEC, this::handleSearchFilter);
+            registrar.playToServer(TerminalSettingsPacket.TYPE, TerminalSettingsPacket.STREAM_CODEC, this::handleTerminalSettings);
         });
         SelfTest.runAll();
         LOGGER.info("Magic Storage initialized.");
@@ -176,6 +177,16 @@ public class MagicStorage {
                 || menu.containerId != packet.containerId()) return;
         if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
             menu.refreshDisplayItemsFiltered(core, packet.filter());
+        }
+    }
+
+    private void handleTerminalSettings(TerminalSettingsPacket packet, net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
+        var player = ctx.player();
+        if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
+                || menu.containerId != packet.containerId()) return;
+        menu.applySettings(packet);
+        if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
+            menu.refreshDisplayItems(core);
         }
     }
 

@@ -14,9 +14,9 @@ import net.minecraft.world.level.Level;
 
 public class StorageTerminalMenu extends AbstractContainerMenu {
 
-    static final int DISPLAY_ROWS = 6;
+    static final int MAX_DISPLAY_ROWS = 9;
     static final int DISPLAY_COLS = 9;
-    static final int DISPLAY_SLOTS = DISPLAY_ROWS * DISPLAY_COLS;
+    static final int DISPLAY_SLOTS = MAX_DISPLAY_ROWS * DISPLAY_COLS;
 
     private BlockPos corePos;
     protected final SimpleContainer displayInventory;
@@ -25,6 +25,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     protected String currentFilter = "";
     protected int displayTypeCount = 0;
     protected int displayMaxTypes = 0;
+    private int visibleRows = 6;
+    private SortMode sortMode = SortMode.NAME;
+    private SortOrder sortOrder = SortOrder.ASCENDING;
 
     public StorageTerminalMenu(int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
         this(MagicStorage.STORAGE_TERMINAL_MENU.get(), containerId, playerInv, core);
@@ -57,13 +60,13 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
 
     protected void setupSlots(Inventory playerInv) {
         int gridTop = 19;
-        for (int row = 0; row < DISPLAY_ROWS; row++) {
+        for (int row = 0; row < MAX_DISPLAY_ROWS; row++) {
             for (int col = 0; col < DISPLAY_COLS; col++) {
                 int slotIndex = col + row * DISPLAY_COLS;
                 this.addSlot(new GhostSlot(displayInventory, slotIndex, 8 + col * 18, gridTop + row * 18));
             }
         }
-        int playerInvTop = gridTop + DISPLAY_ROWS * 18 + 14;
+        int playerInvTop = gridTop + MAX_DISPLAY_ROWS * 18 + 14;
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
                 this.addSlot(new Slot(playerInv, col + row * 9 + 9, 8 + col * 18, playerInvTop + row * 18));
@@ -90,22 +93,22 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         this.currentFilter = filter != null ? filter : "";
         displayInventory.clearContent();
         if (core == null) { totalItemTypes = 0; return; }
-        java.util.List<ItemStack> stacks = core.getDisplayStacks(currentFilter);
+        java.util.List<ItemStack> stacks = core.getDisplayStacks(currentFilter, sortMode, sortOrder);
         totalItemTypes = stacks.size();
         displayTypeCount = core.getTypeCount();
         displayMaxTypes = core.getTotalTypeSlots();
-        int maxOffset = Math.max(0, totalItemTypes - DISPLAY_SLOTS);
+        int maxOffset = Math.max(0, totalItemTypes - visibleRows * DISPLAY_COLS);
         scrollOffset = Math.min(scrollOffset, maxOffset);
         for (int i = 0; i < DISPLAY_SLOTS; i++) {
             int idx = scrollOffset + i;
-            if (idx < stacks.size()) {
+            if (idx < stacks.size() && i < visibleRows * DISPLAY_COLS) {
                 displayInventory.setItem(i, stacks.get(idx).copy());
             }
         }
     }
 
     public void scrollBy(int delta) {
-        int maxOffset = Math.max(0, totalItemTypes - DISPLAY_SLOTS);
+        int maxOffset = Math.max(0, totalItemTypes - visibleRows * DISPLAY_COLS);
         scrollOffset = Math.clamp(scrollOffset + delta, 0, maxOffset);
     }
 
@@ -209,15 +212,24 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         if (!player.level().isClientSide()) {
             StorageCoreBlockEntity core = getCore(player.level());
             if (core != null) {
-                if (buttonId == 0) {
-                    scrollBy(-DISPLAY_COLS);
-                } else if (buttonId == 1) {
-                    scrollBy(DISPLAY_COLS);
+                switch (buttonId) {
+                    case 0 -> scrollBy(-DISPLAY_COLS);
+                    case 1 -> scrollBy(DISPLAY_COLS);
+                    case 11 -> sortOrder = SortOrder.toggle(sortOrder);
+                    case 12 -> sortMode = sortMode.next();
                 }
                 refreshDisplayItems(core);
             }
         }
         return true;
+    }
+
+    public void applySettings(TerminalSettingsPacket packet) {
+        this.visibleRows = Math.max(3, packet.visibleRows());
+    }
+
+    public int getVisibleRows() {
+        return visibleRows;
     }
 
     @Override
