@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 
 import java.util.*;
+import java.util.function.Predicate;
 import net.minecraft.core.registries.BuiltInRegistries;
 
 public class StorageCoreBlockEntity extends BlockEntity {
@@ -233,6 +234,31 @@ public class StorageCoreBlockEntity extends BlockEntity {
         var variants = inventory.get(primary);
         if (variants == null) return 0;
         return variants.getLong(key);
+    }
+
+    public long countMatching(Predicate<ItemStack> pred) {
+        rebuildCache();
+        long total = 0;
+        for (var entry : flatCache.entrySet()) {
+            if (pred.test(entry.getKey().toStack(1))) total += entry.getValue();
+        }
+        return total;
+    }
+
+    public long extractMatching(Predicate<ItemStack> pred, long amount, boolean simulate) {
+        if (amount <= 0) return 0;
+        rebuildCache();
+        List<ItemKey> matches = new ArrayList<>();
+        for (var entry : flatCache.entrySet()) {
+            if (pred.test(entry.getKey().toStack(1))) matches.add(entry.getKey());
+        }
+        long extracted = 0;
+        for (ItemKey key : matches) {
+            if (extracted >= amount) break;
+            ItemStack got = extractItem(key, amount - extracted, simulate);
+            extracted += got.getCount();
+        }
+        return extracted;
     }
 
     private static boolean matchesFilter(ItemKey key, String filterText, Level level) {

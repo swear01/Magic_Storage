@@ -147,4 +147,32 @@ public class PersistenceTests {
             helper.succeed();
         });
     }
+
+    @GameTest(template = "platform")
+    public static void fuzzy_match_across_variants(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var enchanted = new ItemStack(Items.DIAMOND_SWORD);
+            enchanted.enchant(level.registryAccess().registryOrThrow(Registries.ENCHANTMENT)
+                    .getHolderOrThrow(Enchantments.SHARPNESS), 1);
+            core.insertItem(enchanted);
+            core.insertItem(new ItemStack(Items.DIAMOND_SWORD));
+            if (core.getTypeCount() != 2) { helper.fail("expected 2 variants, got " + core.getTypeCount()); return; }
+            long fuzzy = core.countMatching(s -> s.is(Items.DIAMOND_SWORD));
+            if (fuzzy != 2) { helper.fail("fuzzy count should be 2, got " + fuzzy); return; }
+            long exact = core.countMatching(s -> ItemStack.isSameItemSameComponents(s, new ItemStack(Items.DIAMOND_SWORD)));
+            if (exact != 1) { helper.fail("exact count should be 1, got " + exact); return; }
+            long got = core.extractMatching(s -> s.is(Items.DIAMOND_SWORD), 1, false);
+            if (got != 1) { helper.fail("should extract 1, got " + got); return; }
+            if (core.countMatching(s -> s.is(Items.DIAMOND_SWORD)) != 1) { helper.fail("1 should remain"); return; }
+            helper.succeed();
+        });
+    }
 }

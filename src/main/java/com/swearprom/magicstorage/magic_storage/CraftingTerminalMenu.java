@@ -247,42 +247,31 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         broadcastChanges();
     }
 
-    private long availableInPlayerInv(Player player, ItemStack match) {
+    private long availableInPlayerInv(Player player, Ingredient ingredient) {
         long avail = 0;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack invStack = player.getInventory().getItem(i);
-            if (ItemStack.isSameItemSameComponents(invStack, match)) avail += invStack.getCount();
+            if (!invStack.isEmpty() && ingredient.test(invStack)) avail += invStack.getCount();
         }
         return avail;
     }
 
     private boolean canConsumeIngredient(StorageCoreBlockEntity core, Ingredient ingredient, int count, Player player) {
-        for (ItemStack match : ingredient.getItems()) {
-            long needed = (long) match.getCount() * count;
-            long fromCore = core.extractItem(ItemKey.of(match), needed, true).getCount();
-            if (fromCore >= needed) return true;
-            if (usePlayerInventory && fromCore + availableInPlayerInv(player, match) >= needed) return true;
-        }
-        return false;
+        long fromCore = core.countMatching(ingredient);
+        if (fromCore >= count) return true;
+        return usePlayerInventory && fromCore + availableInPlayerInv(player, ingredient) >= count;
     }
 
     private void doConsumeIngredient(StorageCoreBlockEntity core, Ingredient ingredient, int count, Player player) {
-        for (ItemStack match : ingredient.getItems()) {
-            long needed = (long) match.getCount() * count;
-            long fromCore = core.extractItem(ItemKey.of(match), needed, true).getCount();
-            boolean coreEnough = fromCore >= needed;
-            boolean comboEnough = usePlayerInventory && fromCore + availableInPlayerInv(player, match) >= needed;
-            if (!coreEnough && !comboEnough) continue;
-            long remaining = needed - core.extractItem(ItemKey.of(match), needed).getCount();
-            for (int i = 0; usePlayerInventory && remaining > 0 && i < player.getInventory().getContainerSize(); i++) {
-                ItemStack invStack = player.getInventory().getItem(i);
-                if (ItemStack.isSameItemSameComponents(invStack, match)) {
-                    int take = (int) Math.min(invStack.getCount(), remaining);
-                    invStack.shrink(take);
-                    remaining -= take;
-                }
+        long got = core.extractMatching(ingredient, count, false);
+        long remaining = count - got;
+        for (int i = 0; usePlayerInventory && remaining > 0 && i < player.getInventory().getContainerSize(); i++) {
+            ItemStack invStack = player.getInventory().getItem(i);
+            if (!invStack.isEmpty() && ingredient.test(invStack)) {
+                int take = (int) Math.min(invStack.getCount(), remaining);
+                invStack.shrink(take);
+                remaining -= take;
             }
-            return;
         }
     }
 
