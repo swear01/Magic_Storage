@@ -231,4 +231,74 @@ public class CraftingTests {
             helper.succeed();
         });
     }
+
+    @GameTest(template = "platform")
+    public static void selection_tracks_item_identity_after_grid_reorder(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.APPLE, 1));
+            core.insertItem(new ItemStack(Items.IRON_INGOT, 1));
+            core.insertItem(new ItemStack(Items.STONE, 1));
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(0, player.getInventory(), core);
+            menu.refreshDisplayItems(core);
+            // Compact mode sorts by name: Apple(0), Iron Ingot(1), Stone(2).
+            int ironSlot = -1;
+            for (int s = 0; s < StorageTerminalMenu.DISPLAY_SLOTS; s++) {
+                if (menu.getSlot(s).getItem().is(Items.IRON_INGOT)) { ironSlot = s; break; }
+            }
+            if (ironSlot < 0) { helper.fail("Iron ingot not in grid"); return; }
+            menu.clicked(ironSlot, 0, ClickType.PICKUP, player);
+            if (!menu.getSelectedStack().is(Items.IRON_INGOT)) helper.fail("Selected should be iron ingot");
+            // Reorder grid: remove Apple (sorts before iron), so iron's slot index shifts down.
+            core.extractItem(ItemKey.of(new ItemStack(Items.APPLE)), 1);
+            menu.refreshDisplayItems(core);
+            ItemStack nowAtIronSlot = menu.getSlot(ironSlot).getItem();
+            if (nowAtIronSlot.is(Items.IRON_INGOT))
+                helper.fail("Grid did not reorder; test setup invalid");
+            // Selection must still be iron ingot, recipes still iron ingot's.
+            if (!menu.getSelectedStack().is(Items.IRON_INGOT))
+                helper.fail("Selection should still be iron ingot after reorder, was " + menu.getSelectedStack());
+            boolean foundSmelting = false;
+            for (int r = 0; r < menu.getRecipeCount(); r++) {
+                if (menu.getCurrentRecipes().get(r).value().getType() == RecipeType.SMELTING) foundSmelting = true;
+            }
+            if (!foundSmelting) helper.fail("Recipes should still resolve iron ingot (smelting) after reorder");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void craft_preview_reports_craftable_and_missing(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(0, player.getInventory(), core);
+            // Iron block = 9 iron ingots, crafting (no energy).
+            menu.lookUpRecipes(level, new ItemStack(Items.IRON_BLOCK));
+            if (menu.getRecipeCount() < 1) { helper.fail("Iron block should have crafting recipe"); return; }
+            // No materials -> craftable 0, missing non-empty.
+            var empty = menu.computeCraftPreview(core, player);
+            if (empty.craftable() != 0) helper.fail("With no materials craftable should be 0, got " + empty.craftable());
+            if (empty.missing().isEmpty()) helper.fail("With no materials missing should be non-empty");
+            // Enough materials -> craftable >= 1, missing empty.
+            core.insertItem(new ItemStack(Items.IRON_INGOT, 64));
+            var ok = menu.computeCraftPreview(core, player);
+            if (ok.craftable() < 1) helper.fail("With 64 ingots craftable should be >=1, got " + ok.craftable());
+            if (!ok.missing().isEmpty()) helper.fail("With enough materials missing should be empty");
+            helper.succeed();
+        });
+    }
 }

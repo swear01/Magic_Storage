@@ -28,21 +28,41 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     private int visibleRows = 6;
     private SortMode sortMode = SortMode.NAME;
     private SortOrder sortOrder = SortOrder.ASCENDING;
+    private SearchMode searchMode = SearchMode.NORMAL;
 
     public StorageTerminalMenu(int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
         this(MagicStorage.STORAGE_TERMINAL_MENU.get(), containerId, playerInv, core);
     }
 
     private void addTypeDataSlots() {
-        addDataSlots(new net.minecraft.world.inventory.SimpleContainerData(2) {
-            @Override public int get(int i) { return i == 0 ? displayTypeCount : displayMaxTypes; }
-            @Override public void set(int i, int v) { if (i == 0) displayTypeCount = v; else displayMaxTypes = v; }
-            @Override public int getCount() { return 2; }
+        addDataSlots(new net.minecraft.world.inventory.SimpleContainerData(5) {
+            @Override public int get(int i) {
+                return switch (i) {
+                    case 0 -> displayTypeCount;
+                    case 1 -> displayMaxTypes;
+                    case 2 -> sortMode.ordinal();
+                    case 3 -> sortOrder.ordinal();
+                    default -> searchMode.ordinal();
+                };
+            }
+            @Override public void set(int i, int v) {
+                switch (i) {
+                    case 0 -> displayTypeCount = v;
+                    case 1 -> displayMaxTypes = v;
+                    case 2 -> sortMode = SortMode.values()[v];
+                    case 3 -> sortOrder = SortOrder.values()[v];
+                    default -> searchMode = SearchMode.values()[v];
+                }
+            }
+            @Override public int getCount() { return 5; }
         });
     }
 
     public int getTypeCount() { return displayTypeCount; }
     public int getMaxTypes() { return displayMaxTypes; }
+    public SortMode getSortMode() { return sortMode; }
+    public SortOrder getSortOrder() { return sortOrder; }
+    public SearchMode getSearchMode() { return searchMode; }
 
     StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
         super(menuType, containerId);
@@ -222,6 +242,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case 1 -> scrollBy(DISPLAY_COLS);
                     case 11 -> sortOrder = SortOrder.toggle(sortOrder);
                     case 12 -> sortMode = sortMode.next();
+                    case 13 -> searchMode = searchMode.next();
                 }
                 refreshDisplayItems(core);
             }

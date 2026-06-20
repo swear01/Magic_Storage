@@ -450,4 +450,84 @@ public class TerminalFlowTests {
             helper.succeed();
         });
     }
+
+    @GameTest(template = "platform")
+    public static void view_settings_synced_to_data_slots(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new StorageTerminalMenu(7, player.getInventory(), core);
+            if (menu.getSortMode() != SortMode.NAME) helper.fail("default sortMode should be NAME, got " + menu.getSortMode());
+            if (menu.getSortOrder() != SortOrder.ASCENDING) helper.fail("default sortOrder should be ASCENDING, got " + menu.getSortOrder());
+            if (menu.getSearchMode() != SearchMode.NORMAL) helper.fail("default searchMode should be NORMAL, got " + menu.getSearchMode());
+            menu.clickMenuButton(player, 12);
+            if (menu.getSortMode() != SortMode.QUANTITY)
+                helper.fail("clickMenuButton(12) should sync sortMode=QUANTITY, got " + menu.getSortMode());
+            menu.clickMenuButton(player, 11);
+            if (menu.getSortOrder() != SortOrder.DESCENDING)
+                helper.fail("clickMenuButton(11) should sync sortOrder=DESCENDING, got " + menu.getSortOrder());
+            menu.clickMenuButton(player, 13);
+            if (menu.getSearchMode() != SearchMode.TAG)
+                helper.fail("clickMenuButton(13) should sync searchMode=TAG, got " + menu.getSearchMode());
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void data_slot_parity_server_vs_buf_ctor(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var serverMenu = new StorageTerminalMenu(8, player.getInventory(), core);
+
+            var byteBuf = new net.minecraft.network.RegistryFriendlyByteBuf(
+                    io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+            byteBuf.writeBlockPos(corePos);
+            StorageTerminalMenu bufMenu;
+            try {
+                var ctor = StorageTerminalMenu.class.getDeclaredConstructor(
+                        net.minecraft.world.inventory.MenuType.class, int.class,
+                        net.minecraft.world.entity.player.Inventory.class,
+                        net.minecraft.network.RegistryFriendlyByteBuf.class);
+                ctor.setAccessible(true);
+                bufMenu = ctor.newInstance(
+                        MagicStorage.STORAGE_TERMINAL_MENU.get(), 9, player.getInventory(), byteBuf);
+            } catch (ReflectiveOperationException e) {
+                helper.fail("Could not build buf-ctor menu: " + e);
+                return;
+            }
+
+            int serverCount = dataSlotCount(serverMenu);
+            int bufCount = dataSlotCount(bufMenu);
+            if (serverCount != bufCount)
+                helper.fail("data-slot count mismatch: server=" + serverCount + " buf=" + bufCount);
+            if (serverCount < 5)
+                helper.fail("expected >=5 synced data slots (types + view settings), got " + serverCount);
+            helper.succeed();
+        });
+    }
+
+    private static int dataSlotCount(net.minecraft.world.inventory.AbstractContainerMenu menu) {
+        try {
+            var f = net.minecraft.world.inventory.AbstractContainerMenu.class.getDeclaredField("dataSlots");
+            f.setAccessible(true);
+            return ((java.util.List<?>) f.get(menu)).size();
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

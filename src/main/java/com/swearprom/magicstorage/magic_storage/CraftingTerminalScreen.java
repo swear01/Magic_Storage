@@ -126,9 +126,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         g.renderOutline(rx, ry, rw, RECIPE_H, 0xFF555555);
 
         CraftingTerminalMenu cm = getCraftMenu();
-        int idx = cm.getSelectedItemIndex();
-        if (idx < 0 || idx >= cm.slots.size()) return;
-        ItemStack sel = cm.getSlot(idx).getItem();
+        ItemStack sel = cm.getSelectedStack();
         if (sel.isEmpty()) return;
 
         List<RecipeHolder<?>> recipes = findRecipesClient(sel);
@@ -141,6 +139,17 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         g.drawString(font, result.getHoverName().getString(), rx + 4, ry + 4, 0xFFFFFF);
         g.drawString(font, getTypeName(recipe.getType()), rx + 4, ry + 14, 0xAAAAAA);
         g.drawString(font, "Recipe " + (ri + 1) + "/" + recipes.size(), rx + 80, ry + 4, 0xCCCCCC);
+
+        int craftable = cm.getCraftableCount();
+        if (craftable > 0) {
+            String txt = "×" + craftable + " possible";
+            g.drawString(font, txt, rx + rw - 4 - font.width(txt), ry + 14, 0x55FF55);
+        } else {
+            var missing = cm.getMissingPreview();
+            String txt = missing.isEmpty() ? "missing materials"
+                    : "missing: " + missing.get(0).getHoverName().getString();
+            g.drawString(font, txt, rx + rw - 4 - font.width(txt), ry + 14, 0xFF5555);
+        }
 
         EnergyCost cost = RecipeEnergyTable.getCost(recipe.getType());
         if (cost != null && minecraft != null && minecraft.level != null) {

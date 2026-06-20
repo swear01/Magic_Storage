@@ -1,11 +1,11 @@
 package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.ContainerData;
-import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -24,9 +24,17 @@ import java.util.TreeMap;
 
 public class CraftingTerminalMenu extends StorageTerminalMenu {
 
-    private int selectedItemIndex = -1;
+    public record CraftPreview(int craftable, List<ItemStack> missing) {}
+
+    private static final int MAX_MISSING = 9;
+    private static final int SELECTION_SLOTS = 1 + MAX_MISSING;
+    private static final int PREVIEW_CAP = 9999;
+
+    private ItemKey selectedKey = null;
+    private SimpleContainer selectionContainer;
     private final List<RecipeHolder<?>> currentRecipes = new ArrayList<>();
     private int currentRecipeIndex = 0;
+    private int craftableCount = 0;
     private boolean showOnlyCraftable = false;
     private boolean usePlayerInventory = false;
     private boolean compactMode = true;
@@ -48,11 +56,11 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             @Override
             public int get(int index) {
                 return switch (index) {
-                    case 0 -> selectedItemIndex;
-                    case 1 -> currentRecipeIndex;
-                    case 2 -> showOnlyCraftable ? 1 : 0;
-                    case 3 -> usePlayerInventory ? 1 : 0;
-                    case 4 -> compactMode ? 1 : 0;
+                    case 0 -> currentRecipeIndex;
+                    case 1 -> showOnlyCraftable ? 1 : 0;
+                    case 2 -> usePlayerInventory ? 1 : 0;
+                    case 3 -> compactMode ? 1 : 0;
+                    case 4 -> craftableCount;
                     default -> 0;
                 };
             }
@@ -60,11 +68,11 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             @Override
             public void set(int index, int value) {
                 switch (index) {
-                    case 0 -> selectedItemIndex = value;
-                    case 1 -> currentRecipeIndex = value;
-                    case 2 -> showOnlyCraftable = value != 0;
-                    case 3 -> usePlayerInventory = value != 0;
-                    case 4 -> compactMode = value != 0;
+                    case 0 -> currentRecipeIndex = value;
+                    case 1 -> showOnlyCraftable = value != 0;
+                    case 2 -> usePlayerInventory = value != 0;
+                    case 3 -> compactMode = value != 0;
+                    case 4 -> craftableCount = value;
                 }
             }
 
@@ -93,10 +101,33 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         for (int col = 0; col < 9; col++) {
             this.addSlot(new Slot(playerInv, col, 7 + col * 18, 241));
         }
+
+        selectionContainer = new SimpleContainer(SELECTION_SLOTS);
+        for (int i = 0; i < SELECTION_SLOTS; i++) {
+            this.addSlot(new Slot(selectionContainer, i, -9999, -9999) {
+                @Override public boolean isActive() { return false; }
+                @Override public boolean mayPlace(ItemStack stack) { return false; }
+                @Override public boolean mayPickup(Player player) { return false; }
+            });
+        }
     }
 
-    public int getSelectedItemIndex() {
-        return selectedItemIndex;
+    public ItemStack getSelectedStack() {
+        return selectionContainer != null ? selectionContainer.getItem(0) : ItemStack.EMPTY;
+    }
+
+    public List<ItemStack> getMissingPreview() {
+        List<ItemStack> missing = new ArrayList<>();
+        if (selectionContainer == null) return missing;
+        for (int i = 1; i < SELECTION_SLOTS; i++) {
+            ItemStack s = selectionContainer.getItem(i);
+            if (!s.isEmpty()) missing.add(s);
+        }
+        return missing;
+    }
+
+    public int getCraftableCount() {
+        return craftableCount;
     }
 
     public int getCurrentRecipeIndex() {
@@ -126,14 +157,29 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 Slot slot = getSlot(slotIndex);
                 ItemStack displayStack = slot.getItem();
                 if (!displayStack.isEmpty() && getCarried().isEmpty() && clickType == ClickType.PICKUP) {
-                    selectedItemIndex = slotIndex;
-                    lookUpRecipes(player.level(), displayStack);
+                    selectItem(player.level(), displayStack);
+                    StorageCoreBlockEntity core = getCore(player.level());
+                    if (core != null) updatePreview(core, player);
                     broadcastChanges();
                 }
             }
             return;
         }
         super.clicked(slotIndex, button, clickType, player);
+    }
+
+    private void selectItem(Level level, ItemStack stack) {
+        selectedKey = ItemKey.of(stack);
+        selectionContainer.setItem(0, selectedKey.toStack(1));
+        lookUpRecipes(level, stack);
+    }
+
+    private void clearSelection() {
+        selectedKey = null;
+        selectionContainer.clearContent();
+        currentRecipes.clear();
+        currentRecipeIndex = 0;
+        craftableCount = 0;
     }
 
     void lookUpRecipes(Level level, ItemStack output) {
@@ -244,6 +290,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
 
         refreshDisplayItems(core);
+        updatePreview(core, player);
         broadcastChanges();
     }
 
@@ -275,6 +322,51 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
     }
 
+    private long availableFor(StorageCoreBlockEntity core, Ingredient ingredient, Player player) {
+        long avail = core.countMatching(ingredient);
+        if (usePlayerInventory && player != null) avail += availableInPlayerInv(player, ingredient);
+        return avail;
+    }
+
+    public CraftPreview computeCraftPreview(StorageCoreBlockEntity core, Player player) {
+        if (core == null || currentRecipes.isEmpty() || currentRecipeIndex >= currentRecipes.size())
+            return new CraftPreview(0, new ArrayList<>());
+        Recipe<?> recipe = currentRecipes.get(currentRecipeIndex).value();
+
+        long max = PREVIEW_CAP;
+        List<ItemStack> missing = new ArrayList<>();
+        for (Ingredient ingredient : recipe.getIngredients()) {
+            if (ingredient.isEmpty()) continue;
+            long avail = availableFor(core, ingredient, player);
+            max = Math.min(max, avail);
+            if (avail <= 0) {
+                ItemStack[] items = ingredient.getItems();
+                if (items.length > 0 && missing.size() < MAX_MISSING) missing.add(items[0].copy());
+            }
+        }
+
+        EnergyCost cost = RecipeEnergyTable.getCost(recipe.getType());
+        if (cost != null) {
+            if (cost.processAmount() > 0)
+                max = Math.min(max, core.getEnergy(cost.processType()) / cost.processAmount());
+            if (cost.fuelAmount() > 0)
+                max = Math.min(max, core.getEnergy(cost.fuelType()) / cost.fuelAmount());
+        }
+
+        int craftable = (int) Math.clamp(max, 0, PREVIEW_CAP);
+        if (craftable > 0) missing.clear();
+        return new CraftPreview(craftable, missing);
+    }
+
+    private void updatePreview(StorageCoreBlockEntity core, Player player) {
+        CraftPreview preview = computeCraftPreview(core, player);
+        craftableCount = preview.craftable();
+        for (int i = 1; i < SELECTION_SLOTS; i++) {
+            int mi = i - 1;
+            selectionContainer.setItem(i, mi < preview.missing().size() ? preview.missing().get(mi) : ItemStack.EMPTY);
+        }
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
         if (!player.level().isClientSide()) {
@@ -299,6 +391,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             }
             if (core != null && buttonId >= 6 && buttonId <= 10) {
                 refreshDisplayItems(core);
+                updatePreview(core, player);
             }
         }
         return true;
@@ -344,6 +437,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (idx < displayStacks.size() && i < vRows * DISPLAY_COLS) {
                 displayInventory.setItem(i, displayStacks.get(idx).copy());
             }
+        }
+
+        if (selectedKey != null && core.getItemCount(selectedKey) <= 0) {
+            clearSelection();
         }
     }
 }

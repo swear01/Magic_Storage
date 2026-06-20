@@ -24,7 +24,13 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     protected static final int SB_X = 174;
     protected static final int SB_WIDTH = 12;
     protected static final int SB_SCROLLER_H = 15;
+    private static final int SB_TRACK_INSET = 2;
     private static final int SB_UV_X = 232;
+
+    private static final int SEARCH_X = 102;
+    private static final int SEARCH_W = 70;
+    private static final int SEARCH_BG_X = 100;
+    private static final int SEARCH_BG_W = 72;
 
     private static final int BUTTON_X = 188;
     private static final int BUTTON_W = 16;
@@ -35,7 +41,9 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     private int searchTimer = 0;
     private String lastSentSearch = "";
     protected int visibleRows;
-    private SearchMode searchMode = SearchMode.NORMAL;
+    private SearchMode lastSeenSearchMode = SearchMode.NORMAL;
+    private SortMode lastSeenSortMode = SortMode.NAME;
+    private SortOrder lastSeenSortOrder = SortOrder.ASCENDING;
 
     private Button sortOrderBtn;
     private Button sortModeBtn;
@@ -67,27 +75,26 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         int y = topPos;
         int gridTop = y + getTopHeight();
 
-        this.searchBox = new EditBox(font, x + 102, y + 6, 78, font.lineHeight, Component.translatable("gui.magic_storage.search"));
+        this.searchBox = new EditBox(font, x + SEARCH_X, y + 6, SEARCH_W, font.lineHeight, Component.translatable("gui.magic_storage.search"));
         this.searchBox.setBordered(false);
         this.searchBox.setVisible(true);
         this.searchBox.setTextColor(0xFFFFFF);
         this.searchBox.setMaxLength(50);
         this.addRenderableWidget(searchBox);
 
-        sortOrderBtn = Button.builder(Component.literal("v"), b -> { sendButton(11); setFocused(null); })
-                .bounds(x + BUTTON_X, gridTop, BUTTON_W, BUTTON_H)
-                .tooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_order"))).build();
+        sortOrderBtn = Button.builder(sortOrderLabel(), b -> { sendButton(11); setFocused(null); })
+                .bounds(x + BUTTON_X, gridTop + buttonYOffset(0), BUTTON_W, BUTTON_H).build();
         addRenderableWidget(sortOrderBtn);
 
-        sortModeBtn = Button.builder(Component.literal("S"), b -> { sendButton(12); setFocused(null); })
-                .bounds(x + BUTTON_X, gridTop + 20, BUTTON_W, BUTTON_H)
-                .tooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_mode"))).build();
+        sortModeBtn = Button.builder(sortModeLabel(), b -> { sendButton(12); setFocused(null); })
+                .bounds(x + BUTTON_X, gridTop + buttonYOffset(1), BUTTON_W, BUTTON_H).build();
         addRenderableWidget(sortModeBtn);
 
-        searchModeBtn = Button.builder(searchModeLabel(), b -> { cycleSearchMode(); setFocused(null); })
-                .bounds(x + BUTTON_X, gridTop + 40, BUTTON_W, BUTTON_H)
-                .tooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.search_mode"))).build();
+        searchModeBtn = Button.builder(searchModeLabel(), b -> { sendButton(13); setFocused(null); })
+                .bounds(x + BUTTON_X, gridTop + buttonYOffset(2), BUTTON_W, BUTTON_H).build();
         addRenderableWidget(searchModeBtn);
+
+        updateViewSettingButtons();
 
         repositionPlayerInventory();
         int slotLimit = visibleRows * 9;
@@ -129,18 +136,46 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         }
     }
 
+    private int buttonYOffset(int index) {
+        int gridH = visibleRows * ROW_HEIGHT;
+        int span = gridH - BUTTON_H;
+        return index * span / 2;
+    }
+
     private Component searchModeLabel() {
-        return switch (searchMode) {
+        return switch (menu.getSearchMode()) {
             case NORMAL -> Component.literal("A");
             case TAG -> Component.literal("#");
             case MOD -> Component.literal("@");
         };
     }
 
-    private void cycleSearchMode() {
-        searchMode = searchMode.next();
+    private Component sortModeLabel() {
+        return switch (menu.getSortMode()) {
+            case NAME -> Component.literal("N");
+            case QUANTITY -> Component.literal("#");
+            case ID -> Component.literal("I");
+        };
+    }
+
+    private Component sortOrderLabel() {
+        return menu.getSortOrder() == SortOrder.ASCENDING ? Component.literal("v") : Component.literal("^");
+    }
+
+    private void updateViewSettingButtons() {
+        if (sortOrderBtn == null || sortModeBtn == null || searchModeBtn == null) return;
+        lastSeenSortOrder = menu.getSortOrder();
+        lastSeenSortMode = menu.getSortMode();
+        lastSeenSearchMode = menu.getSearchMode();
+        sortOrderBtn.setMessage(sortOrderLabel());
+        sortModeBtn.setMessage(sortModeLabel());
         searchModeBtn.setMessage(searchModeLabel());
-        sendSearchPacket();
+        sortOrderBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_order")
+                .append(": ").append(menu.getSortOrder().name())));
+        sortModeBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_mode")
+                .append(": ").append(menu.getSortMode().name())));
+        searchModeBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.search_mode")
+                .append(": ").append(menu.getSearchMode().name())));
     }
 
     private void sendSettings() {
@@ -175,13 +210,20 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
         int totalItems = menu.getTotalItemTypes();
         int maxOffset = Math.max(0, totalItems - visibleRows * 9);
-        if (maxOffset > 0) {
-            int sbY = y + getTopHeight() + 2;
-            int sbH = visibleRows * ROW_HEIGHT;
+        int travel = scrollTrackHeight() - SB_SCROLLER_H;
+        if (maxOffset > 0 && travel > 0) {
             float ratio = (float) menu.getScrollOffset() / maxOffset;
-            int thumbY = sbY + (int) (ratio * (sbH - SB_SCROLLER_H));
+            int thumbY = scrollTrackTop() + (int) (ratio * travel);
             g.blit(ICONS_TEXTURE, x + SB_X, thumbY, SB_UV_X, 0, SB_WIDTH, SB_SCROLLER_H, 256, 256);
         }
+    }
+
+    private int scrollTrackTop() {
+        return topPos + getTopHeight() + SB_TRACK_INSET;
+    }
+
+    private int scrollTrackHeight() {
+        return visibleRows * ROW_HEIGHT - 2 * SB_TRACK_INSET;
     }
 
     protected void drawPanels(GuiGraphics g, int x, int y) {
@@ -193,9 +235,9 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         g.renderOutline(left, gridTop, right - left, visibleRows * ROW_HEIGHT, 0xFF555555);
         int invTop = y + playerInvLocalTop();
         g.fill(left, invTop, right, invTop + 4 * ROW_HEIGHT + 4, 0xFF252525);
-        int sx = x + 100, sy = y + 4;
-        g.fill(sx, sy, sx + 84, sy + 12, 0xFF000000);
-        g.renderOutline(sx, sy, 84, 12, 0xFF555555);
+        int sx = x + SEARCH_BG_X, sy = y + 4;
+        g.fill(sx, sy, sx + SEARCH_BG_W, sy + 12, 0xFF000000);
+        g.renderOutline(sx, sy, SEARCH_BG_W, 12, 0xFF555555);
     }
 
     @Override
@@ -289,6 +331,12 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     @Override
     protected void containerTick() {
         super.containerTick();
+        if (menu.getSortOrder() != lastSeenSortOrder || menu.getSortMode() != lastSeenSortMode
+                || menu.getSearchMode() != lastSeenSearchMode) {
+            boolean searchModeChanged = menu.getSearchMode() != lastSeenSearchMode;
+            updateViewSettingButtons();
+            if (searchModeChanged) sendSearchPacket();
+        }
         if (searchTimer > 0) {
             searchTimer--;
             if (searchTimer == 0) {
@@ -298,7 +346,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     private void sendSearchPacket() {
-        String text = searchMode.apply(searchBox.getValue());
+        String text = menu.getSearchMode().apply(searchBox.getValue());
         if (text.equals(lastSentSearch)) return;
         lastSentSearch = text;
         if (minecraft != null && minecraft.player != null && minecraft.getConnection() != null) {
@@ -327,9 +375,9 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         int totalItems = menu.getTotalItemTypes();
         int maxOffset = Math.max(0, totalItems - visibleRows * 9);
         if (maxOffset <= 0) return;
-        int sbTop = topPos + getTopHeight();
-        int trackH = visibleRows * ROW_HEIGHT - SB_SCROLLER_H;
-        float ratio = (float) (my - sbTop - SB_SCROLLER_H / 2) / trackH;
+        int travel = scrollTrackHeight() - SB_SCROLLER_H;
+        if (travel <= 0) return;
+        float ratio = (float) (my - scrollTrackTop() - SB_SCROLLER_H / 2.0) / travel;
         int target = Math.clamp((int) (ratio * maxOffset), 0, maxOffset);
         target = (target / 9) * 9;
         int delta = target - menu.getScrollOffset();

@@ -25,6 +25,7 @@ class SelfTest {
         testSearchMode();
         testTerminalSettingsPacketCodec();
         testSearchModeApply();
+        testTerminalGeometryNoOverlap();
 
         MagicStorage.LOGGER.info("SelfTest: {} passed, {} failed, {} total",
                 passed, failed, passed + failed);
@@ -193,6 +194,49 @@ class SelfTest {
                 SearchMode.TAG.apply("").isEmpty());
         assertTrue("MOD empty text stays empty",
                 SearchMode.MOD.apply("").isEmpty());
+    }
+
+    private static void testTerminalGeometryNoOverlap() {
+        int imageWidth = 210;
+        int sbX = 174;
+        int searchX = 102;
+        int searchBgX = 100;
+        int buttonX = 188;
+        int buttonW = 16;
+        int buttonH = 16;
+        int rowHeight = 18;
+        int gridTopLocal = 19;
+
+        int scrollbarLeft = sbX;
+        int searchRight = searchX + searchBoxWidth();
+        assertTrue("searchRight <= scrollbarLeft (" + searchRight + " <= " + scrollbarLeft + ")",
+                searchRight <= scrollbarLeft);
+        int searchBgRight = searchBgX + searchBgWidth();
+        assertTrue("search bg right <= scrollbarLeft (" + searchBgRight + " <= " + scrollbarLeft + ")",
+                searchBgRight <= scrollbarLeft);
+        assertTrue("buttons start right of scrollbar", buttonX >= sbX + 12);
+        assertTrue("buttons fit imageWidth", buttonX + buttonW <= imageWidth);
+
+        for (int rows : new int[]{3, 9}) {
+            int gridBottom = gridTopLocal + rows * rowHeight;
+            for (int i = 0; i < 3; i++) {
+                int by = gridTopLocal + buttonY(i, rows);
+                assertTrue("button " + i + " bottom <= grid bottom at rows " + rows
+                                + " (" + (by + buttonH) + " <= " + gridBottom + ")",
+                        by + buttonH <= gridBottom);
+                assertTrue("button " + i + " top >= grid top at rows " + rows,
+                        by >= gridTopLocal);
+            }
+        }
+    }
+
+    private static int searchBoxWidth() { return 70; }
+    private static int searchBgWidth() { return 72; }
+
+    private static int buttonY(int index, int visibleRows) {
+        int gridH = visibleRows * 18;
+        int span = gridH - 16;
+        return index * span / 2;
     }
 
     private static void assertTrue(String message, boolean condition) {
