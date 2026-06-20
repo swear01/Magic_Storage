@@ -35,6 +35,7 @@ public class MagicStorage {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     private static final int NETWORK_SCAN_DEPTH = 64;
+    private static final int MAX_NETWORK_BLOCKS = 8192;
 
     // === Registries ===
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
@@ -172,22 +173,28 @@ public class MagicStorage {
     }
 
     private void handleSearchFilter(SearchFilterPacket packet, net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
-        var player = ctx.player();
-        if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
-                || menu.containerId != packet.containerId()) return;
-        if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
-            menu.refreshDisplayItemsFiltered(core, packet.filter());
-        }
+        ctx.enqueueWork(() -> {
+            var player = ctx.player();
+            if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
+                    || menu.containerId != packet.containerId()) return;
+            if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
+                menu.refreshDisplayItemsFiltered(core, packet.filter());
+                menu.broadcastChanges();
+            }
+        });
     }
 
     private void handleTerminalSettings(TerminalSettingsPacket packet, net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
-        var player = ctx.player();
-        if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
-                || menu.containerId != packet.containerId()) return;
-        menu.applySettings(packet);
-        if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
-            menu.refreshDisplayItems(core);
-        }
+        ctx.enqueueWork(() -> {
+            var player = ctx.player();
+            if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
+                    || menu.containerId != packet.containerId()) return;
+            menu.applySettings(packet);
+            if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
+                menu.refreshDisplayItems(core);
+                menu.broadcastChanges();
+            }
+        });
     }
 
     private void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
@@ -203,7 +210,13 @@ public class MagicStorage {
         if (event.getLevel().isClientSide()) return;
         Level level = (Level) event.getLevel();
         if (event.getState().getBlock() instanceof IStorageNetworkBlock) {
-            findCoresAndRebuild(level, event.getPos());
+            BlockPos pos = event.getPos();
+            var server = level.getServer();
+            if (server != null) {
+                server.execute(() -> findCoresAndRebuild(level, pos));
+            } else {
+                findCoresAndRebuild(level, pos);
+            }
         }
     }
 
@@ -244,7 +257,7 @@ public class MagicStorage {
         visited.add(start);
 
         int depth = 0;
-        while (!queue.isEmpty() && depth < NETWORK_SCAN_DEPTH) {
+        while (!queue.isEmpty() && depth < NETWORK_SCAN_DEPTH && visited.size() <= MAX_NETWORK_BLOCKS) {
             int size = queue.size();
             for (int i = 0; i < size; i++) {
                 BlockPos current = queue.poll();

@@ -25,6 +25,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     private final Set<BlockPos> connectedBlocks = new HashSet<>();
     private int totalTypeSlots = 0;
+    private int typeCount = 0;
 
     // Energy
     private final Map<EnergyType, Long> energy = new HashMap<>();
@@ -43,11 +44,14 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     public void tick() {
         if (level == null || level.isClientSide()) return;
+        boolean changed = false;
         for (EnergyType type : EnergyType.values()) {
             if (type.isAutoFill()) {
                 energy.merge(type, (long) type.getTickRate(), Long::sum);
+                changed = true;
             }
         }
+        if (changed) setChanged();
     }
 
     public long getEnergy(EnergyType type) {
@@ -55,25 +59,40 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public boolean consumeEnergy(EnergyCost cost, long multiplier) {
-        long processNeed = cost.processAmount() * multiplier;
-        long fuelNeed = cost.fuelAmount() * multiplier;
+        if (multiplier <= 0) return false;
+        long processNeed;
+        long fuelNeed;
+        try {
+            processNeed = Math.multiplyExact(cost.processAmount(), multiplier);
+            fuelNeed = Math.multiplyExact(cost.fuelAmount(), multiplier);
+        } catch (ArithmeticException e) {
+            return false;
+        }
         if (getEnergy(cost.processType()) < processNeed) return false;
         if (getEnergy(cost.fuelType()) < fuelNeed) return false;
         energy.merge(cost.processType(), -processNeed, Long::sum);
         energy.merge(cost.fuelType(), -fuelNeed, Long::sum);
+        setChanged();
         return true;
     }
 
-    public void addFuel(ItemStack stack, EnergyType targetPool) {
+    public boolean addFuel(ItemStack stack, EnergyType targetPool) {
         List<FuelValue> values = FuelTable.getFuelValues(stack);
         for (FuelValue fv : values) {
             if (fv.pool() == targetPool) {
-                long amount = fv.valuePerItem() * stack.getCount();
+                long amount;
+                try {
+                    amount = Math.multiplyExact(fv.valuePerItem(), (long) stack.getCount());
+                } catch (ArithmeticException e) {
+                    return false;
+                }
                 energy.merge(targetPool, amount, Long::sum);
                 stack.setCount(0);
-                return;
+                setChanged();
+                return true;
             }
         }
+        return false;
     }
 
     public boolean isFuel(ItemStack stack) {
@@ -85,11 +104,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public int getTypeCount() {
-        int count = 0;
-        for (var variantMap : inventory.values()) {
-            count += variantMap.size();
-        }
-        return count;
+        return typeCount;
     }
 
     private void rebuildCache() {
@@ -114,14 +129,16 @@ public class StorageCoreBlockEntity extends BlockEntity {
         long toInsert = stack.getCount();
 
         if (existing == 0) {
-            if (getTypeCount() >= totalTypeSlots) return 0;
+            if (typeCount >= totalTypeSlots) return 0;
         }
 
         long inserted = toInsert;
         if (!simulate) {
+            if (existing == 0) typeCount++;
             variants.put(key, existing + inserted);
             cacheDirty = true;
             stack.setCount(0);
+            setChanged();
         }
         return inserted;
     }
@@ -140,19 +157,22 @@ public class StorageCoreBlockEntity extends BlockEntity {
         if (existing <= 0) return ItemStack.EMPTY;
 
         long toExtract = Math.min(amount, existing);
+        int extracted = (int) Math.min(toExtract, Integer.MAX_VALUE);
         if (!simulate) {
-            long remaining = existing - toExtract;
+            long remaining = existing - extracted;
             if (remaining <= 0) {
                 variants.removeLong(key);
                 if (variants.isEmpty()) inventory.remove(primary);
+                typeCount--;
             } else {
                 variants.put(key, remaining);
             }
             cacheDirty = true;
+            setChanged();
         }
 
-        ItemStack result = key.toStack((int) toExtract);
-        result.setCount((int) toExtract);
+        ItemStack result = key.toStack(extracted);
+        result.setCount(extracted);
         return result;
     }
 
@@ -183,16 +203,24 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     public List<ItemStack> getDisplayStacks(String filter, SortMode mode, SortOrder order) {
         List<ItemStack> result = getDisplayStacks(filter);
+        if (mode == SortMode.QUANTITY) {
+            record Entry(ItemStack stack, long count) {}
+            List<Entry> entries = new ArrayList<>(result.size());
+            for (ItemStack stack : result) {
+                Long count = flatCache.get(ItemKey.of(stack));
+                entries.add(new Entry(stack, count != null ? count : 0L));
+            }
+            Comparator<Entry> cmp = Comparator.comparingLong(Entry::count);
+            entries.sort(order == SortOrder.DESCENDING ? cmp.reversed() : cmp);
+            result = new ArrayList<>(entries.size());
+            for (Entry entry : entries) {
+                result.add(entry.stack());
+            }
+            return result;
+        }
         Comparator<ItemStack> cmp = switch (mode) {
             case NAME -> Comparator.comparing(s -> s.getHoverName().getString());
-            case QUANTITY -> {
-                rebuildCache();
-                yield Comparator.comparingLong(s -> {
-                    ItemKey key = ItemKey.of(s);
-                    Long count = flatCache.get(key);
-                    return count != null ? count : 0L;
-                });
-            }
+            case QUANTITY -> throw new IllegalStateException();
             case ID -> Comparator.comparing(s ->
                     BuiltInRegistries.ITEM.getKey(s.getItem()).toString());
         };
@@ -255,7 +283,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         for (var entry : inventory.entrySet()) {
             for (var variantEntry : entry.getValue().object2LongEntrySet()) {
                 CompoundTag entryTag = new CompoundTag();
-                entryTag.putString("id", variantEntry.getKey().item().builtInRegistryHolder().key().location().toString());
+                entryTag.put("item", variantEntry.getKey().toStack(1).save(registries));
                 entryTag.putLong("count", variantEntry.getLongValue());
                 invTag.add(entryTag);
             }
@@ -277,16 +305,17 @@ public class StorageCoreBlockEntity extends BlockEntity {
         ListTag invTag = tag.getList("inventory", Tag.TAG_COMPOUND);
         for (int i = 0; i < invTag.size(); i++) {
             CompoundTag entryTag = invTag.getCompound(i);
-            var itemId = net.minecraft.resources.ResourceLocation.parse(entryTag.getString("id"));
-            var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(itemId);
-            if (item == null) continue;
-            ItemStack stack = new ItemStack(item);
+            ItemStack stack = ItemStack.parse(registries, entryTag.getCompound("item")).orElse(ItemStack.EMPTY);
+            if (stack.isEmpty()) continue;
             long count = entryTag.getLong("count");
+            if (count <= 0) continue;
             ItemKey key = ItemKey.of(stack);
             Item primary = key.item();
             var variants = inventory.computeIfAbsent(primary, k -> new Object2LongOpenHashMap<>());
             variants.put(key, count);
         }
+        typeCount = 0;
+        for (var variants : inventory.values()) typeCount += variants.size();
         cacheDirty = true;
     }
 

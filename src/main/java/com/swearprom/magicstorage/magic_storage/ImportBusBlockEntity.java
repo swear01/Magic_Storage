@@ -53,12 +53,17 @@ public class ImportBusBlockEntity extends BlockEntity {
         if (handler == null) return;
 
         for (int slot = 0; slot < handler.getSlots(); slot++) {
-            ItemStack extracted = handler.extractItem(slot, 1, true);
-            if (!extracted.isEmpty()) {
-                ItemStack real = handler.extractItem(slot, 1, false);
-                cachedCore.insertItem(real);
-                break;
+            ItemStack peek = handler.extractItem(slot, 1, true);
+            if (peek.isEmpty()) continue;
+            if (cachedCore.insertItem(peek, true) <= 0) continue;
+            ItemStack real = handler.extractItem(slot, 1, false);
+            if (real.isEmpty()) continue;
+            long inserted = cachedCore.insertItem(real);
+            if (inserted < real.getCount()) {
+                real.setCount((int) (real.getCount() - inserted));
+                handler.insertItem(slot, real, false);
             }
+            break;
         }
     }
 

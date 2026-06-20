@@ -31,6 +31,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
 
     public StorageTerminalMenu(int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
         this(MagicStorage.STORAGE_TERMINAL_MENU.get(), containerId, playerInv, core);
+    }
+
+    private void addTypeDataSlots() {
         addDataSlots(new net.minecraft.world.inventory.SimpleContainerData(2) {
             @Override public int get(int i) { return i == 0 ? displayTypeCount : displayMaxTypes; }
             @Override public void set(int i, int v) { if (i == 0) displayTypeCount = v; else displayMaxTypes = v; }
@@ -48,6 +51,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         this.scrollOffset = 0;
         setupSlots(playerInv);
         refreshDisplayItems(core);
+        addTypeDataSlots();
     }
 
     protected StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, RegistryFriendlyByteBuf buf) {
@@ -56,6 +60,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         this.displayInventory = new SimpleContainer(DISPLAY_SLOTS);
         this.scrollOffset = 0;
         setupSlots(playerInv);
+        addTypeDataSlots();
     }
 
     protected void setupSlots(Inventory playerInv) {
@@ -153,6 +158,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                                 setCarried(extracted);
                             }
                             refreshDisplayItemsFiltered(core, currentFilter);
+                            broadcastChanges();
                         }
                     }
                 }
@@ -182,6 +188,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                             player.drop(extracted, false);
                         }
                         refreshDisplayItems(core);
+                        broadcastChanges();
                     }
                 }
             }
@@ -197,9 +204,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     stackInSlot.shrink((int) inserted);
                     slot.setChanged();
                     refreshDisplayItems(core);
-                } else if (core.isFuel(stackInSlot)) {
-                    // fuel item - would show fuel selection popup in future
-                    // For now, just skip insertion
+                    broadcastChanges();
                 }
             }
         }
@@ -225,7 +230,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     }
 
     public void applySettings(TerminalSettingsPacket packet) {
-        this.visibleRows = Math.max(3, packet.visibleRows());
+        this.visibleRows = Math.clamp(packet.visibleRows(), 3, MAX_DISPLAY_ROWS);
     }
 
     public int getVisibleRows() {
@@ -243,7 +248,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     public void removed(Player player) {
         super.removed(player);
         if (!player.level().isClientSide()) {
-            clearContainer(player, displayInventory);
+            displayInventory.clearContent();
         }
     }
 }

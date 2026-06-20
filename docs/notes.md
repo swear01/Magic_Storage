@@ -51,3 +51,14 @@ Source: https://github.com/refinedmods/refinedstorage2
 - **統一能量池模型**:所有能量池同為 `Map<EnergyType, Long>` 無上限,差異只在來源,降低特例。
 - **參考 RS2 而非依賴**:借設計模式,不加為依賴;加任何依賴前先問使用者(minimize deps)。
 - **絕不整段照抄 RS2**:授權不同;只取模式自行實作。
+
+## Hardening Pass (2026-06-21)
+
+地毯式 bug 掃描 + 修正。關鍵點與借鏡的 RS2/AE2 模式(僅取模式,未照抄):
+
+- **持久化**:`StorageCoreBlockEntity` 每次異動呼叫 `setChanged()`(否則正常存檔/卸載區塊會掉光物品+能量);庫存存讀改存完整 `ItemStack`(含 components:`toStack(1).save(registries)` / `ItemStack.parse(registries, tag)`),否則帶 NBT 的變體存讀後崩塌互蓋而損毀。參考 AE2「持久化完整 item key(item + components),勿只存 item id」。
+- **匯流排/合成原子性**:Import bus 與 `craftItem` 改「先 simulate 再 commit」——能量/材料先驗證全部可行才實際扣除,任一不足則不動任何狀態。參考 RS2 importer / autocrafting 的 `Action.SIMULATE` 兩階段;`ExportBusBlockEntity` 原本已是此 pattern。
+- **insert/extract 契約**:`insertItem(stack, simulate)` 回傳實際接受量、`extractItem` 回傳實際取出量且庫存只減該量;呼叫端必須尊重回傳值(勿丟棄剩餘 → 否則網路滿時吃物)。
+- **數值安全**:`consumeEnergy` 用 `Math.multiplyExact` 防 long 溢位(否則大 multiplier 使守衛失效→倒加能量/無限能量);`extractItem` 的 long→int 夾限。
+- **GUI**:隱藏的 `GhostSlot` 以 `isActive()=index<visibleRows*9` 停用(否則 vanilla 仍對其畫 hover 白框/設 hoveredSlot/tooltip);按鈕點完 `setFocused(null)` 清焦點白邊;`applySettings` 的 `visibleRows` 在 server 端 `Math.clamp(…,3,9)`,不信任 client。
+- **網路**:`onBlockBroken` 用 `server.execute(...)` 延到方塊真的移除後再重算容量(`BreakEvent` 在移除前觸發);`bfsFindCore` 加 `MAX_NETWORK_BLOCKS` 上限;封包 handler 包 `ctx.enqueueWork(...)` 確保 server 執行緒。參考 RS2「post-change 反應、單一 controller」。

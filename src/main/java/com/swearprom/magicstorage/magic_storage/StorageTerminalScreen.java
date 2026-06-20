@@ -3,6 +3,7 @@ package com.swearprom.magicstorage.magic_storage;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -73,19 +74,26 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         this.searchBox.setMaxLength(50);
         this.addRenderableWidget(searchBox);
 
-        sortOrderBtn = Button.builder(Component.literal("v"), b -> sendButton(11))
-                .bounds(x + BUTTON_X, gridTop, BUTTON_W, BUTTON_H).build();
+        sortOrderBtn = Button.builder(Component.literal("v"), b -> { sendButton(11); setFocused(null); })
+                .bounds(x + BUTTON_X, gridTop, BUTTON_W, BUTTON_H)
+                .tooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_order"))).build();
         addRenderableWidget(sortOrderBtn);
 
-        sortModeBtn = Button.builder(Component.literal("S"), b -> sendButton(12))
-                .bounds(x + BUTTON_X, gridTop + 20, BUTTON_W, BUTTON_H).build();
+        sortModeBtn = Button.builder(Component.literal("S"), b -> { sendButton(12); setFocused(null); })
+                .bounds(x + BUTTON_X, gridTop + 20, BUTTON_W, BUTTON_H)
+                .tooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_mode"))).build();
         addRenderableWidget(sortModeBtn);
 
-        searchModeBtn = Button.builder(searchModeLabel(), b -> cycleSearchMode())
-                .bounds(x + BUTTON_X, gridTop + 40, BUTTON_W, BUTTON_H).build();
+        searchModeBtn = Button.builder(searchModeLabel(), b -> { cycleSearchMode(); setFocused(null); })
+                .bounds(x + BUTTON_X, gridTop + 40, BUTTON_W, BUTTON_H)
+                .tooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.search_mode"))).build();
         addRenderableWidget(searchModeBtn);
 
         repositionPlayerInventory();
+        int slotLimit = visibleRows * 9;
+        for (int i = 0; i < StorageTerminalMenu.DISPLAY_SLOTS; i++) {
+            if (menu.slots.get(i) instanceof GhostSlot g) g.activeLimit = slotLimit;
+        }
         sendSettings();
     }
 

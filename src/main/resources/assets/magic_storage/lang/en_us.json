@@ -23,5 +23,8 @@
   "msg.magic_storage.remote_wrong_dimension": "Bound core is in another dimension!",
   "msg.magic_storage.remote_core_unloaded": "Bound core's chunk is not loaded!",
   "tooltip.magic_storage.remote_bound": "Bound to %s",
-  "tooltip.magic_storage.remote_unbound": "Unbound - Shift+Right-click a Storage Core"
+  "tooltip.magic_storage.remote_unbound": "Unbound - Shift+Right-click a Storage Core",
+  "tooltip.magic_storage.sort_order": "Sort order (ascending / descending)",
+  "tooltip.magic_storage.sort_mode": "Sort by (name / quantity / id)",
+  "tooltip.magic_storage.search_mode": "Search mode (text / #tag / @mod)"
 }
