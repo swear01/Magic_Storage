@@ -22,6 +22,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public static final Map<BlockPos, CompoundTag> PENDING = new HashMap<>();
 
     private final Set<BlockPos> connectedBlocks = new HashSet<>();
+    private boolean conflicted = false;
     private int totalTypeSlots = 0;
     private int typeCount = 0;
 
@@ -105,6 +106,10 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return typeCount;
     }
 
+    public boolean isConflicted() {
+        return conflicted;
+    }
+
     private void rebuildCache() {
         if (!cacheDirty) return;
         flatCache.clear();
@@ -118,7 +123,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long insertItem(ItemStack stack, boolean simulate) {
-        if (stack.isEmpty()) return 0;
+        if (stack.isEmpty() || conflicted) return 0;
         ItemKey key = ItemKey.of(stack);
         Item primary = key.item();
 
@@ -345,8 +350,10 @@ public class StorageCoreBlockEntity extends BlockEntity {
     // ===== Network =====
 
     public void rebuildNetwork(Level level) {
+        boolean wasConflicted = conflicted;
         connectedBlocks.clear();
         totalTypeSlots = 0;
+        conflicted = false;
 
         Queue<BlockPos> queue = new ArrayDeque<>();
         Set<BlockPos> visited = new HashSet<>();
@@ -359,6 +366,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             BlockState state = level.getBlockState(current);
             if (state.getBlock() instanceof IStorageNetworkBlock networkBlock) {
                 if (networkBlock.isStorageCore() && !current.equals(getBlockPos())) {
+                    conflicted = true;
                     continue;
                 }
                 connectedBlocks.add(current);
@@ -375,9 +383,13 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 }
             }
         }
+        if (conflicted && !wasConflicted) {
+            MagicStorage.LOGGER.warn("Storage network at {} has multiple cores; multi-core is unsupported, network disabled until extra cores removed.", getBlockPos());
+        }
     }
 
     public boolean tryIncrementalAdd(Level level, BlockPos placedPos) {
+        if (conflicted) return false;
         if (placedPos.equals(getBlockPos())) return false;
         if (connectedBlocks.contains(placedPos)) return false;
 

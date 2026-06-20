@@ -52,7 +52,7 @@ public class ExportBusBlockEntity extends BlockEntity {
         IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, targetPos, facing.getOpposite());
         if (handler == null) return;
 
-        ItemStack toExport = cachedCore.extractItem(filterItem, 1, true);
+        ItemStack toExport = cachedCore.extractItem(filterItem, 64, true);
         if (toExport.isEmpty()) return;
 
         ItemStack leftoverSim = toExport.copy();
@@ -60,9 +60,10 @@ public class ExportBusBlockEntity extends BlockEntity {
             leftoverSim = handler.insertItem(slot, leftoverSim, true);
             if (leftoverSim.isEmpty()) break;
         }
-        if (!leftoverSim.isEmpty()) return;
+        int fits = toExport.getCount() - leftoverSim.getCount();
+        if (fits <= 0) return;
 
-        ItemStack extracted = cachedCore.extractItem(filterItem, 1, false);
+        ItemStack extracted = cachedCore.extractItem(filterItem, fits, false);
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             extracted = handler.insertItem(slot, extracted, false);
             if (extracted.isEmpty()) break;

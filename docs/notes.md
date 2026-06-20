@@ -52,6 +52,8 @@ Source: https://github.com/refinedmods/refinedstorage2
 - **統一能量池模型**:所有能量池同為 `Map<EnergyType, Long>` 無上限,差異只在來源,降低特例。
 - **參考 RS2 而非依賴**:借設計模式,不加為依賴;加任何依賴前先問使用者(minimize deps)。
 - **絕不整段照抄 RS2**:授權不同;只取模式自行實作。
+- **一網一 core(multi-core 不支援)**:`rebuildNetwork` BFS 碰到第二個 core 即設 `conflicted` → 該 core 停止接受物品 + log 警告,避免雙重容量/非決定性;`isConflicted()` 可查、`tryIncrementalAdd` 在 conflicted 時退回 full rebuild。
+- **Bus 吞吐 vs 省資源**:Import/Export bus 每個 cooldown(10 tick)搬「一整疊(≤64)」而非 1 個(吞吐 ×64、操作頻率不變 = 省資源);Export 只抽出目標放得下的量;無 core 時 BFS 也受 cooldown 節流(非每 tick)。
 
 ## Hardening Pass (2026-06-21)
 

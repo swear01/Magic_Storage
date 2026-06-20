@@ -607,6 +607,27 @@ public class TerminalFlowTests {
         });
     }
 
+    @GameTest(template = "platform")
+    public static void multi_core_network_is_disabled(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var coreA = helper.absolutePos(new BlockPos(1, 3, 1));
+        var unit = coreA.east();
+        var coreB = unit.east();
+        level.setBlock(coreA, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(unit, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(coreB, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var be = level.getBlockEntity(coreA);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core A not found"); return; }
+            core.rebuildNetwork(level);
+            if (!core.isConflicted()) { helper.fail("multi-core network should be conflicted"); return; }
+            long inserted = core.insertItem(new ItemStack(Items.STONE, 64));
+            if (inserted != 0) { helper.fail("conflicted network must not accept items, got " + inserted); return; }
+            helper.succeed();
+        });
+    }
+
     private static int dataSlotCount(net.minecraft.world.inventory.AbstractContainerMenu menu) {
         try {
             var f = net.minecraft.world.inventory.AbstractContainerMenu.class.getDeclaredField("dataSlots");
