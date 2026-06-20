@@ -27,6 +27,12 @@ public class ExportBusBlockEntity extends BlockEntity {
     public void tick() {
         if (level == null || level.isClientSide()) return;
 
+        if (cooldown > 0) {
+            cooldown--;
+            return;
+        }
+        cooldown = COOLDOWN_TICKS;
+
         if (cachedCore == null || cachedCore.isRemoved()) {
             cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
             corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
@@ -37,12 +43,6 @@ public class ExportBusBlockEntity extends BlockEntity {
         }
 
         if (filterItem == null) return;
-
-        if (cooldown > 0) {
-            cooldown--;
-            return;
-        }
-        cooldown = COOLDOWN_TICKS;
 
         Direction facing = getBlockState().getValue(ExportBusBlock.FACING);
         BlockPos targetPos = getBlockPos().relative(facing);
