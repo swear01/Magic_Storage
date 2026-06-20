@@ -10,6 +10,14 @@
 
 ---
 
+## Status (updated 2026-06-21)
+
+- **Done + committed + verified** (SelfTest 101, GameTest 72):
+  - A5b fuzzy match (Task 3/6) — commit `c94d37f`
+  - A5a view-settings sync (Task 4) + A4 identity selection (Task 5) + A7 craft preview — commit `116664d`
+  - A1 incremental network growth, **safe scope** (Task 8: incremental on place, full rebuild on break) — commit `3433e76`
+- **Remaining**: A2 Actor (Task 1), A3 change-events (Task 2), and **P3 incremental grid delta (Task 7)** — the large perf rewrite. P3 needs A3 first. Deferred to a fresh session (large/risky/non-urgent).
+
 ## Dispatch strategy (read before spawning agents)
 
 - **Subagents keep failing with API 529 when many spawn at once** — dispatch **at most 2 agents per batch**, on **disjoint files**, and be ready to fall back to main-thread.
