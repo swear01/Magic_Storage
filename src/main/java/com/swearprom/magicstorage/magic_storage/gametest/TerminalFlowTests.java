@@ -521,6 +521,92 @@ public class TerminalFlowTests {
         });
     }
 
+    @GameTest(template = "platform")
+    public static void incremental_add_matches_full_rebuild(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var u1 = corePos.east();
+        var u2 = u1.east();
+        var u3 = u2.east();
+        var u4 = u3.east();
+
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(u1, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(u2, MagicStorage.STORAGE_UNIT_T2.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(u3, MagicStorage.STORAGE_UNIT_T3.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
+            core.rebuildNetwork(level);
+            long baseline = core.getTotalTypeSlots();
+            int baseMembers = core.getConnectedBlocks().size();
+            if (baseline != 10 + 25 + 50) helper.fail("baseline capacity wrong, got " + baseline);
+
+            level.setBlock(u4, MagicStorage.STORAGE_UNIT_T4.get().defaultBlockState(), Block.UPDATE_ALL);
+            boolean grew = core.tryIncrementalAdd(level, u4);
+            if (!grew) helper.fail("tryIncrementalAdd should grow for a neighbour of a connected member");
+            long afterIncremental = core.getTotalTypeSlots();
+            int afterMembers = core.getConnectedBlocks().size();
+            if (afterMembers != baseMembers + 1) helper.fail("incremental should add exactly 1 member, got " + afterMembers);
+
+            core.rebuildNetwork(level);
+            long authoritative = core.getTotalTypeSlots();
+            if (afterIncremental != authoritative)
+                helper.fail("incremental capacity " + afterIncremental + " != full-rebuild " + authoritative);
+            if (authoritative != 10 + 25 + 50 + 100) helper.fail("full-rebuild capacity wrong, got " + authoritative);
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void incremental_add_rejects_non_adjacent(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var u1 = corePos.east();
+        var detached = corePos.south().south();
+
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(u1, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
+            core.rebuildNetwork(level);
+
+            level.setBlock(detached, MagicStorage.STORAGE_UNIT_T2.get().defaultBlockState(), Block.UPDATE_ALL);
+            boolean grew = core.tryIncrementalAdd(level, detached);
+            if (grew) helper.fail("tryIncrementalAdd must reject a block not touching the connected set");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void break_middle_unit_full_rebuild_capacity(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var u1 = corePos.east();
+        var u2 = u1.east();
+        var u3 = u2.east();
+
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(u1, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(u2, MagicStorage.STORAGE_UNIT_T2.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(u3, MagicStorage.STORAGE_UNIT_T3.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
+            core.rebuildNetwork(level);
+            if (core.getTotalTypeSlots() != 10 + 25 + 50) helper.fail("pre-break capacity wrong, got " + core.getTotalTypeSlots());
+
+            level.removeBlock(u2, false);
+            core.rebuildNetwork(level);
+            if (core.getTotalTypeSlots() != 10) helper.fail("after breaking middle unit, only u1 stays connected: expected 10, got " + core.getTotalTypeSlots());
+            helper.succeed();
+        });
+    }
+
     private static int dataSlotCount(net.minecraft.world.inventory.AbstractContainerMenu menu) {
         try {
             var f = net.minecraft.world.inventory.AbstractContainerMenu.class.getDeclaredField("dataSlots");

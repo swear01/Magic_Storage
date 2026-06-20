@@ -1,8 +1,5 @@
 package com.swearprom.magicstorage.magic_storage;
 
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -365,9 +362,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
                     continue;
                 }
                 connectedBlocks.add(current);
-                if (state.getBlock() instanceof StorageUnitBlock unitBlock) {
-                    totalTypeSlots += unitBlock.getTypeContribution();
-                }
+                totalTypeSlots += capacityOf(state);
             }
 
             for (Direction dir : Direction.values()) {
@@ -380,6 +375,35 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 }
             }
         }
+    }
+
+    public boolean tryIncrementalAdd(Level level, BlockPos placedPos) {
+        if (placedPos.equals(getBlockPos())) return false;
+        if (connectedBlocks.contains(placedPos)) return false;
+
+        BlockState state = level.getBlockState(placedPos);
+        if (!(state.getBlock() instanceof IStorageNetworkBlock networkBlock)) return false;
+        if (networkBlock.isStorageCore()) return false;
+
+        boolean adjacent = false;
+        for (Direction dir : Direction.values()) {
+            if (connectedBlocks.contains(placedPos.relative(dir))) {
+                adjacent = true;
+                break;
+            }
+        }
+        if (!adjacent) return false;
+
+        connectedBlocks.add(placedPos);
+        totalTypeSlots += capacityOf(state);
+        return true;
+    }
+
+    private int capacityOf(BlockState state) {
+        if (state.getBlock() instanceof StorageUnitBlock unitBlock) {
+            return unitBlock.getTypeContribution();
+        }
+        return 0;
     }
 
     @Override

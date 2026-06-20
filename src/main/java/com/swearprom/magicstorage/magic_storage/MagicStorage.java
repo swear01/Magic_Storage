@@ -202,7 +202,7 @@ public class MagicStorage {
         Level level = (Level) event.getLevel();
         BlockPos pos = event.getPos();
         if (level.getBlockState(pos).getBlock() instanceof IStorageNetworkBlock) {
-            findCoresAndRebuild(level, pos);
+            findCoresAndGrow(level, pos);
         }
     }
 
@@ -246,6 +246,38 @@ public class MagicStorage {
         for (BlockPos corePos : foundCores) {
             if (level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core) {
                 core.rebuildNetwork(level);
+            }
+        }
+    }
+
+    static void findCoresAndGrow(Level level, BlockPos placedPos) {
+        Set<BlockPos> foundCores = new HashSet<>();
+
+        for (Direction dir : Direction.values()) {
+            BlockPos neighbor = placedPos.relative(dir);
+            if (!level.hasChunkAt(neighbor)) continue;
+
+            var state = level.getBlockState(neighbor);
+            if (state.getBlock() instanceof IStorageNetworkBlock) {
+                StorageCoreBlockEntity core = bfsFindCore(level, neighbor);
+                if (core != null) {
+                    foundCores.add(core.getBlockPos());
+                }
+            }
+        }
+
+        if (foundCores.isEmpty()) {
+            StorageCoreBlockEntity selfCore = bfsFindCore(level, placedPos);
+            if (selfCore != null) {
+                foundCores.add(selfCore.getBlockPos());
+            }
+        }
+
+        for (BlockPos corePos : foundCores) {
+            if (level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core) {
+                if (!core.tryIncrementalAdd(level, placedPos)) {
+                    core.rebuildNetwork(level);
+                }
             }
         }
     }
