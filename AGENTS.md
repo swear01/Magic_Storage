@@ -1,64 +1,129 @@
-<!-- FOR AI AGENTS - Human readability is a side effect, not a goal -->
-<!-- Last updated: 2026-05-19 -->
+# BEGIN agents_rule-base
+# Agent Rules
 
-# AGENTS.md — magic_storage
+## Core Rules
 
-Scoped rules for the `magic_storage` Minecraft mod. These override the root AGENTS.md when working inside this directory.
+### Stay On Task
+Execute ONLY what was requested. If unclear, STOP and ASK. Do NOT assume.
+One task at a time. After completing the task, STOP.
 
-## Project Overview
+### Search First, Never Guess
+NEVER fabricate code, file paths, function names, or API behavior from memory.
+BEFORE writing or editing, read the existing code first.
+BEFORE answering about code, search with Grep or Glob.
+BEFORE answering about libraries, APIs, or tools, search the web or official docs.
+BEFORE answering about anything time-sensitive (current versions, recent changes,
+live data, pricing, compatibility) — do a web search. Never rely on memory alone.
+If you don't know, use tools — codebase search AND web search. Do NOT guess.
 
-| Key | Value |
-|-----|-------|
-| Mod name | magic_storage |
-| Type | Minecraft storage mod (NeoForge) |
-| Language | Java |
-| Build tool | Gradle |
+### Code Quality
+Match existing code style, naming, and patterns.
+No new libraries unless asked. No comments unless asked.
+Keep changes minimal.
 
-## Commands
+### No-Useless Options
+When changing behavior, change it — do not keep the old behavior as an option.
+Never add flags, parameters, or config options that were not explicitly requested.
+If you are about to add an "option to preserve old behavior," stop: just change the behavior.
 
-| Task | Command |
-|------|---------|
-| Build | `./gradlew build` |
-| Test | `./gradlew test` |
-| Run client | `./gradlew runClient` |
+## No Silent Fallback
 
-## Reference Source — Refined Storage 2
+### Banned Behaviors
+- Silently replacing a failing API/model/library/tool with another
+- Returning dummy/mock/empty/default results as if valid
+- Broad catch-and-continue (`except Exception`, `catch (error)`, etc.)
+- Skipping tests, linters, type checks, or verifiers
+- Downgrading implementation scope just to finish
+- Hiding failures behind "best effort"
 
-**When unsure how to implement storage mechanics, network logic, grid UI, or item/fluid handling — refer to the Refined Storage 2 source code first.**
+### Allowed Behaviors
+- Retry the exact same operation once if transient
+- Propose a fallback, but STOP before implementing it
+- Use fallback only when explicitly approved by the user
 
-| Topic | Where to look |
-|-------|--------------|
-| Storage network architecture | `refinedstorage2-platform-common/src/main/java/.../network/` |
-| Grid (item browser UI) | `refinedstorage2-platform-common/src/main/java/.../grid/` |
-| Storage provider / disk API | `refinedstorage2-api/src/main/java/.../storage/` |
-| Item/fluid resource handling | `refinedstorage2-api/src/main/java/.../resource/` |
-| Autocrafting | `refinedstorage2-platform-common/src/main/java/.../autocrafting/` |
-| NeoForge platform bridge | `refinedstorage2-platform-neoforge/` |
+### When Blocked, Report
+1. What failed
+2. Exact command/tool/API that failed
+3. Relevant error output
+4. Fallback considered but NOT implemented
+5. Decision needed from user
 
-**Source:** https://github.com/refinedmods/refinedstorage2
+## Docs Lifecycle
 
-Workflow when stuck:
-1. Search the RS2 repo for the interface or class name you need.
-2. Read the implementation to understand the pattern.
-3. Adapt (do not copy wholesale — license differs).
-4. If still unsure, ask the user.
+- Active docs live under `docs/`.
+- Historical docs live under `archive/` (mirrors original path).
+- Every behavior/API/CLI/config change must update the relevant active doc.
+- Obsolete docs must be archived, not left active.
+- Archived docs must not be treated as current truth.
+- Active docs must not link to archived docs as active references.
 
-## Heuristics
+Docs must be fully updated before every commit. No exceptions.
 
-| When | Do |
-|------|----|
-| Unsure how RS2 does X | Browse https://github.com/refinedmods/refinedstorage2 first |
-| Adding a new network component | Model after RS2's `NetworkNode` pattern |
-| Need an item/fluid abstraction | Check RS2's `ResourceKey` / `ResourceAmount` API |
-| Adding dependency | Ask user first — minimize deps |
+If no docs update is needed, explicitly report:
 
-## Boundaries
+    Docs checked; no documentation update required.
 
-### Always Do
-- Follow NeoForge conventions for capability registration.
-- Keep network logic server-side; send packets for client sync.
-- Reference RS2 source for design guidance when implementing storage features.
+## Archive Policy
 
-### Never Do
-- Copy RS2 source verbatim (different license).
-- Implement client-side storage state — always sync from server.
+**Archive vs Delete:**
+- Archive: doc has historical value (old API, past decision, superseded design)
+- Delete: doc is simply wrong, redundant, or never useful — `git rm` it directly
+
+Do not archive to avoid decisions. Archiving inflates repo size; delete what has no value.
+
+Use `agents_rule archive <file>` to archive docs. Do NOT manually move files.
+
+Archive header prepended automatically:
+
+    > Archived: YYYY-MM-DD
+    > Reason: <reason>
+    > Replacement: <replacement-or-none>
+    > Status: historical only; do not use as active truth.
+
+Archives live under `archive/` at project root, preserving original path:
+
+    docs/api.md  →  archive/docs/api.md
+
+The `archive/` tree is excluded from ripgrep by default.
+
+When searching, prefer `rg` over `grep` — it respects `.rgignore` automatically.
+If `grep` must be used, always exclude archive/:
+
+    grep -r --exclude-dir=archive ...
+
+## Verification Policy
+
+- Run the smallest relevant verification command before declaring done.
+- Never claim tests passed unless they actually ran and passed.
+- If verification cannot run, explain exactly why.
+
+Final response must include:
+- Files changed
+- Docs updated, or: `Docs checked; no documentation update required.`
+- Verification command run and result
+- Remaining risks
+
+## Git-Safe Move Policy
+
+All tracked file moves MUST use `git mv`. Direct `mv`/`rename` on tracked files is forbidden.
+
+For docs archiving: always use `agents_rule archive`. This ensures the move is recorded as a rename in Git, not delete+add.
+
+Expected `git status` after archiving:
+
+    R  docs/old.md -> archive/docs/old.md
+# END agents_rule-base
+
+## Project Docs
+
+- Overview: docs/overview.md
+- Structure: docs/structure.md
+- Notes: docs/notes.md
+- Plan: docs/plan.md
+- Roadmap: docs/roadmap.md
+
+## Mod-Specific Essentials
+
+- `magic_storage` — NeoForge 1.21.1 storage+crafting mod. Build: `./gradlew build`.
+- When stuck on storage/network/grid/resource code, **check Refined Storage 2 source first** (patterns only, never copy verbatim — license differs). Full reference table + workflow in `docs/notes.md`.
+- Keep all network/storage logic **server-side**; sync to client via packets. Never store storage state client-side.
