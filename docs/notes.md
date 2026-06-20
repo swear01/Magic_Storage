@@ -23,7 +23,7 @@ Source: https://github.com/refinedmods/refinedstorage2
 
 - **網路邏輯一律伺服器端**;客戶端靠封包同步,絕不在客戶端保存儲存狀態。
 - Capability 註冊遵循 NeoForge 慣例。
-- `PLAN.md` 開頭寫「即將實作」已過時:實際已有 ~36 個 Java 檔與 SelfTest/GameTest,以程式碼為準。
+- 實作進度以**程式碼為準**:已有 ~36 個 Java 檔 + SelfTest/GameTest;設計細節見 `PLAN.md`,即時狀態見 `docs/plan.md`。
 - 建置前需設 `JAVA_HOME`(JDK 21,見根 repo `docs/notes.md`)。
 
 ## Decisions
