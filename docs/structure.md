@@ -7,7 +7,7 @@
 | `src/main/resources/data/magic_storage/` | 資料包(配方、loot、tags)。 |
 | `src/main/resources/data/minecraft/` | 對 vanilla 的資料覆寫/擴充。 |
 | `src/main/templates/META-INF/` | `neoforge.mods.toml` 模板(Gradle 變數注入)。 |
-| `docs/specs/` | 設計規格(如 terminal UI 重設計)。 |
+| `docs/specs/` | 進行中的設計規格(目前空);實作完成的規格依規則 archive 至 `archive/docs/specs/`。 |
 | `PLAN.md` | 完整設計計劃書(里程碑、能量系統、GUI)。 |
 
 ## Module Boundaries

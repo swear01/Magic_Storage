@@ -2,7 +2,7 @@
 
 > 靈感來源：Terraria Magic Storage  
 > 目標平台：Minecraft（NeoForge）  
-> 狀態：規劃完成，即將實作
+> 狀態：核心已實作（即時進度見 `docs/plan.md`；本文件為設計參考）
 
 ---
 

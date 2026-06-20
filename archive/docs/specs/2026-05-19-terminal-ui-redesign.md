@@ -1,3 +1,8 @@
+> Archived: 2026-06-20
+> Reason: Implemented: StorageTerminalScreen redesign (imageWidth=210, dynamic MIN/MAX_VISIBLE_ROWS, RS2-style buttons, searchBox) shipped in code; spec superseded.
+> Replacement: src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java
+> Status: historical only; do not use as active truth.
+
 # Magic Storage Terminal UI 修正設計文件
 
 **日期：** 2026-05-19  
