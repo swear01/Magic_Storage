@@ -52,7 +52,7 @@ public class RemoteTerminalItem extends Item {
                 return InteractionResultHolder.fail(stack);
             }
 
-            StorageCoreBlockEntity core = MagicStorage.bfsFindCore(level, corePos);
+            StorageCoreBlockEntity core = level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity c ? c : null;
             if (core == null) {
                 player.displayClientMessage(Component.translatable("msg.magic_storage.remote_unbound"), true);
                 return InteractionResultHolder.fail(stack);
