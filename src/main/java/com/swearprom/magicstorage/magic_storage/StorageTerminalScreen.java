@@ -32,9 +32,9 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     private static final int SEARCH_BG_X = 100;
     private static final int SEARCH_BG_W = 72;
 
-    private static final int BUTTON_X = 188;
-    private static final int BUTTON_W = 16;
-    private static final int BUTTON_H = 16;
+    private static final int BUTTON_X = TerminalLayout.viewButtonX();
+    private static final int BUTTON_W = TerminalLayout.VIEW_BUTTON_SIZE;
+    private static final int BUTTON_H = TerminalLayout.VIEW_BUTTON_SIZE;
 
     private EditBox searchBox;
     private boolean isScrolling;
@@ -73,8 +73,6 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
         int x = leftPos;
         int y = topPos;
-        int gridTop = y + getTopHeight();
-
         this.searchBox = new EditBox(font, x + SEARCH_X, y + 6, SEARCH_W, font.lineHeight, Component.translatable("gui.magic_storage.search"));
         this.searchBox.setBordered(false);
         this.searchBox.setVisible(true);
@@ -83,15 +81,15 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         this.addRenderableWidget(searchBox);
 
         sortOrderBtn = Button.builder(sortOrderLabel(), b -> { sendButton(11); setFocused(null); })
-                .bounds(x + BUTTON_X, gridTop + buttonYOffset(0), BUTTON_W, BUTTON_H).build();
+                .bounds(x + BUTTON_X, y + TerminalLayout.viewButtonY(0), BUTTON_W, BUTTON_H).build();
         addRenderableWidget(sortOrderBtn);
 
         sortModeBtn = Button.builder(sortModeLabel(), b -> { sendButton(12); setFocused(null); })
-                .bounds(x + BUTTON_X, gridTop + buttonYOffset(1), BUTTON_W, BUTTON_H).build();
+                .bounds(x + BUTTON_X, y + TerminalLayout.viewButtonY(1), BUTTON_W, BUTTON_H).build();
         addRenderableWidget(sortModeBtn);
 
         searchModeBtn = Button.builder(searchModeLabel(), b -> { sendButton(13); setFocused(null); })
-                .bounds(x + BUTTON_X, gridTop + buttonYOffset(2), BUTTON_W, BUTTON_H).build();
+                .bounds(x + BUTTON_X, y + TerminalLayout.viewButtonY(2), BUTTON_W, BUTTON_H).build();
         addRenderableWidget(searchModeBtn);
 
         updateViewSettingButtons();
@@ -134,12 +132,6 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
             moved.index = i;
             menu.slots.set(i, moved);
         }
-    }
-
-    private int buttonYOffset(int index) {
-        int gridH = visibleRows * ROW_HEIGHT;
-        int span = gridH - BUTTON_H;
-        return index * span / 2;
     }
 
     private Component searchModeLabel() {

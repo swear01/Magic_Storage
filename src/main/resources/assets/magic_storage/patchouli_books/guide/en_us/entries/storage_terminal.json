@@ -6,7 +6,7 @@
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:storage_terminal",
-      "text": "The $(thing)Storage Terminal$() is your primary interface to the network. It displays a $(thing)6x9 grid$() of all stored items with a scroll bar for browsing."
+      "text": "The $(thing)Storage Terminal$() is your primary interface to the network. It displays a dynamic grid of stored items, from $(thing)3 to 9 rows$() depending on window height, with a scroll bar for browsing."
     },
     {
       "type": "patchouli:text",
@@ -14,7 +14,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Putting items:$()$(br)$(li)$(thing)Shift-click$() items from your inventory to insert them into the network.$(br2)$(thing)Search bar:$() Type at the top to filter displayed items by name. Case-sensitive filtering is supported.$(br2)$(thing)Tooltips:$() Hover over any item to see its full name and count."
+      "text": "$(thing)Putting items:$()$(br)$(li)$(thing)Shift-click$() items from your inventory to insert them into the network.$(br2)$(thing)Search bar:$() Type at the top to filter displayed items. Search is case-insensitive and supports normal text, $(thing)#tag$(), and $(thing)@mod$() modes via the search-mode button.$(br2)$(thing)Tooltips:$() Hover over any visible item to see its full name and count."
     },
     {
       "type": "patchouli:text",

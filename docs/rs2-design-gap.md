@@ -9,13 +9,13 @@
 
 | # | RS2 慣例 | Magic_Storage 現況 | 缺口/風險 | 建議 | 工作量 |
 |---|---------|------------------|----------|------|--------|
-| A1 | **持久化 network graph + node visitor 增量更新**:RS2 維護常駐的 NodeGraph,方塊增刪時只增量更新受影響節點 | 每次變更從 core 全圖 BFS;無 core 的 bus 每 N tick 重掃(已加上限) | 大網路每次變更 O(全網)重掃,擴展性差 | 改成常駐鄰接圖 + 增量 invalidate(core 持圖,方塊事件只更新局部) | 大 |
+| A1 | **持久化 network graph + node visitor 增量更新**:RS2 維護常駐的 NodeGraph,方塊增刪時只增量更新受影響節點 | 已採用安全範圍:放置時 `tryIncrementalAdd` O(1) 成長;破壞/不確定拓樸仍 full `rebuildNetwork`;無 core 的 bus 每 cooldown 重掃(已加上限) | 大網路破壞/分裂仍 O(全網);尚無常駐 adjacency graph | 若真的需要,再改成常駐鄰接圖 + 局部 invalidation;目前低優先 | 大 |
 | A2 | **統一 Storage 介面**:`insert/extract(resource, amount, Action, Actor)`,回傳實際處理量 | 已有 item map + simulate(本次修);**無 Actor(來源)**、僅 item | 無來源追蹤(autocraft/防自我抽取需要);只支援 item | 加 `Actor` 參數(為未來預留);泛型資源(流體)可暫緩 | 中 |
 | A3 | **事件驅動 + 增量 delta**:storage 變動發事件,grid/autocraft 訂閱只收差異 | `cacheDirty` flag → 每次**整份重建** display list + 整份同步 | 頻寬與 CPU 浪費;大量物品時卡 | grid 改增量更新(只送變動的資源);storage 發變動事件 | 中 |
-| A4 | **以資源身分(ResourceKey)為主,而非槽位 index**:選取、捲動、配方面板都綁資源身分 | crafting 選取用 grid slot index(排序/捲動後指向錯物品 — 待修 #5) | 排序/捲動後 UI 指向錯物品 | 選取/配方面板改綁 `ItemKey`(已在剩餘清單) | 小-中 |
-| A5 | **同步的 view 設定 + 比對模式(fuzzy/ignore-NBT/ignore-damage)** | 排序/搜尋**只在 client**(desync 待修 #7);配對僅**完全相同 components**(本次合成配對 bug 根源) | 按鈕標籤不反映真實狀態;帶 NBT 材料配不到 | view 設定用 data slot 同步;加比對模式(至少 fuzzy/ignore-NBT 供合成配對) | 中 |
+| A4 | **以資源身分(ResourceKey)為主,而非槽位 index**:選取、捲動、配方面板都綁資源身分 | 已採用:`crafting_terminal` selection 以 `ItemKey` 身分同步,非 grid slot index | (大致到位) | 後續 UI 新增選取功能仍要綁資源身分 | 小(慣例) |
+| A5 | **同步的 view 設定 + 比對模式(fuzzy/ignore-NBT/ignore-damage)** | 已採用:sort/order/search 模式 server 同步;合成材料 fuzzy 配對走 `Ingredient.test` | (大致到位) | 後續若加 ignore-damage/ignore-NBT UI,仍需 server 權威同步 | 小-中 |
 | A6 | **simulate-then-commit 貫穿所有操作**(I/O、autocraft) | 本次已補:import bus、craftItem;Core insert/extract 有 simulate | (大致到位) | 確保所有未來新增的搬運/合成都走 simulate-first | 小(慣例) |
-| A7 | **合成前 preview「缺什麼/可做幾個」**:RS2 autocraft 先算缺料再執行 | 無 preview;直接試、失敗無明確回饋 | 玩家不知為何不能合成 | 用已有 simulate 算「可做 N 個 / 缺 X」顯示在配方面板 | 小-中 |
+| A7 | **合成前 preview「缺什麼/可做幾個」**:RS2 autocraft 先算缺料再執行 | 已採用:配方面板用 simulate path 顯示可做數/缺料 | (大致到位) | 新增 recipe type 時保持 preview 與 execute 共用 simulate contract | 小(慣例) |
 
 ## B. 故意分歧(要改哲學才採用 — 先別動,列為選項)
 
@@ -29,11 +29,9 @@
 
 ## C. 建議採用順序(契合哲學者)
 
-1. **A4 資源身分化選取** + **A5 view 設定同步 / fuzzy 配對** — 修掉現有 desync 與合成配對 bug,UX 直接受益。(已部分在剩餘修正清單)
-2. **A3 事件驅動 + 增量 grid** — 解決大量物品時的效能/頻寬;為 A1 鋪路。
-3. **A7 合成 preview** — 低成本、高 UX(用已有 simulate)。
-4. **A2 Actor 參數** — 低成本預留,為任何未來自動化鋪路。
-5. **A1 增量 network graph** — 擴展性根本改善,但工程較大,可最後做。
+1. **A3 事件驅動 + 增量 grid** — 解決大量物品時的效能/頻寬;但目前分頁式 grid(≤81 格,vanilla 已增量同步)價值偏低,可持續延後。
+2. **A2 Actor 參數** — 低成本預留,為任何未來自動化鋪路。
+3. **A1 常駐 network graph** — 目前只採用安全範圍的放置增量;若大網路破壞/分裂成瓶頸再做完整常駐圖。
 
 ## 參考
 

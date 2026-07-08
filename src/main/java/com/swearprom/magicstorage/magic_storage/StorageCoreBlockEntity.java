@@ -196,7 +196,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             if (matchesFilter(key, filter, level)) {
                 ItemStack stack = key.toStack(1);
                 if (!stack.isEmpty()) {
-                    stack.setCount((int) Math.min(count, stack.getMaxStackSize()));
+                    stack.setCount((int) Math.min(count, Integer.MAX_VALUE));
                     result.add(stack);
                 }
             }

@@ -427,4 +427,4 @@ class VariantStore {
 | M9 | 同物品多配方（Compact/Expanded 切換、`[◀][▶]` 配方切換） |
 | M10 | `remote_terminal`（Tier 3 物品）：Shift+右鍵綁定、右鍵遠端 GUI |
 | M11 | Import/Export Bus 自動化、NBT 物品顯示優化、背包開關 |
-| M12 | Patchouli 遊戲內指南書（使用教學、配方參考、升級路線） |
+| M12 | Patchouli 遊戲內指南書（資源已加入且 content 路徑已修;Prism dev 0.1.3 log 已載入 17 jsons,實機開書可看到分類與說明內容;後續僅剩文案擴充/修整） |

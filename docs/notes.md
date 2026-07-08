@@ -14,10 +14,70 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 |------|------|
 | 編譯(最快檢查) | `./gradlew compileJava` |
 | 完整建置 | `./gradlew build` |
+| 版本化建置 + Prism dev 部署 | `python3 scripts/deploy_prism_dev.py`（自動 bump `mod_version` patch、`./gradlew build`、備份舊 jar、確保 mods 內只剩一個 `magic_storage-*.jar`;若 build 或 jar 檢查失敗會還原原本 `mod_version` 且不搬動 mods） |
 | 自動測試(SelfTest 於 mod init + GameTest) | `./gradlew runGameTestServer` |
-| **手動測試 GUI**(終端機介面只能這樣看) | `./gradlew runClient` |
+| **手動測試 GUI**(終端機介面只能這樣看) | `./gradlew runClient` 或 Prism dev |
+| Prism dev + Computer Use GUI 驗證 | 見下方「Prism dev / Computer Use」 |
 
-手動測 GUI:`runClient` 開遊戲 → 創造模式 → 放 `storage_core`,旁邊接 `storage_unit`,再接 `storage_terminal` / `crafting_terminal` → 右鍵終端機開介面。調整視窗大小可驗證動態列數。GUI 外觀無法用 GameTest 驗證,只能 `runClient` 目視。
+手動測 GUI:`runClient` 或 Prism dev 開遊戲 → 創造模式 → 放 `storage_core`,旁邊接 `storage_unit`,再接 `storage_terminal` / `crafting_terminal` → 右鍵終端機開介面。調整視窗大小可驗證動態列數。GUI 外觀無法用 GameTest 驗證,只能實機目視/截圖。
+
+### Prism dev / Computer Use
+
+當需要由 Computer Use 讀取/操作 Minecraft 視窗時,不要直接 target Prism 產生的 `java` 子程序:Prism-launched LWJGL 視窗沒有正常 `.app` bundle identity,`get_app_state("java")` / `get_app_state("Minecraft...")` 會失敗。已驗證可行做法是用 wrapper 讓 Prism 透過真正 macOS app 啟動 Java:
+
+- app bundle:`/tmp/MagicStorageMinecraftCU.app`,bundle id:`run.hapi.magicstorage.minecraftcu`。Computer Use 用 bundle id: `get_app_state("run.hapi.magicstorage.minecraftcu")`。
+- Prism dev instance 設定:`~/Library/Application Support/PrismLauncher/instances/dev/instance.cfg` 需有 `OverrideCommands=true` 與 `WrapperCommand=/tmp/magic_storage_minecraft_cu_wrapper.sh`。
+- wrapper 必須把 Prism `stdin` 透過 FIFO 轉接進 `.app` 內的 Java;Prism 的 `NewLaunch.jar` 會從 stdin 讀 launch script,單純 `open .app --args java ...` 會因 EOF 變成 `Launch aborted by the launcher`。
+- 目前這是本機 `/tmp` wrapper;若 `/tmp` 被清掉,先重建 wrapper 或把 dev instance 的 `WrapperCommand` 清空,否則 Prism dev 會找不到 wrapper。
+- Computer Use 能讀截圖與送鍵盤;LWJGL canvas 可能讓 `click` 回 `noWindowsAvailable`,選單優先用 `Tab`/`Return`。遊戲內要觸發右鍵時,最穩的是啟動前暫時把 `options.txt` 的 `key_key.use` 改成鍵盤(例:`key.keyboard.u`)並把 `pauseOnLostFocus=false`,用完立刻還原;滑鼠視角可用 CGEvent delta 輔助,不要用 Computer Use drag 對準方塊(會等同左鍵破壞方塊)。
+- LWJGL 文字輸入目前不可靠:Computer Use `type_text` / paste 對 Minecraft chat、creative search、terminal search 不穩。能用點擊/滾輪完成就避免輸入;Patchouli guide 可從 creative search tab 捲到底部拿 `Magic Storage Guide` 再用 `u` 開。若一定要送 chat 指令,先把 macOS input source 切到 `ABC`;注音輸入法會讓 `/tp`/`/setblock` 之類指令輸入成錯字。
+- 2026-07-07 Prism dev fullscreen 實測:Storage Terminal 與 Crafting Terminal 都能開啟且版面未與 EMI 重疊。
+- 2026-07-08 Prism dev 已部署並實機驗證 `magic_storage-0.1.3.jar`(0.1.3 build + GameTest 已驗證,mods 內僅此一個 Magic Storage jar)。`latest.log` 看到 `SelfTest: 104 passed` 與 `BookContentResourceListenerLoader preloaded 17 jsons`;Patchouli content 路徑問題已修。Computer Use 在 native macOS fullscreen 下已可讀畫面並操作 Storage Terminal / Crafting Terminal:左側 view buttons 可點、>64 數量顯示為 128/192/8192 等實際網路數量。當 macOS 處於 lock screen 時,Computer Use 會 `cgWindowNotFound` 且全螢幕截圖只會看到鎖定畫面,必須先解鎖再做 GUI 目視/點擊驗證。
+- 2026-07-08 再測發現:**不要在啟動前用 Minecraft `fullscreen:true` 搭配 macOS Stage Manager/Computer Use**。LWJGL 啟動即 fullscreen 會被 Stage Manager 放到偏移/裁切的桌面區域,截圖與 click 座標全偏。正確 GUI 驗證開法是先固定 windowed (`fullscreen:false`, `overrideWidth/Height`) + Prism `-w` 直接進測試世界;世界載入且視窗已 foreground 後,再用 F11/原生 fullscreen 切到「好全螢幕」並用截圖確認沒有偏移/裁切。若截圖仍偏,立刻 F11 回 windowed,不要繼續點 GUI。本機實測直接執行 `/Applications/.../prismlauncher -l dev -w "New World"` 可能只印出 world 參數後退出;用 `open -a "Prism Launcher" --args -l dev -w "New World"` 較穩。
+
+驗證流程(先 windowed 直接進世界,再延遲切「好全螢幕」):
+
+```bash
+rg -n '^(OverrideCommands|WrapperCommand)=' \
+  "$HOME/Library/Application Support/PrismLauncher/instances/dev/instance.cfg"
+python3 - <<'PY'
+from pathlib import Path
+p = Path.home() / 'Library/Application Support/PrismLauncher/instances/dev/minecraft/options.txt'
+text = p.read_text()
+replacements = {
+    'fullscreen:true': 'fullscreen:false',
+    'pauseOnLostFocus:true': 'pauseOnLostFocus:false',
+    'key_key.use:key.mouse.right': 'key_key.use:key.keyboard.u',
+}
+for old, new in replacements.items():
+    text = text.replace(old, new)
+import re
+text = re.sub(r'^overrideWidth:.*$', 'overrideWidth:1280', text, flags=re.MULTILINE)
+text = re.sub(r'^overrideHeight:.*$', 'overrideHeight:720', text, flags=re.MULTILINE)
+if 'overrideWidth:' not in text:
+    text += '\noverrideWidth:1280\n'
+if 'overrideHeight:' not in text:
+    text += 'overrideHeight:720\n'
+p.write_text(text)
+PY
+open -a "Prism Launcher" --args -l dev -w "New World"
+```
+
+啟動後用 Computer Use 讀 `run.hapi.magicstorage.minecraftcu`;因為 `--world` 會跳過主選單/世界列表,進世界後先截圖確認 windowed 畫面完整。接著按 macOS 綠色 fullscreen button(或送 F11)切 fullscreen,再截圖確認:
+
+- Minecraft 內容沒有被 Stage Manager 側欄/桌面裁切。
+- 遊戲畫面左下角版本文字與底部 hotbar/GUI 坐標完整可見。
+- Computer Use `get_app_state` 沒有 timeout 或 `cgWindowNotFound`。
+
+只有以上通過才算「好全螢幕」。然後用 `u` 開 `storage_terminal` / `crafting_terminal`,檢查左側 view buttons、>64 數量與 Patchouli 書,再檢查 log。驗完要把 `pauseOnLostFocus` 與 `key_key.use` 還原成平常值(`true` / `key.mouse.right`);`fullscreen` 不寫回 `true`,讓下次仍從安全 windowed 啟動。
+
+
+```bash
+rg -n 'Magic Storage [0-9.]+|SelfTest: 104 passed|BookContentResourceListenerLoader preloaded|advanced_container_set_data|ERROR|FATAL|Caused by' \
+  "$HOME/Library/Application Support/PrismLauncher/instances/dev/minecraft/logs/latest.log"
+```
+
+期望:看到目前部署版本、`SelfTest: 104 passed, 0 failed, 104 total`、Patchouli `preloaded 17 jsons`,且沒有 `advanced_container_set_data` / `ERROR` / `FATAL` / `Caused by`。
 
 ## Reference Source — Refined Storage 2
 
@@ -40,11 +100,14 @@ Source: https://github.com/refinedmods/refinedstorage2
 
 - **網路邏輯一律伺服器端**;客戶端靠封包同步,絕不在客戶端保存儲存狀態。
 - Capability 註冊遵循 NeoForge 慣例。
-- 實作進度以**程式碼為準**:已有 ~36 個 Java 檔 + SelfTest/GameTest;設計細節見 `PLAN.md`,即時狀態見 `docs/plan.md`。
+- 實作進度以**程式碼為準**:已有 ~37 個 Java 檔 + SelfTest/GameTest;設計細節見 `PLAN.md`,即時狀態見 `docs/plan.md`。
 - 建置前需設 `JAVA_HOME`(JDK 21,見根 repo `docs/notes.md`)。
 - **SelfTest 在 dedicated server 也會跑**(mod 建構時呼叫):絕不可從 SelfTest 參照 client-only 類別(如 `*Screen` extends `AbstractContainerScreen`),否則 server 端 RuntimeDistCleaner 會擋下、整個 mod 載入失敗。純邏輯放 dist-中性類別(如 enum:`SearchMode.apply`)再測。
 - **`Slot.x`/`y` 是 `final`**:GUI 動態調整版面時不能改 slot 座標,需在 Screen(client)端 `menu.slots.set(i, new Slot(...))` 重建 slot(座標只供 client 渲染/命中,不上傳)。見 `StorageTerminalScreen.repositionPlayerInventory`。
 - **終端機背景為程式繪製**(`StorageTerminalScreen.drawPanels`,`g.fill`/`renderOutline`):`grid.png`/`crafting_grid.png` 是針對固定 6 列手繪,且 6 參數 `blit` 以 256×256 正規化、動態高度會破圖,故改程式繪製扁平面板;那兩張 PNG 已不再使用。
+- **終端 view 控制在左側 rail**:sort order / sort mode / search mode 三個按鈕位置走 dist-neutral `TerminalLayout`,位於 terminal 面板左外側(類 RS2 side buttons),避免佔用 grid/scrollbar;SelfTest 守護不可重新塞回右側。
+- **顯示數量不可 clamp 到 max stack size**:`StorageCoreBlockEntity.getDisplayStacks` 的 display `ItemStack` count 代表網路實際數量(夾到 `Integer.MAX_VALUE`),可顯示 999 等大於 64 的數字;`StorageTerminalMenu` 的 display-only `SimpleContainer` 必須 override `getMaxStackSize(ItemStack)` 避免 `setItem` 再夾回 64。取物仍由 menu click path 決定每次搬運量。
+- **Patchouli 1.20+ mod book 路徑**:`book.json` 留在 `data/magic_storage/patchouli_books/guide/book.json`,但 categories/entries/templates 必須放 `assets/magic_storage/patchouli_books/guide/en_us/...`;放在 `data/.../en_us` 會導致 `BookContentResourceListenerLoader preloaded 0 jsons` 與書內 `No Entries`。
 - **Menu data-slot client/server parity**:server(core 建構子)與 client(buf 建構子)的 `addDataSlots` 數量必須**完全一致**,否則 `advanced_container_set_data` 同步會 `IndexOutOfBounds` 崩潰(開 storage terminal 即崩)。基礎 type-count slots 放在**兩條建構子都會經過**的 `addTypeDataSlots()`;crafting 在其上再 `addContainerData()`(兩邊一致)。有 `data_slot_parity_server_vs_buf_ctor` GameTest 守護。畫面外/同步用的 slot(如 crafting 的 `selectionContainer`)要加在**玩家背包之後**,否則 `repositionPlayerInventory` 會錯位。
 
 ## Decisions

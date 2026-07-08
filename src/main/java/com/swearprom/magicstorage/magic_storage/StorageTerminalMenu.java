@@ -67,7 +67,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
         super(menuType, containerId);
         this.corePos = core.getBlockPos();
-        this.displayInventory = new SimpleContainer(DISPLAY_SLOTS);
+        this.displayInventory = createDisplayInventory();
         this.scrollOffset = 0;
         setupSlots(playerInv);
         refreshDisplayItems(core);
@@ -77,10 +77,19 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     protected StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, RegistryFriendlyByteBuf buf) {
         super(menuType, containerId);
         this.corePos = buf.readBlockPos();
-        this.displayInventory = new SimpleContainer(DISPLAY_SLOTS);
+        this.displayInventory = createDisplayInventory();
         this.scrollOffset = 0;
         setupSlots(playerInv);
         addTypeDataSlots();
+    }
+
+    private static SimpleContainer createDisplayInventory() {
+        return new SimpleContainer(DISPLAY_SLOTS) {
+            @Override
+            public int getMaxStackSize(ItemStack stack) {
+                return Integer.MAX_VALUE;
+            }
+        };
     }
 
     protected void setupSlots(Inventory playerInv) {

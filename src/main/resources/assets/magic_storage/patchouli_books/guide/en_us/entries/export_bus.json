@@ -14,7 +14,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Operation:$()$(br)$(li)Works every $(thing)10 ticks$() (0.5 seconds)$(li)Exports $(thing)1 item$() per operation$(li)Only exports when the filter item matches$(li)Target container must accept the item$(li)Auto-finds network Core via BFS scanning$(br2)If the target container is full, items stay in the network."
+      "text": "$(thing)Operation:$()$(br)$(li)Works every $(thing)10 ticks$() (0.5 seconds)$(li)Exports up to $(thing)one full stack (64 items)$() per operation$(li)Only extracts the amount the target can accept$(li)Only exports when the filter item matches$(li)Auto-finds the network Core, throttled when no Core is present$(br2)If the target container is full, items stay in the network."
     },
     {
       "type": "patchouli:text",

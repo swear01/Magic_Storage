@@ -12,7 +12,7 @@
 
 ## Status (updated 2026-06-21)
 
-- **Done + committed + verified** (SelfTest 101, GameTest 72):
+- **Done + committed + verified** (currently SelfTest 104, GameTest 74):
   - A5b fuzzy match (Task 3/6) — commit `c94d37f`
   - A5a view-settings sync (Task 4) + A4 identity selection (Task 5) + A7 craft preview — commit `116664d`
   - A1 incremental network growth, **safe scope** (Task 8: incremental on place, full rebuild on break) — commit `3433e76`

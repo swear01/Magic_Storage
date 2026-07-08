@@ -55,10 +55,21 @@ public class RegistrationTests {
         helper.succeed();
     }
 
-     @GameTest(template = "empty")
+    @GameTest(template = "empty")
     public static void import_bus_is_registered(GameTestHelper helper) {
         var block = helper.getLevel().registryAccess().registryOrThrow(Registries.BLOCK).get(key("import_bus"));
         if (block == null) helper.fail("import_bus block is not registered");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    public static void patchouli_guide_content_is_packaged_as_assets(GameTestHelper helper) {
+        ClassLoader loader = RegistrationTests.class.getClassLoader();
+        String base = "assets/magic_storage/patchouli_books/guide/en_us";
+        if (loader.getResource(base + "/categories/getting_started.json") == null)
+            helper.fail("Patchouli category content must be under assets/, not data/");
+        if (loader.getResource(base + "/entries/first_network.json") == null)
+            helper.fail("Patchouli entry content must be under assets/, not data/");
         helper.succeed();
     }
 }

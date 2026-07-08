@@ -12,7 +12,7 @@
 - **Storage Unit** — 六個 Tier 的儲存方塊,獨立、不可逆、可並聯不限數量。
 - **Crafting Energy** — 多個能量池(`smelting_energy`、`blasting_energy`…、`furnace_fuel`、`blaze_fuel`…),統一 `Map<EnergyType, Long>` 模型,差異只在來源。`RecipeType → EnergyCost` 決定消耗。
 - **Terminal(三階)** — `storage_terminal`(T1 取存)、`crafting_terminal`(T2 配方+一鍵合成)、`remote_terminal`(T3 物品,遠端存取)。
-- **Network** — BFS 掃描連通 Core ↔ Unit ↔ Terminal;Import/Export Bus 做自動化。
+- **Network** — Core 掃描/維護 Core ↔ Unit ↔ Terminal/Bus 連通;放置時可增量成長,破壞/不確定拓樸時 full rebuild;Import/Export Bus 做自動化。
 
 ## External Resources
 

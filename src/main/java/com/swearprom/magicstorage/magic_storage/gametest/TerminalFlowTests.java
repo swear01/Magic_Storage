@@ -163,6 +163,12 @@ public class TerminalFlowTests {
             if (actualCount != 999) helper.fail("Should store actual count 999, got " + actualCount);
             var display = core.getDisplayStacks();
             if (display.isEmpty()) helper.fail("Display should not be empty");
+            if (display.get(0).getCount() != 999) helper.fail("Display count should show 999, got " + display.get(0).getCount());
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new StorageTerminalMenu(7, player.getInventory(), core);
+            menu.refreshDisplayItems(core);
+            if (menu.getSlot(0).getItem().getCount() != 999)
+                helper.fail("Menu display slot should show 999, got " + menu.getSlot(0).getItem().getCount());
             var extracted = core.extractItem(ItemKey.of(new ItemStack(Items.STONE)), 500);
             if (extracted.getCount() != 500) helper.fail("Extracted wrong amount: " + extracted.getCount());
             var remaining = core.getItemCount(ItemKey.of(new ItemStack(Items.STONE)));

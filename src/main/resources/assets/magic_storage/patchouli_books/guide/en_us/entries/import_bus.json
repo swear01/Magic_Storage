@@ -14,7 +14,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Operation:$()$(br)$(li)Works every $(thing)10 ticks$() (0.5 seconds)$(li)Pulls $(thing)1 item$() per operation$(li)Uses the container's $(thing)item handler capability$() for extraction$(li)Auto-finds network Core via BFS scanning$(br2)The bus will not pull from other Magic Storage blocks - it only interacts with non-network containers."
+      "text": "$(thing)Operation:$()$(br)$(li)Works every $(thing)10 ticks$() (0.5 seconds)$(li)Pulls up to $(thing)one full stack (64 items)$() per operation$(li)Uses the container's $(thing)item handler capability$() for extraction$(li)Auto-finds the network Core, throttled when no Core is present$(br2)The bus will not pull from other Magic Storage blocks - it only interacts with non-network containers."
     },
     {
       "type": "patchouli:text",

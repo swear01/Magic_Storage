@@ -14,7 +14,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Breaking the Core:$() The block entity is destroyed when the Core block is broken. All $(thing)stored items are lost$() - be careful! Consider using a Silk Touch tool or relocating network blocks before moving a Core.$(br2)$(thing)Strength:$() 3.0 | $(thing)Blast Resistance:$() 6.0$(br)$(thing)Requires correct tool$() for drops."
+      "text": "$(thing)Breaking the Core:$() The Core stores all inventory and energy data. If you break and replace a Core at the same position during the same server session, Magic Storage restores the saved Core data.$(br2)Do $(thing)not$() rely on moving a Core to a different position, and do not shut down after breaking it before replacement.$(br2)$(thing)Strength:$() 3.0 | $(thing)Blast Resistance:$() 6.0$(br)$(thing)Requires correct tool$() for drops."
     }
   ]
 }

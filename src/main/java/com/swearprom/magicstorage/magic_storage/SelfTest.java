@@ -26,6 +26,7 @@ class SelfTest {
         testTerminalSettingsPacketCodec();
         testSearchModeApply();
         testTerminalGeometryNoOverlap();
+        testTerminalViewButtonsUseLeftSideRail();
 
         MagicStorage.LOGGER.info("SelfTest: {} passed, {} failed, {} total",
                 passed, failed, passed + failed);
@@ -201,11 +202,9 @@ class SelfTest {
         int sbX = 174;
         int searchX = 102;
         int searchBgX = 100;
-        int buttonX = 188;
-        int buttonW = 16;
-        int buttonH = 16;
-        int rowHeight = 18;
-        int gridTopLocal = 19;
+        int buttonX = TerminalLayout.viewButtonX();
+        int buttonW = TerminalLayout.VIEW_BUTTON_SIZE;
+        int buttonH = TerminalLayout.VIEW_BUTTON_SIZE;
 
         int scrollbarLeft = sbX;
         int searchRight = searchX + searchBoxWidth();
@@ -214,18 +213,14 @@ class SelfTest {
         int searchBgRight = searchBgX + searchBgWidth();
         assertTrue("search bg right <= scrollbarLeft (" + searchBgRight + " <= " + scrollbarLeft + ")",
                 searchBgRight <= scrollbarLeft);
-        assertTrue("buttons start right of scrollbar", buttonX >= sbX + 12);
-        assertTrue("buttons fit imageWidth", buttonX + buttonW <= imageWidth);
+        assertTrue("buttons sit left of image", buttonX + buttonW <= 0);
 
         for (int rows : new int[]{3, 9}) {
-            int gridBottom = gridTopLocal + rows * rowHeight;
             for (int i = 0; i < 3; i++) {
-                int by = gridTopLocal + buttonY(i, rows);
-                assertTrue("button " + i + " bottom <= grid bottom at rows " + rows
-                                + " (" + (by + buttonH) + " <= " + gridBottom + ")",
-                        by + buttonH <= gridBottom);
-                assertTrue("button " + i + " top >= grid top at rows " + rows,
-                        by >= gridTopLocal);
+                int by = TerminalLayout.viewButtonY(i);
+                assertTrue("button " + i + " bottom <= imageHeight at rows " + rows,
+                        by + buttonH <= 19 + 99 + rows * 18);
+                assertTrue("button " + i + " top >= title row", by >= 0);
             }
         }
     }
@@ -233,10 +228,13 @@ class SelfTest {
     private static int searchBoxWidth() { return 70; }
     private static int searchBgWidth() { return 72; }
 
-    private static int buttonY(int index, int visibleRows) {
-        int gridH = visibleRows * 18;
-        int span = gridH - 16;
-        return index * span / 2;
+    private static void testTerminalViewButtonsUseLeftSideRail() {
+        assertTrue("view buttons sit left of terminal panel", TerminalLayout.viewButtonX() < 0);
+        assertTrue("view buttons do not overlap slots", TerminalLayout.viewButtonX() + TerminalLayout.VIEW_BUTTON_SIZE <= 0);
+        assertTrue("view buttons stack with two-pixel spacing",
+                TerminalLayout.viewButtonY(1) - TerminalLayout.viewButtonY(0) == TerminalLayout.VIEW_BUTTON_SIZE + 2);
+        assertTrue("third view button remains near top controls",
+                TerminalLayout.viewButtonY(2) <= StorageTerminalMenu.MAX_DISPLAY_ROWS * 18);
     }
 
     private static void assertTrue(String message, boolean condition) {

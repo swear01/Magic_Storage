@@ -18,7 +18,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "All blocks in a Magic Storage network must be $(thing)adjacent$() (touching one of the 6 faces). The network scans outwards from the Core up to 64 blocks deep.$(br2)You can have only $(thing)one Storage Core$() per network. If two Cores touch, they will be treated as separate networks."
+      "text": "All blocks in a Magic Storage network must be $(thing)adjacent$() (touching one of the 6 faces). The Core discovers connected network blocks and updates capacity as you build.$(br2)You can have only $(thing)one Storage Core$() per connected network. If two Cores touch through the same network, that network is marked conflicted and storage operations are disabled until one Core is removed."
     }
   ]
 }
