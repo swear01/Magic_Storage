@@ -32,14 +32,47 @@ jobs:
         with:
           cache-provider: basic
 
+      - name: Prepare CI logs
+        run: mkdir -p build/ci-logs
+
       - name: Build
-        run: ./gradlew build --console=plain --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew build --console=plain --no-daemon 2>&1 | tee build/ci-logs/build.log
 
       - name: Run GameTest server
-        run: ./gradlew runGameTestServer --console=plain --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew runGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/gametest.log
 
       - name: Run script tests
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts
+        run: |
+          set -o pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts 2>&1 | tee build/ci-logs/python-unittest.log
+
+      - name: Check datagen drift
+        run: |
+          set -o pipefail
+          ./gradlew runData --console=plain --no-daemon 2>&1 | tee build/ci-logs/datagen.log
+          if [ -n "$(git status --porcelain -- src/generated/resources src/main/resources)" ]; then
+            echo "Datagen changed tracked or generated resources; run ./gradlew runData and commit the result." >&2
+            git status --short -- src/generated/resources src/main/resources
+            git diff -- src/generated/resources src/main/resources
+            exit 1
+          fi
+
+      - name: Upload CI logs and reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: magic-storage-ci-logs
+          path: |
+            build/ci-logs/**
+            run/logs/**
+            run/crash-reports/**
+            build/reports/**
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload mod jar
         uses: actions/upload-artifact@v7

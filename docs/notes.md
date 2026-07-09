@@ -16,12 +16,12 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 | 完整建置 | `./gradlew build` |
 | 版本化建置 + Prism dev 部署 | `python3 scripts/deploy_prism_dev.py`（自動 bump `mod_version` patch、`./gradlew build`、備份舊 jar、確保 mods 內只剩一個 `magic_storage-*.jar`;若 build 或 jar 檢查失敗會還原原本 `mod_version` 且不搬動 mods） |
 | 自動測試(SelfTest 於 mod init + GameTest) | `./gradlew runGameTestServer` |
-| CI(GitHub Actions) | `.github/workflows/ci.yml`:JDK 21 + `./gradlew build` + `./gradlew runGameTestServer` + `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts`,並上傳 `build/libs/magic_storage-*.jar` artifact |
-| CD(GitHub Release) | push tag `v<mod_version>` 觸發 `.github/workflows/release.yml`;workflow 先驗 tag 等於 `gradle.properties` 的 `mod_version`,再建置/測試/發布 jar |
+| CI(GitHub Actions) | `.github/workflows/ci.yml`:JDK 21 + `./gradlew build` + `./gradlew runGameTestServer` + `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts` + `./gradlew runData` datagen drift check,並上傳 jar + logs/reports artifacts |
+| CD(GitHub Release) | push tag `v<mod_version>` 觸發 `.github/workflows/release.yml`;workflow 先驗 tag 等於 `gradle.properties` 的 `mod_version`,再建置/測試/datagen drift check,產生 release notes 並發布 jar |
 | **手動測試 GUI**(終端機介面只能這樣看) | `./gradlew runClient` 或 Prism dev |
 | Prism dev + Computer Use GUI 驗證 | 見下方「Prism dev / Computer Use」 |
 
-GitHub public repo:https://github.com/swear01/Magic_Storage 。release tag 範例:`git tag v0.1.3 && git push origin main v0.1.3`。GUI/Patchouli/視覺變更仍必須跑下方 Prism dev / Computer Use 固定流程;CI/GameTest 不能替代目視 GUI 驗證。
+GitHub public repo:https://github.com/swear01/Magic_Storage 。release tag 範例:`git tag v0.1.3 && git push origin main v0.1.3`。CI/CD 會保存 `build/ci-logs/**`、`run/logs/**`、`run/crash-reports/**`、`build/reports/**` 方便遠端失敗排查。GUI/Patchouli/視覺變更仍必須跑下方 Prism dev / Computer Use 固定流程;CI/GameTest 不能替代目視 GUI 驗證。
 
 手動測 GUI:`runClient` 或 Prism dev 開遊戲 → 創造模式 → 放 `storage_core`,旁邊接 `storage_unit`,再接 `storage_terminal` / `crafting_terminal` → 右鍵終端機開介面。調整視窗大小可驗證動態列數。GUI 外觀無法用 GameTest 驗證,只能實機目視/截圖。
 

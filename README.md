@@ -31,8 +31,8 @@ Expected automated coverage is currently SelfTest 104 + GameTest 74, plus Python
 
 GitHub Actions runs on pushes to `main`, pull requests, and manual dispatch:
 
-- `.github/workflows/ci.yml` builds the mod, runs `./gradlew runGameTestServer`, runs Python script tests, and uploads `build/libs/magic_storage-*.jar` as an artifact.
-- `.github/workflows/release.yml` runs when a tag `v<mod_version>` is pushed, verifies the tag matches `gradle.properties`, repeats the build/tests, then creates a GitHub Release with the jar.
+- `.github/workflows/ci.yml` builds the mod, runs `./gradlew runGameTestServer`, runs Python script tests, runs `./gradlew runData` as a datagen drift check, uploads logs/reports, and uploads `build/libs/magic_storage-*.jar` as an artifact.
+- `.github/workflows/release.yml` runs when a tag `v<mod_version>` is pushed, verifies the tag matches `gradle.properties`, repeats the build/tests/datagen drift check, generates release notes from git history, uploads logs/reports, then creates a GitHub Release with the jar.
 
 Release example:
 
