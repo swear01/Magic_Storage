@@ -8,7 +8,7 @@
 
 ## Recently Done
 
-- Prism GUI test world/CLI flow:`scripts/prepare_prism_gui_world.py` 從 `New World` 重建帶 marker 的 `MagicStorageGuiTest`,寫入 datapack `magic_storage_gui_test`(load/tick/functions,無 command block)、固定 storage/crafting/core/unit/bus 座標、patch Prism options,讓後續 GUI 驗證用 hotbar `1`–`6`/`9` 觸發 datapack view functions 對準方塊並以 condition polling 取代固定 sleep。
+- Prism GUI test world/CLI flow:`scripts/prepare_prism_gui_world.py` 從 `New World` 重建帶 marker 的 `MagicStorageGuiTest`,寫入 datapack `magic_storage_gui_test`(load/tick/functions,無 command block)、固定 storage/crafting/core/unit/bus 座標、patch Prism options,讓後續 GUI 驗證用 hotbar `1`–`6`/`9` 觸發 datapack view functions 對準方塊,先通過 mandatory fullscreen gate,並以 condition polling 取代固定 sleep。
 - GitHub public repo / CI/CD:新增 public repo https://github.com/swear01/Magic_Storage；CI 在 push/PR/manual 跑 JDK 21 build、GameTest、Python unittest、datagen drift check,並上傳 jar/log/report artifacts；CD 在 tag `v<mod_version>` 時驗版本、重跑 gates、產生 release notes 並建立 GitHub Release。
 - 健壯化 pass(地毯式掃描修正):持久化(setChanged、NBT components 存讀)、關閉複製、import bus 吃物、合成回滾、能量溢位、白框/tooltip/焦點、enqueueWork、BFS 上限等。
 - RS2 設計慣例採用(見 `docs/rs2-design-gap.md` + `docs/superpowers/plans/2026-06-21-...`):fuzzy 合成配對(A5b)、view 設定 server 同步(A5a/#7)、選取物品身分化(A4/#5)、合成 preview(A7)、捲軸/版面修正(#8)。P4 增量網路成長(A1:放置增量 + 破壞 full rebuild 後盾)。剩 P3 增量 grid(+ 前置 A2 Actor / A3 變更事件)。SelfTest 104 + GameTest 74 全綠。

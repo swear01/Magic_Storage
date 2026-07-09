@@ -54,6 +54,10 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             )
             self.assertEqual("view_storage_terminal", manifest["hotbar_views"]["1"]["function"])
             self.assertEqual("view_crafting_terminal", manifest["hotbar_views"]["2"]["function"])
+            self.assertTrue(manifest["fullscreen_gate"]["required"])
+            self.assertEqual("after_world_ready_before_first_gui_action", manifest["fullscreen_gate"]["when"])
+            self.assertEqual("windowed_only", manifest["fullscreen_gate"]["launch_mode"])
+            self.assertIn("native_fullscreen", manifest["fullscreen_gate"]["accepted_methods"])
 
             datapack = world_dir / "datapacks/magic_storage_gui_test"
             self.assertTrue((datapack / "data/minecraft/tags/function/load.json").exists())
@@ -160,6 +164,12 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             finally:
                 mod.world_has_open_files = original_checker
             self.assertEqual("keep", stale.read_text())
+
+    def test_gui_docs_require_fullscreen_before_gui_actions(self):
+        notes = (ROOT / "docs" / "notes.md").read_text()
+        self.assertIn("全螢幕 gate", notes)
+        self.assertIn("所有 GUI 測試都必須先通過全螢幕 gate", notes)
+        self.assertIn("任何 `u`、hotbar、點擊、滾輪、截圖前", notes)
 
 
 if __name__ == "__main__":

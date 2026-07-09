@@ -26,6 +26,19 @@ OPTION_OVERRIDES = {
     "autoJump": "false",
 }
 
+FULLSCREEN_GATE = {
+    "required": True,
+    "when": "after_world_ready_before_first_gui_action",
+    "launch_mode": "windowed_only",
+    "accepted_methods": ["native_fullscreen", "f11"],
+    "ready_log": "MS_GUI_TEST_READY",
+    "verify": [
+        "Minecraft content is not offset or clipped",
+        "hotbar and GUI edges are fully visible",
+        "Computer Use can read run.hapi.magicstorage.minecraftcu after entering fullscreen",
+    ],
+}
+
 TARGETS = {
     "storage_core": {"block": [0, 64, 0], "stand": [0.5, 65.0, 4.5], "face": [0.5, 64.5, 0.5]},
     "storage_unit_t6": {"block": [-1, 64, 0], "stand": [-4.5, 65.0, 0.5], "face": [-0.5, 64.5, 0.5]},
@@ -345,6 +358,7 @@ def build_manifest(world_dir: Path) -> dict:
         "targets": TARGETS,
         "commands": commands,
         "hotbar_views": HOTBAR_VIEWS,
+        "fullscreen_gate": FULLSCREEN_GATE,
         "open_key": "key.keyboard.u",
         "launch_command": f'open -a "Prism Launcher" --args -l dev -w "{world_dir.name}"',
     }
