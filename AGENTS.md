@@ -135,6 +135,13 @@ Expected `git status` after archiving:
 - Plan: docs/plan.md
 - Roadmap: docs/roadmap.md
 
+## GitHub / CI / GUI Release Gates
+
+- Public repo: https://github.com/swear01/Magic_Storage
+- CI lives in `.github/workflows/ci.yml` and must keep `./gradlew build`, `./gradlew runGameTestServer`, and `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts` green.
+- CD lives in `.github/workflows/release.yml`: push tag `v<mod_version>` only after `gradle.properties` has the matching `mod_version`; the workflow rejects mismatched tags.
+- GUI/Patchouli/visual changes require the fixed Prism dev / Computer Use checklist in `docs/notes.md`. Do not claim GUI verified from GameTest alone.
+
 ## Mod-Specific Essentials
 
 - `magic_storage` — NeoForge 1.21.1 storage+crafting mod. Build: `./gradlew build`.

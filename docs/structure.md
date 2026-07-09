@@ -2,6 +2,8 @@
 
 | Path | Purpose |
 |------|---------|
+| `.github/workflows/` | GitHub Actions CI/CD:push/PR build + GameTest + Python unittest + jar artifact,以及 `v<mod_version>` tag release。 |
+| `README.md` | 公開 GitHub repo 首頁:專案簡介、build/test、CI/CD、GUI 驗證入口、授權狀態。 |
 | `src/main/java/com/swearprom/magicstorage/magic_storage/` | 全部 Java 原始碼(~37 檔,單一扁平 package):方塊、BlockEntity、GUI Screen、封包、能量表、`MagicStorage.java` 註冊入口。 |
 | `src/main/resources/assets/magic_storage/` | 客戶端資源(模型、材質、lang、blockstates,以及 Patchouli `guide/en_us` localized categories/entries)。 |
 | `src/main/resources/data/magic_storage/` | 資料包(配方、loot、tags,以及 Patchouli `guide/book.json`)。 |
