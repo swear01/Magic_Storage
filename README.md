@@ -43,7 +43,7 @@ git push origin main v0.1.3
 
 ## Manual GUI verification
 
-Automated tests do not verify Minecraft GUI rendering. For terminal/Patchouli/visual changes, follow the fixed Prism dev + Computer Use workflow in `docs/notes.md` under “Prism dev / Computer Use”.
+Automated tests do not verify Minecraft GUI rendering. For terminal/Patchouli/visual changes, run `python3 scripts/prepare_prism_gui_world.py` and follow the fixed Prism dev + Computer Use workflow in `docs/notes.md` under “Prism dev / Computer Use”.
 
 ## License
 

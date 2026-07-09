@@ -9,7 +9,7 @@
 | `src/main/resources/data/magic_storage/` | 資料包(配方、loot、tags,以及 Patchouli `guide/book.json`)。 |
 | `src/main/resources/data/minecraft/` | 對 vanilla 的資料覆寫/擴充。 |
 | `src/main/templates/META-INF/` | `neoforge.mods.toml` 模板(Gradle 變數注入)。 |
-| `scripts/` | 本機維運腳本與 Python unittest:版本 patch bump、Prism dev 部署。 |
+| `scripts/` | 本機維運腳本與 Python unittest:版本 patch bump、Prism dev 部署、Prism GUI test world/datapack 準備。 |
 | `docs/specs/` | 進行中的設計規格(目前空);實作完成的規格依規則 archive 至 `archive/docs/specs/`。 |
 | `PLAN.md` | 完整設計計劃書(里程碑、能量系統、GUI)。 |
 
