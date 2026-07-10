@@ -33,13 +33,10 @@ public class ExportBusBlockEntity extends BlockEntity {
         }
         cooldown = COOLDOWN_TICKS;
 
-        if (cachedCore == null || cachedCore.isRemoved()) {
-            cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
-            corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
-            if (cachedCore == null) {
-                setChanged();
-                return;
-            }
+        StorageCoreBlockEntity core = resolveCore();
+        if (core == null) {
+            setChanged();
+            return;
         }
 
         if (filterItem == null) return;
@@ -52,7 +49,7 @@ public class ExportBusBlockEntity extends BlockEntity {
         IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, targetPos, facing.getOpposite());
         if (handler == null) return;
 
-        ItemStack toExport = cachedCore.extractItem(filterItem, 64, true);
+        ItemStack toExport = core.extractItem(filterItem, 64, Action.SIMULATE, Actor.bus(getBlockPos()));
         if (toExport.isEmpty()) return;
 
         ItemStack leftoverSim = toExport.copy();
@@ -63,14 +60,28 @@ public class ExportBusBlockEntity extends BlockEntity {
         int fits = toExport.getCount() - leftoverSim.getCount();
         if (fits <= 0) return;
 
-        ItemStack extracted = cachedCore.extractItem(filterItem, fits, false);
+        ItemStack extracted = core.extractItem(filterItem, fits, Action.EXECUTE, Actor.bus(getBlockPos()));
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             extracted = handler.insertItem(slot, extracted, false);
             if (extracted.isEmpty()) break;
         }
         if (!extracted.isEmpty()) {
-            cachedCore.insertItem(extracted);
+            core.insertItem(extracted, Action.EXECUTE, Actor.bus(getBlockPos()));
         }
+    }
+
+    private StorageCoreBlockEntity resolveCore() {
+        if (level == null) return null;
+        if (cachedCore != null && !cachedCore.isRemoved()
+                && cachedCore.getConnectedBlocks().contains(getBlockPos())) {
+            return cachedCore;
+        }
+        cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
+        if (cachedCore != null && !cachedCore.getConnectedBlocks().contains(getBlockPos())) {
+            cachedCore = null;
+        }
+        corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
+        return cachedCore;
     }
 
     public void setFilter(ItemStack stack) {

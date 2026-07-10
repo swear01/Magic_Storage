@@ -88,6 +88,63 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
+    public static void craftable_only_filters_grid_to_craftable_outputs(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.OAK_PLANKS, 64));
+            core.insertItem(new ItemStack(Items.STICK, 1));
+            core.insertItem(new ItemStack(Items.DIAMOND, 1));
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(20, player.getInventory(), core);
+
+            menu.refreshDisplayItems(core);
+            if (menu.getTotalItemTypes() != 3) { helper.fail("unfiltered grid should show 3 item types, got " + menu.getTotalItemTypes()); return; }
+
+            menu.toggleShowOnlyCraftable();
+            menu.refreshDisplayItems(core);
+            if (menu.getTotalItemTypes() != 1) { helper.fail("craftable-only grid should show 1 item type, got " + menu.getTotalItemTypes()); return; }
+            if (!menu.getSlot(0).getItem().is(Items.STICK)) { helper.fail("stick should be the craftable output, got " + menu.getSlot(0).getItem()); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void constructor_applies_compact_mode_to_initial_grid(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.DIAMOND_SWORD));
+            ItemStack damagedSword = new ItemStack(Items.DIAMOND_SWORD);
+            damagedSword.setDamageValue(1);
+            core.insertItem(damagedSword);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(21, player.getInventory(), core);
+
+            if (!menu.isCompactMode()) { helper.fail("Crafting terminal default should be compact"); return; }
+            if (menu.getTotalItemTypes() != 1) {
+                helper.fail("Initial compact grid should group sword variants into 1 item type, got " + menu.getTotalItemTypes());
+                return;
+            }
+            if (menu.getSlot(0).getItem().getCount() != 2) {
+                helper.fail("Initial compact grid should show combined sword count 2, got " + menu.getSlot(0).getItem());
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void toggle_use_player_inventory(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -298,6 +355,44 @@ public class CraftingTests {
             var ok = menu.computeCraftPreview(core, player);
             if (ok.craftable() < 1) helper.fail("With 64 ingots craftable should be >=1, got " + ok.craftable());
             if (!ok.missing().isEmpty()) helper.fail("With enough materials missing should be empty");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void duplicate_ingredients_are_aggregated_before_crafting(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.IRON_INGOT, 8));
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(0, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.IRON_BLOCK));
+            if (menu.getRecipeCount() < 1) { helper.fail("Iron block should have a crafting recipe"); return; }
+
+            var preview = menu.computeCraftPreview(core, player);
+            if (preview.craftable() != 0) {
+                helper.fail("Eight ingots must not preview as craftable iron blocks, got " + preview.craftable());
+                return;
+            }
+
+            menu.craftItem(1, player);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.IRON_INGOT))) != 8) {
+                helper.fail("Failed craft must leave the eight ingots in storage");
+                return;
+            }
+            for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+                if (player.getInventory().getItem(i).is(Items.IRON_BLOCK)) {
+                    helper.fail("Failed craft must not create an iron block");
+                    return;
+                }
+            }
             helper.succeed();
         });
     }

@@ -32,6 +32,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     // Two-tier inventory index
     private final Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
     private final Map<ItemKey, Long> flatCache = new HashMap<>();
+    private final List<StorageListener> listeners = new ArrayList<>();
     private boolean cacheDirty = true;
 
     public StorageCoreBlockEntity(BlockPos pos, BlockState state) {
@@ -122,7 +123,21 @@ public class StorageCoreBlockEntity extends BlockEntity {
         cacheDirty = false;
     }
 
-    public long insertItem(ItemStack stack, boolean simulate) {
+    public void addListener(StorageListener listener) {
+        listeners.add(listener);
+    }
+
+    public void removeListener(StorageListener listener) {
+        listeners.remove(listener);
+    }
+
+    private void fireChanged(ItemKey key, long delta, long newAmount, Actor actor) {
+        for (StorageListener listener : List.copyOf(listeners)) {
+            listener.onChanged(key, delta, newAmount, actor);
+        }
+    }
+
+    public long insertItem(ItemStack stack, Action action, Actor actor) {
         if (stack.isEmpty() || conflicted) return 0;
         ItemKey key = ItemKey.of(stack);
         Item primary = key.item();
@@ -136,22 +151,28 @@ public class StorageCoreBlockEntity extends BlockEntity {
         }
 
         long inserted = toInsert;
-        if (!simulate) {
+        if (action == Action.EXECUTE) {
             if (existing == 0) typeCount++;
-            variants.put(key, existing + inserted);
+            long newAmount = existing + inserted;
+            variants.put(key, newAmount);
             cacheDirty = true;
             stack.setCount(0);
             setChanged();
+            fireChanged(key, inserted, newAmount, actor);
         }
         return inserted;
     }
 
-    public long insertItem(ItemStack stack) {
-        return insertItem(stack, false);
+    public long insertItem(ItemStack stack, boolean simulate) {
+        return insertItem(stack, simulate ? Action.SIMULATE : Action.EXECUTE, Actor.EMPTY);
     }
 
-    public ItemStack extractItem(ItemKey key, long amount, boolean simulate) {
-        if (amount <= 0) return ItemStack.EMPTY;
+    public long insertItem(ItemStack stack) {
+        return insertItem(stack, Action.EXECUTE, Actor.EMPTY);
+    }
+
+    public ItemStack extractItem(ItemKey key, long amount, Action action, Actor actor) {
+        if (amount <= 0 || conflicted) return ItemStack.EMPTY;
         Item primary = key.item();
         var variants = inventory.get(primary);
         if (variants == null) return ItemStack.EMPTY;
@@ -161,7 +182,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
         long toExtract = Math.min(amount, existing);
         int extracted = (int) Math.min(toExtract, Integer.MAX_VALUE);
-        if (!simulate) {
+        if (action == Action.EXECUTE) {
             long remaining = existing - extracted;
             if (remaining <= 0) {
                 variants.removeLong(key);
@@ -172,6 +193,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             }
             cacheDirty = true;
             setChanged();
+            fireChanged(key, -extracted, Math.max(remaining, 0), actor);
         }
 
         ItemStack result = key.toStack(extracted);
@@ -179,8 +201,12 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return result;
     }
 
+    public ItemStack extractItem(ItemKey key, long amount, boolean simulate) {
+        return extractItem(key, amount, simulate ? Action.SIMULATE : Action.EXECUTE, Actor.EMPTY);
+    }
+
     public ItemStack extractItem(ItemKey key, long amount) {
-        return extractItem(key, amount, false);
+        return extractItem(key, amount, Action.EXECUTE, Actor.EMPTY);
     }
 
     public List<ItemStack> getDisplayStacks() {
@@ -247,8 +273,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return total;
     }
 
-    public long extractMatching(Predicate<ItemStack> pred, long amount, boolean simulate) {
-        if (amount <= 0) return 0;
+    public long extractMatching(Predicate<ItemStack> pred, long amount, Action action, Actor actor) {
+        if (amount <= 0 || conflicted) return 0;
         rebuildCache();
         List<ItemKey> matches = new ArrayList<>();
         for (var entry : flatCache.entrySet()) {
@@ -257,10 +283,14 @@ public class StorageCoreBlockEntity extends BlockEntity {
         long extracted = 0;
         for (ItemKey key : matches) {
             if (extracted >= amount) break;
-            ItemStack got = extractItem(key, amount - extracted, simulate);
+            ItemStack got = extractItem(key, amount - extracted, action, actor);
             extracted += got.getCount();
         }
         return extracted;
+    }
+
+    public long extractMatching(Predicate<ItemStack> pred, long amount, boolean simulate) {
+        return extractMatching(pred, amount, simulate ? Action.SIMULATE : Action.EXECUTE, Actor.EMPTY);
     }
 
     private static boolean matchesFilter(ItemKey key, String filterText, Level level) {

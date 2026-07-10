@@ -10,8 +10,8 @@
 | # | RS2 慣例 | Magic_Storage 現況 | 缺口/風險 | 建議 | 工作量 |
 |---|---------|------------------|----------|------|--------|
 | A1 | **持久化 network graph + node visitor 增量更新**:RS2 維護常駐的 NodeGraph,方塊增刪時只增量更新受影響節點 | 已採用安全範圍:放置時 `tryIncrementalAdd` O(1) 成長;破壞/不確定拓樸仍 full `rebuildNetwork`;無 core 的 bus 每 cooldown 重掃(已加上限) | 大網路破壞/分裂仍 O(全網);尚無常駐 adjacency graph | 若真的需要,再改成常駐鄰接圖 + 局部 invalidation;目前低優先 | 大 |
-| A2 | **統一 Storage 介面**:`insert/extract(resource, amount, Action, Actor)`,回傳實際處理量 | 已有 item map + simulate(本次修);**無 Actor(來源)**、僅 item | 無來源追蹤(autocraft/防自我抽取需要);只支援 item | 加 `Actor` 參數(為未來預留);泛型資源(流體)可暫緩 | 中 |
-| A3 | **事件驅動 + 增量 delta**:storage 變動發事件,grid/autocraft 訂閱只收差異 | `cacheDirty` flag → 每次**整份重建** display list + 整份同步 | 頻寬與 CPU 浪費;大量物品時卡 | grid 改增量更新(只送變動的資源);storage 發變動事件 | 中 |
+| A2 | **統一 Storage 介面**:`insert/extract(resource, amount, Action, Actor)`,回傳實際處理量 | 已採用:`Action.SIMULATE/EXECUTE` + `Actor` 傳入 core insert/extract/extractMatching;舊 boolean/no-arg overload 保留為 bridge | 僅 item 資源;Actor 目前用於事件/追蹤,尚未做防自抽邏輯 | 泛型資源(流體)可暫緩;未來自動化可用 Actor 做來源隔離 | 小 |
+| A3 | **事件驅動 + 增量 delta**:storage 變動發事件,grid/autocraft 訂閱只收差異 | 已有 foundation:`StorageListener.onChanged(ItemKey, delta, newAmount, Actor)` 由 execute insert/extract 觸發;grid 仍保留 `cacheDirty` + vanilla slot sync | 尚未做整列表 client grid 的 delta packet;目前分頁式 grid ≤81 格,實益偏低 | 若改成整列表 client grid,再基於 listener 實作 P3 delta sync | 中 |
 | A4 | **以資源身分(ResourceKey)為主,而非槽位 index**:選取、捲動、配方面板都綁資源身分 | 已採用:`crafting_terminal` selection 以 `ItemKey` 身分同步,非 grid slot index | (大致到位) | 後續 UI 新增選取功能仍要綁資源身分 | 小(慣例) |
 | A5 | **同步的 view 設定 + 比對模式(fuzzy/ignore-NBT/ignore-damage)** | 已採用:sort/order/search 模式 server 同步;合成材料 fuzzy 配對走 `Ingredient.test` | (大致到位) | 後續若加 ignore-damage/ignore-NBT UI,仍需 server 權威同步 | 小-中 |
 | A6 | **simulate-then-commit 貫穿所有操作**(I/O、autocraft) | 本次已補:import bus、craftItem;Core insert/extract 有 simulate | (大致到位) | 確保所有未來新增的搬運/合成都走 simulate-first | 小(慣例) |
@@ -29,9 +29,8 @@
 
 ## C. 建議採用順序(契合哲學者)
 
-1. **A3 事件驅動 + 增量 grid** — 解決大量物品時的效能/頻寬;但目前分頁式 grid(≤81 格,vanilla 已增量同步)價值偏低,可持續延後。
-2. **A2 Actor 參數** — 低成本預留,為任何未來自動化鋪路。
-3. **A1 常駐 network graph** — 目前只採用安全範圍的放置增量;若大網路破壞/分裂成瓶頸再做完整常駐圖。
+1. **P3 增量 grid delta(可延後)** — A3 listener foundation 已有;但目前分頁式 grid(≤81 格,vanilla 已增量同步)價值偏低,除非改成整列表 client grid 才值得做。
+2. **A1 常駐 network graph(可延後)** — 目前只採用安全範圍的放置增量;若大網路破壞/分裂成瓶頸再做完整常駐圖。
 
 ## 參考
 

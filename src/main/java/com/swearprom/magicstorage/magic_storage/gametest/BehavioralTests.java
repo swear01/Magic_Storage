@@ -568,6 +568,49 @@ public class BehavioralTests {
     }
 
     @GameTest(template = "platform")
+    public static void action_actor_storage_ops_and_change_events(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var key = ItemKey.of(new ItemStack(Items.STONE));
+            java.util.List<String> events = new java.util.ArrayList<>();
+            core.addListener((changedKey, delta, newAmount, actor) ->
+                    events.add(changedKey.item().toString() + ":" + delta + ":" + newAmount + ":" + actor.name()));
+
+            ItemStack simulatedStack = new ItemStack(Items.STONE, 16);
+            long simulated = core.insertItem(simulatedStack, Action.SIMULATE, Actor.bus(corePos));
+            if (simulated != 16) { helper.fail("simulate insert should report 16, got " + simulated); return; }
+            if (core.getItemCount(key) != 0) { helper.fail("simulate insert changed storage"); return; }
+            if (!events.isEmpty()) { helper.fail("simulate insert fired events"); return; }
+
+            ItemStack executeStack = new ItemStack(Items.STONE, 16);
+            long inserted = core.insertItem(executeStack, Action.EXECUTE, Actor.bus(corePos));
+            if (inserted != 16) { helper.fail("execute insert should report 16, got " + inserted); return; }
+            if (core.getItemCount(key) != 16) { helper.fail("execute insert count should be 16, got " + core.getItemCount(key)); return; }
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            ItemStack simulatedExtract = core.extractItem(key, 5, Action.SIMULATE, Actor.player(player));
+            if (simulatedExtract.getCount() != 5) { helper.fail("simulate extract should return 5, got " + simulatedExtract.getCount()); return; }
+            if (core.getItemCount(key) != 16) { helper.fail("simulate extract changed storage"); return; }
+
+            ItemStack extracted = core.extractItem(key, 5, Action.EXECUTE, Actor.magicCrafting());
+            if (extracted.getCount() != 5) { helper.fail("execute extract should return 5, got " + extracted.getCount()); return; }
+            if (core.getItemCount(key) != 11) { helper.fail("execute extract count should be 11, got " + core.getItemCount(key)); return; }
+
+            if (events.size() != 2) { helper.fail("expected 2 execute events, got " + events); return; }
+            if (!events.get(0).contains(":16:16:bus@")) { helper.fail("insert event missing bus actor: " + events); return; }
+            if (!events.get(1).contains(":-5:11:magic_crafting")) { helper.fail("extract event missing crafting actor: " + events); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void smelting_craft_consumes_energy(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));

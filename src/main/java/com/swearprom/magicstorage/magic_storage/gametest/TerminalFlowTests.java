@@ -503,6 +503,8 @@ public class TerminalFlowTests {
             var byteBuf = new net.minecraft.network.RegistryFriendlyByteBuf(
                     io.netty.buffer.Unpooled.buffer(), level.registryAccess());
             byteBuf.writeBlockPos(corePos);
+            byteBuf.writeBlockPos(corePos);
+            byteBuf.writeBoolean(false);
             StorageTerminalMenu bufMenu;
             try {
                 var ctor = StorageTerminalMenu.class.getDeclaredConstructor(
@@ -630,6 +632,91 @@ public class TerminalFlowTests {
             if (!core.isConflicted()) { helper.fail("multi-core network should be conflicted"); return; }
             long inserted = core.insertItem(new ItemStack(Items.STONE, 64));
             if (inserted != 0) { helper.fail("conflicted network must not accept items, got " + inserted); return; }
+            ItemStack extracted = core.extractItem(ItemKey.of(new ItemStack(Items.STONE)), 1);
+            if (!extracted.isEmpty()) { helper.fail("conflicted network must not extract items, got " + extracted); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void import_bus_stops_after_network_disconnect(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var unitPos = corePos.east();
+        var busPos = unitPos.east();
+        var chestPos = busPos.east();
+
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(unitPos, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos,
+                MagicStorage.IMPORT_BUS.get().defaultBlockState().setValue(ImportBusBlock.FACING, net.minecraft.core.Direction.EAST),
+                Block.UPDATE_ALL);
+        level.setBlock(chestPos, net.minecraft.world.level.block.Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var coreBe = level.getBlockEntity(corePos);
+            if (!(coreBe instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var chestBe = level.getBlockEntity(chestPos);
+            if (!(chestBe instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity chest)) {
+                helper.fail("Barrel not found"); return;
+            }
+            chest.setItem(0, new ItemStack(Items.STONE, 1));
+            chest.setChanged();
+            var busBe = level.getBlockEntity(busPos);
+            if (!(busBe instanceof ImportBusBlockEntity bus)) { helper.fail("Import bus not found"); return; }
+            for (int i = 0; i < 11; i++) bus.tick();
+            var key = ItemKey.of(new ItemStack(Items.STONE));
+            if (core.getItemCount(key) != 1) { helper.fail("initial import should put 1 stone in core, got " + core.getItemCount(key)); return; }
+
+            level.removeBlock(unitPos, false);
+            core.rebuildNetwork(level);
+            chest.setItem(0, new ItemStack(Items.STONE, 1));
+            chest.setChanged();
+            for (int i = 0; i < 11; i++) bus.tick();
+            if (core.getItemCount(key) != 1) { helper.fail("disconnected import bus must not keep importing via cached core, got " + core.getItemCount(key)); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "range_platform")
+    public static void terminal_validates_against_access_block_not_core_distance(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var terminalPos = corePos.east(10);
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        for (int i = 1; i < 10; i++) {
+            level.setBlock(corePos.east(i), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        }
+        level.setBlock(terminalPos, MagicStorage.STORAGE_TERMINAL.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            player.moveTo(terminalPos.getX() + 0.5, terminalPos.getY() + 0.5, terminalPos.getZ() + 0.5, 0, 0);
+            var menu = new StorageTerminalMenu(0, player.getInventory(), core, terminalPos, false);
+            if (!menu.stillValid(player)) helper.fail("terminal menu should remain valid near terminal even when core is far");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void remote_terminal_valid_away_from_bound_core(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            player.moveTo(corePos.getX() + 100.5, corePos.getY() + 0.5, corePos.getZ() + 100.5, 0, 0);
+            var menu = new CraftingTerminalMenu(0, player.getInventory(), core, corePos, true);
+            if (!menu.stillValid(player)) helper.fail("remote terminal should remain valid away from bound core");
             helper.succeed();
         });
     }

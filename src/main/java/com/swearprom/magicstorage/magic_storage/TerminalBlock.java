@@ -29,14 +29,22 @@ public class TerminalBlock extends Block implements IStorageNetworkBlock {
             if (core != null) {
                 if (crafting) {
                     player.openMenu(new SimpleMenuProvider(
-                            (containerId, inv, p) -> new CraftingTerminalMenu(containerId, inv, core),
+                            (containerId, inv, p) -> new CraftingTerminalMenu(containerId, inv, core, pos, false),
                             Component.translatable("container.magic_storage.crafting_terminal")
-                    ), buf -> buf.writeBlockPos(core.getBlockPos()));
+                    ), buf -> {
+                        buf.writeBlockPos(core.getBlockPos());
+                        buf.writeBlockPos(pos);
+                        buf.writeBoolean(false);
+                    });
                 } else {
                     player.openMenu(new SimpleMenuProvider(
-                            (containerId, inv, p) -> new StorageTerminalMenu(containerId, inv, core),
+                            (containerId, inv, p) -> new StorageTerminalMenu(containerId, inv, core, pos, false),
                             Component.translatable("container.magic_storage.storage_terminal")
-                    ), buf -> buf.writeBlockPos(core.getBlockPos()));
+                    ), buf -> {
+                        buf.writeBlockPos(core.getBlockPos());
+                        buf.writeBlockPos(pos);
+                        buf.writeBoolean(false);
+                    });
                 }
             }
         }

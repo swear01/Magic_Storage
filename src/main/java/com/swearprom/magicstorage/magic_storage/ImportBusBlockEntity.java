@@ -32,13 +32,10 @@ public class ImportBusBlockEntity extends BlockEntity {
         }
         cooldown = COOLDOWN_TICKS;
 
-        if (cachedCore == null || cachedCore.isRemoved()) {
-            cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
-            corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
-            if (cachedCore == null) {
-                setChanged();
-                return;
-            }
+        StorageCoreBlockEntity core = resolveCore();
+        if (core == null) {
+            setChanged();
+            return;
         }
 
         Direction facing = getBlockState().getValue(ImportBusBlock.FACING);
@@ -55,17 +52,31 @@ public class ImportBusBlockEntity extends BlockEntity {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             ItemStack peek = handler.extractItem(slot, 64, true);
             if (peek.isEmpty()) continue;
-            long accepted = cachedCore.insertItem(peek, true);
+            long accepted = core.insertItem(peek, Action.SIMULATE, Actor.bus(getBlockPos()));
             if (accepted <= 0) continue;
             ItemStack real = handler.extractItem(slot, (int) accepted, false);
             if (real.isEmpty()) continue;
-            long inserted = cachedCore.insertItem(real);
+            long inserted = core.insertItem(real, Action.EXECUTE, Actor.bus(getBlockPos()));
             if (inserted < real.getCount()) {
                 real.setCount((int) (real.getCount() - inserted));
                 handler.insertItem(slot, real, false);
             }
             break;
         }
+    }
+
+    private StorageCoreBlockEntity resolveCore() {
+        if (level == null) return null;
+        if (cachedCore != null && !cachedCore.isRemoved()
+                && cachedCore.getConnectedBlocks().contains(getBlockPos())) {
+            return cachedCore;
+        }
+        cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
+        if (cachedCore != null && !cachedCore.getConnectedBlocks().contains(getBlockPos())) {
+            cachedCore = null;
+        }
+        corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
+        return cachedCore;
     }
 
     @Override

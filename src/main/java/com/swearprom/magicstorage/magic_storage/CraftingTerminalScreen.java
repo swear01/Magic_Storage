@@ -6,15 +6,6 @@ import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.Recipe;
-import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.crafting.RecipeManager;
-import net.minecraft.world.item.crafting.RecipeType;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
 
 public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTerminalMenu> {
 
@@ -129,16 +120,14 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         ItemStack sel = cm.getSelectedStack();
         if (sel.isEmpty()) return;
 
-        List<RecipeHolder<?>> recipes = findRecipesClient(sel);
-        if (recipes.isEmpty()) { g.drawString(font, "No recipe available", rx + 4, ry + 6, 0xAAAAAA); return; }
+        int recipes = cm.getRecipeCount();
+        if (recipes <= 0) { g.drawString(font, "No recipe available", rx + 4, ry + 6, 0xAAAAAA); return; }
 
-        int ri = Math.clamp(cm.getCurrentRecipeIndex(), 0, recipes.size() - 1);
-        Recipe<?> recipe = recipes.get(ri).value();
-        ItemStack result = recipe.getResultItem(minecraft != null && minecraft.level != null ? minecraft.level.registryAccess() : null);
+        int ri = Math.clamp(cm.getCurrentRecipeIndex(), 0, recipes - 1);
 
-        g.drawString(font, result.getHoverName().getString(), rx + 4, ry + 4, 0xFFFFFF);
-        g.drawString(font, getTypeName(recipe.getType()), rx + 4, ry + 14, 0xAAAAAA);
-        g.drawString(font, "Recipe " + (ri + 1) + "/" + recipes.size(), rx + 80, ry + 4, 0xCCCCCC);
+        g.drawString(font, sel.getHoverName().getString(), rx + 4, ry + 4, 0xFFFFFF);
+        g.drawString(font, cm.getCurrentRecipeTypeLabel(), rx + 4, ry + 14, 0xAAAAAA);
+        g.drawString(font, "Recipe " + (ri + 1) + "/" + recipes, rx + 80, ry + 4, 0xCCCCCC);
 
         int craftable = cm.getCraftableCount();
         if (craftable > 0) {
@@ -151,49 +140,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             g.drawString(font, txt, rx + rw - 4 - font.width(txt), ry + 14, 0xFF5555);
         }
 
-        EnergyCost cost = RecipeEnergyTable.getCost(recipe.getType());
-        if (cost != null && minecraft != null && minecraft.level != null) {
-            var core = cm.getCore(minecraft.level);
-            long pE = core != null ? core.getEnergy(cost.processType()) : 0;
-            long fE = core != null ? core.getEnergy(cost.fuelType()) : 0;
-            g.drawString(font, cost.processType().getId() + ": " + pE + "/" + cost.processAmount(), rx + 4, ry + 26, pE >= cost.processAmount() ? 0x55FF55 : 0xFF5555);
-            g.drawString(font, cost.fuelType().getId() + ": " + fE + "/" + cost.fuelAmount(), rx + 90, ry + 26, fE >= cost.fuelAmount() ? 0x55FF55 : 0xFF5555);
-        }
-
-        StringBuilder mat = new StringBuilder();
-        for (Ingredient ing : recipe.getIngredients()) {
-            if (ing.isEmpty()) continue;
-            var items = ing.getItems();
-            if (items.length > 0 && !mat.isEmpty()) mat.append(", ");
-            if (items.length > 0) mat.append(items[0].getHoverName().getString());
-        }
-        if (mat.isEmpty()) mat.append("(none)");
-        g.drawString(font, mat.toString(), rx + 4, ry + 36, 0x888888);
-    }
-
-    private List<RecipeHolder<?>> findRecipesClient(ItemStack output) {
-        List<RecipeHolder<?>> matches = new ArrayList<>();
-        if (minecraft == null || minecraft.level == null) return matches;
-        RecipeManager mgr = minecraft.level.getRecipeManager();
-        for (RecipeType<?> type : new RecipeType[]{RecipeType.CRAFTING, RecipeType.SMELTING, RecipeType.BLASTING, RecipeType.SMOKING, RecipeType.CAMPFIRE_COOKING, RecipeType.STONECUTTING, RecipeType.SMITHING}) {
-            @SuppressWarnings({"unchecked","rawtypes"})
-            Collection<RecipeHolder<?>> holders = (Collection) mgr.getAllRecipesFor((RecipeType) type);
-            for (RecipeHolder<?> h : holders)
-                if (ItemStack.isSameItemSameComponents(h.value().getResultItem(minecraft.level.registryAccess()), output))
-                    matches.add(h);
-        }
-        return matches;
-    }
-
-    private String getTypeName(RecipeType<?> t) {
-        if (t == RecipeType.CRAFTING) return "Crafting";
-        if (t == RecipeType.SMELTING) return "Smelting";
-        if (t == RecipeType.BLASTING) return "Blasting";
-        if (t == RecipeType.SMOKING) return "Smoking";
-        if (t == RecipeType.CAMPFIRE_COOKING) return "Campfire";
-        if (t == RecipeType.STONECUTTING) return "Stonecutting";
-        if (t == RecipeType.SMITHING) return "Smithing";
-        return "Unknown";
+        g.drawString(font, "Preview is server-synced", rx + 4, ry + 36, 0x888888);
     }
 
     @Override

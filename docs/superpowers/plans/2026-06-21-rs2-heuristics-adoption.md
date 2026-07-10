@@ -10,13 +10,15 @@
 
 ---
 
-## Status (updated 2026-06-21)
+## Status (updated 2026-07-10)
 
-- **Done + committed + verified** (currently SelfTest 104, GameTest 74):
+- **Done + verified** (currently SelfTest 104, GameTest 81):
   - A5b fuzzy match (Task 3/6) — commit `c94d37f`
   - A5a view-settings sync (Task 4) + A4 identity selection (Task 5) + A7 craft preview — commit `116664d`
   - A1 incremental network growth, **safe scope** (Task 8: incremental on place, full rebuild on break) — commit `3433e76`
-- **Remaining**: A2 Actor (Task 1), A3 change-events (Task 2), and **P3 incremental grid delta (Task 7)** — the large perf rewrite. P3 needs A3 first. Deferred to a fresh session (large/risky/non-urgent).
+  - A2 Action/Actor storage contract (Task 1) + A3 change-event foundation (Task 2) — `Action`, `Actor`, `StorageListener`, execute-only delta events.
+  - P0/P1/P2 RS2 parity polish:bus cached-core disconnect invalidation, conflicted core no extract, terminal access/remote `stillValid`, server-synced crafting recipe metadata, server-side craftable-only filter, EMI display-slot contract, duplicate-ingredient aggregation before preview/craft.
+- **Remaining**: **P3 incremental grid delta (Task 7)** only. A3 listener foundation exists, but the current paged grid is ≤81 slots and vanilla menu sync is already incremental; keep P3 deferred unless the UI changes to a whole-list client grid.
 
 ## Dispatch strategy (read before spawning agents)
 
@@ -30,13 +32,13 @@
 
 ```java
 // Actor: who performed a storage op (for future automation / not-pulling-from-self).
-public sealed interface Actor permits PlayerActor, BusActor, CraftingActor {}
+public interface Actor { String name(); }
 // long insertItem(ItemStack, Action, Actor) / extractItem(ItemKey, long, Action, Actor)
 // where Action = SIMULATE | EXECUTE (replaces the current boolean simulate; keep a boolean-less overload bridge).
 
 // Change events: Core notifies listeners of per-resource deltas instead of "rebuild everything".
-public interface StorageListener { void onChanged(ItemKey key, long delta, long newAmount); }
-// Core: addListener/removeListener; fire on every insert/extract/load.
+public interface StorageListener { void onChanged(ItemKey key, long delta, long newAmount, Actor actor); }
+// Core: addListener/removeListener; fire on execute insert/extract.
 
 // Comparison: how two ItemKeys are matched (exact vs fuzzy).
 public enum MatchMode { EXACT, IGNORE_NBT, IGNORE_DAMAGE }
@@ -55,20 +57,20 @@ public enum MatchMode { EXACT, IGNORE_NBT, IGNORE_DAMAGE }
 - Modify: `.../StorageCoreBlockEntity.java` (insert/extract signatures + keep boolean bridge)
 - Test: `.../gametest/PersistenceTests.java` (or a new StorageApiTests)
 
-- [ ] **Step 1: failing test** — `core.insertItem(stack, Action.SIMULATE, Actor.bus())` returns accepted count but does NOT change `getItemCount`; `Action.EXECUTE` does. Assert both.
-- [ ] **Step 2: run, expect FAIL** (`insertItem(ItemStack,Action,Actor)` undefined). `runGameTestServer`.
-- [ ] **Step 3: implement** — add `Action`/`Actor`; make the real impl take `(stack, Action, Actor)`; keep `insertItem(stack, boolean)` / `insertItem(stack)` / `extractItem(key, amount[, boolean])` as bridges delegating with `Actor` = a default. Actor currently only recorded (no behavior yet).
-- [ ] **Step 4: run, expect PASS.**
+- [x] **Step 1: failing test** — `core.insertItem(stack, Action.SIMULATE, Actor.bus())` returns accepted count but does NOT change `getItemCount`; `Action.EXECUTE` does. Assert both.
+- [x] **Step 2: run, expect FAIL** (`insertItem(ItemStack,Action,Actor)` undefined). `runGameTestServer`.
+- [x] **Step 3: implement** — add `Action`/`Actor`; make the real impl take `(stack, Action, Actor)`; keep `insertItem(stack, boolean)` / `insertItem(stack)` / `extractItem(key, amount[, boolean])` as bridges delegating with `Actor` = a default. Actor currently only recorded (no behavior yet).
+- [x] **Step 4: run, expect PASS.**
 - [ ] **Step 5: commit** `feat(core): Action+Actor on storage ops (RS2 Storage<T> w/ Source)`.
 
 ### Task 2: Change-event listeners (A3a — foundation for incremental grid)
 
 **Files:** Create `.../StorageListener.java`; Modify `.../StorageCoreBlockEntity.java`; Test `.../gametest/StorageApiTests.java`
 
-- [ ] **Step 1: failing test** — register a listener, `insertItem(STONE×5)`, assert listener got `onChanged(STONE, +5, 5)`; extract 2 → `onChanged(STONE, -2, 3)`.
-- [ ] **Step 2: run, expect FAIL.**
-- [ ] **Step 3: implement** — `List<StorageListener>` + add/remove; fire from insert/extract/load (delta + new amount). Keep `cacheDirty` for now (grid still full-rebuilds until Phase 3).
-- [ ] **Step 4: run, expect PASS.**
+- [x] **Step 1: failing test** — register a listener, `insertItem(STONE×5)`, assert listener got `onChanged(STONE, +5, 5)`; extract 2 → `onChanged(STONE, -2, 3)`.
+- [x] **Step 2: run, expect FAIL.**
+- [x] **Step 3: implement** — `List<StorageListener>` + add/remove; fire from execute insert/extract (delta + new amount + actor). Keep `cacheDirty` for now (grid still full-rebuilds until Phase 3).
+- [x] **Step 4: run, expect PASS.**
 - [ ] **Step 5: commit** `feat(core): per-resource change listeners (RS2 ResourceList events)`.
 
 ### Task 3: Comparison / fuzzy match (A5b — foundation for crafting match + grid filters)
@@ -125,10 +127,11 @@ public enum MatchMode { EXACT, IGNORE_NBT, IGNORE_DAMAGE }
 
 ## Phase 3 — Incremental grid delta (A3b; sequential — touches Core + menus + screens)
 
-### Task 7: Grid receives deltas, not full rebuilds
+### Task 7: Grid receives deltas, not full rebuilds (deferred)
 
 **Files:** Modify `StorageCoreBlockEntity.java` (expose deltas via the Phase-1 listener), `StorageTerminalMenu.java` (track a delta buffer; sync only changed entries), `StorageTerminalScreen.java` (apply deltas to the view; keep sort/filter client-side over the maintained list). New packet `GridDeltaPacket.java`. Test: `.../gametest/TerminalFlowTests.java`.
 
+- [ ] **Step 0: re-evaluate value first** — only proceed if the UI changes to a whole-list client grid or large-list profiling shows the current paged grid is a bottleneck. With ≤81 visible slots, vanilla slot sync already avoids most P3 value.
 - [ ] **Step 1: failing test** — after inserting 1 new type into a populated core, the menu's outgoing sync carries 1 changed entry, not the whole list (assert a delta-count accessor).
 - [ ] **Step 2: run, expect FAIL.**
 - [ ] **Step 3: implement** — server accumulates deltas per tick from the listener; `GridDeltaPacket` (S2C) carries changed (ItemKey, newAmount); client applies to a maintained map then re-sorts the view. Full-snapshot still sent on open.
@@ -157,9 +160,9 @@ Already applied to import bus + crafting. Treat as a **review checklist item** f
 
 ## Self-review (done)
 
-- Spec coverage: A1=Task8, A2=Task1, A3=Task2+Task7, A4=Task5, A5=Task3(modes)+Task4(sync)+Task6(consumer), A6=convention, A7=Task6. ✓ all covered.
+- Spec coverage: A1=safe-scope done/Task8 optional, A2=Task1 done, A3=Task2 done + Task7 optional, A4=Task5 done, A5=Task3(modes)+Task4(sync)+Task6(consumer) done, A6=convention guarded, A7=Task6 done.
 - Placeholder scan: interfaces/signatures are concrete; per-task exact files + test assertions given. Graph/delta internal code is designed at execution (flagged) rather than faked here.
-- Type consistency: `Action`, `Actor`, `StorageListener.onChanged`, `MatchMode`, `craftablePreview` used consistently across tasks.
+- Type consistency: `Action`, `Actor`, `StorageListener.onChanged(ItemKey,delta,newAmount,Actor)`, `MatchMode`, `craftablePreview` used consistently across tasks.
 
 ## Suggested dispatch order (≤2 agents/batch, disjoint files)
 

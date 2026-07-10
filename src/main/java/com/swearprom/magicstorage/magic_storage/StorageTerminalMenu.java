@@ -14,11 +14,13 @@ import net.minecraft.world.level.Level;
 
 public class StorageTerminalMenu extends AbstractContainerMenu {
 
-    static final int MAX_DISPLAY_ROWS = 9;
-    static final int DISPLAY_COLS = 9;
-    static final int DISPLAY_SLOTS = MAX_DISPLAY_ROWS * DISPLAY_COLS;
+    public static final int MAX_DISPLAY_ROWS = 9;
+    public static final int DISPLAY_COLS = 9;
+    public static final int DISPLAY_SLOTS = MAX_DISPLAY_ROWS * DISPLAY_COLS;
 
     private BlockPos corePos;
+    private BlockPos accessPos;
+    private boolean remoteAccess;
     protected final SimpleContainer displayInventory;
     protected int scrollOffset;
     protected int totalItemTypes;
@@ -31,7 +33,11 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     private SearchMode searchMode = SearchMode.NORMAL;
 
     public StorageTerminalMenu(int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
-        this(MagicStorage.STORAGE_TERMINAL_MENU.get(), containerId, playerInv, core);
+        this(MagicStorage.STORAGE_TERMINAL_MENU.get(), containerId, playerInv, core, core.getBlockPos(), false);
+    }
+
+    public StorageTerminalMenu(int containerId, Inventory playerInv, StorageCoreBlockEntity core, BlockPos accessPos, boolean remoteAccess) {
+        this(MagicStorage.STORAGE_TERMINAL_MENU.get(), containerId, playerInv, core, accessPos, remoteAccess);
     }
 
     private void addTypeDataSlots() {
@@ -65,8 +71,14 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     public SearchMode getSearchMode() { return searchMode; }
 
     StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
+        this(menuType, containerId, playerInv, core, core.getBlockPos(), false);
+    }
+
+    StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, StorageCoreBlockEntity core, BlockPos accessPos, boolean remoteAccess) {
         super(menuType, containerId);
         this.corePos = core.getBlockPos();
+        this.accessPos = accessPos;
+        this.remoteAccess = remoteAccess;
         this.displayInventory = createDisplayInventory();
         this.scrollOffset = 0;
         setupSlots(playerInv);
@@ -77,6 +89,8 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     protected StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, RegistryFriendlyByteBuf buf) {
         super(menuType, containerId);
         this.corePos = buf.readBlockPos();
+        this.accessPos = buf.readBlockPos();
+        this.remoteAccess = buf.readBoolean();
         this.displayInventory = createDisplayInventory();
         this.scrollOffset = 0;
         setupSlots(playerInv);
@@ -177,7 +191,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                                     : Math.max(1, Math.min(actualCount, maxStack) / 2); // right: half
                         };
                         if (amount <= 0) amount = 1;
-                        ItemStack extracted = core.extractItem(key, amount);
+                        ItemStack extracted = core.extractItem(key, amount, Action.EXECUTE, Actor.player(player));
                         if (!extracted.isEmpty()) {
                             if (clickType == ClickType.QUICK_MOVE) {
                                 if (!player.getInventory().add(extracted)) {
@@ -211,7 +225,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     var key = ItemKey.of(stackInSlot);
                     long actualCount = core.getItemCount(key);
                     long amount = Math.min(actualCount, stackInSlot.getMaxStackSize() * 36);
-                    ItemStack extracted = core.extractItem(key, amount);
+                    ItemStack extracted = core.extractItem(key, amount, Action.EXECUTE, Actor.player(player));
                     if (!extracted.isEmpty()) {
                         if (!player.getInventory().add(extracted)) {
                             player.drop(extracted, false);
@@ -228,7 +242,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
             StorageCoreBlockEntity core = getCore(player.level());
             if (core != null) {
                 ItemStack toInsert = stackInSlot.copy();
-                long inserted = core.insertItem(toInsert);
+                long inserted = core.insertItem(toInsert, Action.EXECUTE, Actor.player(player));
                 if (inserted > 0) {
                     stackInSlot.shrink((int) inserted);
                     slot.setChanged();
@@ -270,8 +284,15 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     @Override
     public boolean stillValid(Player player) {
         if (corePos == null) return false;
-        return player.level().getBlockState(corePos).getBlock() instanceof StorageCoreBlock
-                && player.distanceToSqr(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5) <= 64.0;
+        if (!(player.level().getBlockState(corePos).getBlock() instanceof StorageCoreBlock)) return false;
+        if (remoteAccess) return true;
+        if (accessPos == null) return false;
+        var accessBlock = player.level().getBlockState(accessPos).getBlock();
+        boolean accessExists = accessPos.equals(corePos)
+                ? accessBlock instanceof StorageCoreBlock
+                : accessBlock instanceof TerminalBlock;
+        return accessExists
+                && player.distanceToSqr(accessPos.getX() + 0.5, accessPos.getY() + 0.5, accessPos.getZ() + 0.5) <= 64.0;
     }
 
     @Override
