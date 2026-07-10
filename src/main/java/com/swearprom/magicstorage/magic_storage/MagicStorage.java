@@ -252,6 +252,12 @@ public class MagicStorage {
 
     static void findCoresAndGrow(Level level, BlockPos placedPos) {
         Set<BlockPos> foundCores = new HashSet<>();
+        boolean placedCore = false;
+
+        var placedState = level.getBlockState(placedPos);
+        if (placedState.getBlock() instanceof IStorageNetworkBlock placedNetworkBlock) {
+            placedCore = placedNetworkBlock.isStorageCore();
+        }
 
         for (Direction dir : Direction.values()) {
             BlockPos neighbor = placedPos.relative(dir);
@@ -273,13 +279,72 @@ public class MagicStorage {
             }
         }
 
+        boolean uncertainTopology = placedCore || foundCores.size() > 1;
+        for (BlockPos corePos : foundCores) {
+            if (level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core
+                    && touchesDetachedNetworkSegment(level, core, placedPos)) {
+                uncertainTopology = true;
+                break;
+            }
+        }
+
+        if (uncertainTopology) {
+            foundCores = bfsFindCorePositions(level, placedPos);
+        }
+
         for (BlockPos corePos : foundCores) {
             if (level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core) {
-                if (!core.tryIncrementalAdd(level, placedPos)) {
+                if (uncertainTopology || !core.tryIncrementalAdd(level, placedPos)) {
                     core.rebuildNetwork(level);
                 }
             }
         }
+    }
+
+    private static boolean touchesDetachedNetworkSegment(Level level, StorageCoreBlockEntity core, BlockPos placedPos) {
+        for (Direction dir : Direction.values()) {
+            BlockPos neighbor = placedPos.relative(dir);
+            if (!level.hasChunkAt(neighbor)) continue;
+            if (neighbor.equals(core.getBlockPos()) || core.getConnectedBlocks().contains(neighbor)) continue;
+            if (level.getBlockState(neighbor).getBlock() instanceof IStorageNetworkBlock) return true;
+        }
+        return false;
+    }
+
+    private static Set<BlockPos> bfsFindCorePositions(Level level, BlockPos start) {
+        Set<BlockPos> cores = new HashSet<>();
+        Queue<BlockPos> queue = new ArrayDeque<>();
+        Set<BlockPos> visited = new HashSet<>();
+        queue.add(start);
+        visited.add(start);
+
+        int depth = 0;
+        while (!queue.isEmpty() && depth < NETWORK_SCAN_DEPTH && visited.size() <= MAX_NETWORK_BLOCKS) {
+            int size = queue.size();
+            for (int i = 0; i < size; i++) {
+                BlockPos current = queue.poll();
+                var state = level.getBlockState(current);
+                var block = state.getBlock();
+
+                if (block instanceof IStorageNetworkBlock netBlock) {
+                    if (netBlock.isStorageCore() && level.getBlockEntity(current) instanceof StorageCoreBlockEntity) {
+                        cores.add(current);
+                    }
+
+                    for (Direction dir : Direction.values()) {
+                        BlockPos next = current.relative(dir);
+                        if (!visited.contains(next) && level.hasChunkAt(next)) {
+                            visited.add(next);
+                            if (level.getBlockState(next).getBlock() instanceof IStorageNetworkBlock) {
+                                queue.add(next);
+                            }
+                        }
+                    }
+                }
+            }
+            depth++;
+        }
+        return cores;
     }
 
     static StorageCoreBlockEntity bfsFindCore(Level level, BlockPos start) {

@@ -4,6 +4,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -360,6 +362,356 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
+    public static void crafting_recipe_consumes_network_materials_and_outputs_to_player(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.OAK_PLANKS, 5));
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(30, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.CRAFTING_TABLE));
+            if (menu.getRecipeCount() < 1) { helper.fail("Crafting table should have a crafting recipe"); return; }
+            if (menu.getCurrentRecipes().get(menu.getCurrentRecipeIndex()).value().getType() != RecipeType.CRAFTING) {
+                helper.fail("Crafting table recipe should be a crafting recipe");
+                return;
+            }
+
+            menu.craftItem(1, player);
+            long remainingPlanks = core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_PLANKS)));
+            if (remainingPlanks != 1) {
+                helper.fail("Crafting one table should consume 4 network planks, left " + remainingPlanks);
+                return;
+            }
+            int tables = countInInventory(player, Items.CRAFTING_TABLE);
+            if (tables != 1) {
+                helper.fail("Crafting one table should output 1 crafting table to player, got " + tables);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void smelting_recipe_consumes_network_ingredient_fuel_energy_and_outputs(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.COBBLESTONE, 2));
+            for (int i = 0; i < 200; i++) core.tick();
+            core.addFuel(new ItemStack(Items.COAL), EnergyType.FURNACE_FUEL);
+            long energyBefore = core.getEnergy(EnergyType.SMELTING_ENERGY);
+            long fuelBefore = core.getEnergy(EnergyType.FURNACE_FUEL);
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(31, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.STONE));
+            if (menu.getRecipeCount() < 1) { helper.fail("Stone should have a smelting recipe"); return; }
+            if (menu.getCurrentRecipes().get(menu.getCurrentRecipeIndex()).value().getType() != RecipeType.SMELTING) {
+                helper.fail("Stone recipe should be smelting");
+                return;
+            }
+
+            menu.craftItem(1, player);
+            long remainingCobble = core.getItemCount(ItemKey.of(new ItemStack(Items.COBBLESTONE)));
+            if (remainingCobble != 1) {
+                helper.fail("Smelting one stone should consume 1 cobblestone, left " + remainingCobble);
+                return;
+            }
+            if (core.getEnergy(EnergyType.SMELTING_ENERGY) != energyBefore - 200) {
+                helper.fail("Smelting should consume 200 smelting energy, before " + energyBefore + " after " + core.getEnergy(EnergyType.SMELTING_ENERGY));
+                return;
+            }
+            if (core.getEnergy(EnergyType.FURNACE_FUEL) != fuelBefore - 200) {
+                helper.fail("Smelting should consume 200 furnace fuel, before " + fuelBefore + " after " + core.getEnergy(EnergyType.FURNACE_FUEL));
+                return;
+            }
+            if (countInInventory(player, Items.STONE) != 1) {
+                helper.fail("Smelting should output 1 stone to player");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void smelting_recipe_without_energy_or_fuel_leaves_state_unchanged(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.COBBLESTONE, 1));
+            core.addFuel(new ItemStack(Items.COAL), EnergyType.FURNACE_FUEL);
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(32, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.STONE));
+            if (menu.getRecipeCount() < 1) { helper.fail("Stone should have a smelting recipe"); return; }
+
+            menu.craftItem(1, player);
+            long fuelAfterNoEnergyAttempt = core.getEnergy(EnergyType.FURNACE_FUEL);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.COBBLESTONE))) != 1) {
+                helper.fail("No-energy smelting must not consume cobblestone");
+                return;
+            }
+            if (fuelAfterNoEnergyAttempt != 1600) {
+                helper.fail("No-energy smelting must not consume fuel, got " + fuelAfterNoEnergyAttempt);
+                return;
+            }
+            if (countInInventory(player, Items.STONE) != 0) {
+                helper.fail("No-energy smelting must not output stone");
+                return;
+            }
+
+            core.consumeEnergy(new EnergyCost(EnergyType.SMELTING_ENERGY, 0, EnergyType.FURNACE_FUEL, fuelAfterNoEnergyAttempt), 1);
+            for (int i = 0; i < 200; i++) core.tick();
+            long energyBeforeNoFuelAttempt = core.getEnergy(EnergyType.SMELTING_ENERGY);
+            menu.craftItem(1, player);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.COBBLESTONE))) != 1) {
+                helper.fail("No-fuel smelting must not consume cobblestone");
+                return;
+            }
+            if (core.getEnergy(EnergyType.SMELTING_ENERGY) != energyBeforeNoFuelAttempt) {
+                helper.fail("No-fuel smelting must not consume process energy");
+                return;
+            }
+            if (core.getEnergy(EnergyType.FURNACE_FUEL) != 0) {
+                helper.fail("No-fuel smelting should still have 0 fuel, got " + core.getEnergy(EnergyType.FURNACE_FUEL));
+                return;
+            }
+            if (countInInventory(player, Items.STONE) != 0) {
+                helper.fail("No-fuel smelting must not output stone");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void player_inventory_toggle_only_consumes_when_enabled(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            player.getInventory().add(new ItemStack(Items.OAK_PLANKS, 4));
+            var menu = new CraftingTerminalMenu(33, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.CRAFTING_TABLE));
+            if (menu.getRecipeCount() < 1) { helper.fail("Crafting table should have a crafting recipe"); return; }
+
+            menu.craftItem(1, player);
+            if (countInInventory(player, Items.OAK_PLANKS) != 4) {
+                helper.fail("Disabled player-inventory crafting must not consume player planks");
+                return;
+            }
+            if (countInInventory(player, Items.CRAFTING_TABLE) != 0) {
+                helper.fail("Disabled player-inventory crafting must not output crafting tables");
+                return;
+            }
+
+            menu.clickMenuButton(player, 7);
+            if (!menu.isUsePlayerInventory()) {
+                helper.fail("Button 7 should enable player inventory crafting");
+                return;
+            }
+            menu.clickMenuButton(player, 2);
+            if (countInInventory(player, Items.OAK_PLANKS) != 0) {
+                helper.fail("Enabled player-inventory crafting should consume player planks");
+                return;
+            }
+            if (countInInventory(player, Items.CRAFTING_TABLE) != 1) {
+                helper.fail("Enabled player-inventory crafting should output 1 crafting table");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void selected_item_removed_from_network_clears_preview(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.IRON_INGOT, 1));
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(34, player.getInventory(), core);
+            menu.refreshDisplayItems(core);
+            int ironSlot = findDisplaySlot(menu, Items.IRON_INGOT);
+            if (ironSlot < 0) { helper.fail("Iron ingot not in display grid"); return; }
+            menu.clicked(ironSlot, 0, ClickType.PICKUP, player);
+            if (!menu.getSelectedStack().is(Items.IRON_INGOT)) {
+                helper.fail("Display click should select iron ingot");
+                return;
+            }
+            if (menu.getRecipeCount() == 0 || menu.getMissingPreview().isEmpty()) {
+                helper.fail("Selected iron ingot should have recipe metadata and missing preview before removal");
+                return;
+            }
+
+            core.extractItem(ItemKey.of(new ItemStack(Items.IRON_INGOT)), 1);
+            menu.refreshDisplayItems(core);
+            if (!menu.getSelectedStack().isEmpty()) {
+                helper.fail("Removed selected item should clear selected stack, got " + menu.getSelectedStack());
+                return;
+            }
+            if (menu.getRecipeCount() != 0) {
+                helper.fail("Removed selected item should clear recipe count, got " + menu.getRecipeCount());
+                return;
+            }
+            if (menu.getCraftableCount() != 0) {
+                helper.fail("Removed selected item should clear craftable count, got " + menu.getCraftableCount());
+                return;
+            }
+            if (!menu.getMissingPreview().isEmpty()) {
+                helper.fail("Removed selected item should clear missing preview");
+                return;
+            }
+            if (!"No recipe".equals(menu.getCurrentRecipeTypeLabel())) {
+                helper.fail("Removed selected item should clear recipe type label, got " + menu.getCurrentRecipeTypeLabel());
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void display_click_syncs_selected_recipe_metadata_and_missing_preview(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.IRON_INGOT, 1));
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(35, player.getInventory(), core);
+            menu.refreshDisplayItems(core);
+            int ironSlot = findDisplaySlot(menu, Items.IRON_INGOT);
+            if (ironSlot < 0) { helper.fail("Iron ingot not in display grid"); return; }
+
+            menu.clicked(ironSlot, 0, ClickType.PICKUP, player);
+            if (!menu.getSelectedStack().is(Items.IRON_INGOT)) {
+                helper.fail("Display click should sync selected iron ingot");
+                return;
+            }
+            if (menu.getRecipeCount() < 2) {
+                helper.fail("Iron ingot display click should sync smelting/blasting recipe count, got " + menu.getRecipeCount());
+                return;
+            }
+            String expectedLabel = labelFor(menu.getCurrentRecipes().get(menu.getCurrentRecipeIndex()).value().getType());
+            if (!expectedLabel.equals(menu.getCurrentRecipeTypeLabel())) {
+                helper.fail("Iron ingot recipe type label should match current recipe type " + expectedLabel + ", got " + menu.getCurrentRecipeTypeLabel());
+                return;
+            }
+            if (menu.getCraftableCount() != 0) {
+                helper.fail("Iron ingot should not be craftable without ingredients/energy/fuel, got " + menu.getCraftableCount());
+                return;
+            }
+            if (menu.getMissingPreview().isEmpty()) {
+                helper.fail("Iron ingot should sync missing ingredient preview after display click");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void recipe_type_navigation_updates_synced_metadata(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(36, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.IRON_INGOT));
+            if (menu.getRecipeCount() < 2) { helper.fail("Iron ingot should have multiple recipe types"); return; }
+            int recipeCount = menu.getRecipeCount();
+            int firstSmeltingIndex = -1;
+            int firstBlastingIndex = -1;
+            for (int r = 0; r < menu.getCurrentRecipes().size(); r++) {
+                RecipeType<?> type = menu.getCurrentRecipes().get(r).value().getType();
+                if (type == RecipeType.SMELTING && firstSmeltingIndex < 0) {
+                    firstSmeltingIndex = r;
+                }
+                if (type == RecipeType.BLASTING && firstBlastingIndex < 0) {
+                    firstBlastingIndex = r;
+                }
+            }
+            if (firstSmeltingIndex < 0 || firstBlastingIndex <= firstSmeltingIndex) {
+                helper.fail("Iron ingot should have smelting before blasting recipes, smelting=" + firstSmeltingIndex + " blasting=" + firstBlastingIndex);
+                return;
+            }
+
+            for (int i = 0; i < firstSmeltingIndex; i++) menu.clickMenuButton(player, 9);
+            if (menu.getCurrentRecipeIndex() != firstSmeltingIndex) {
+                helper.fail("Next recipe button should sync current recipe index " + firstSmeltingIndex + ", got " + menu.getCurrentRecipeIndex());
+                return;
+            }
+            if (!"Smelting".equals(menu.getCurrentRecipeTypeLabel())) {
+                helper.fail("Recipe navigation should sync type label to Smelting, got " + menu.getCurrentRecipeTypeLabel());
+                return;
+            }
+
+            for (int i = firstSmeltingIndex; i < firstBlastingIndex; i++) menu.clickMenuButton(player, 9);
+            if (menu.getCurrentRecipeIndex() != firstBlastingIndex) {
+                helper.fail("Next recipe button should sync current recipe index " + firstBlastingIndex + ", got " + menu.getCurrentRecipeIndex());
+                return;
+            }
+            if (menu.getRecipeCount() != recipeCount) {
+                helper.fail("Recipe navigation should keep recipe count synced, got " + menu.getRecipeCount());
+                return;
+            }
+            if (!"Blasting".equals(menu.getCurrentRecipeTypeLabel())) {
+                helper.fail("Recipe navigation should sync type label to Blasting, got " + menu.getCurrentRecipeTypeLabel());
+                return;
+            }
+
+            menu.clickMenuButton(player, 8);
+            if (menu.getCurrentRecipeIndex() != firstBlastingIndex - 1) {
+                helper.fail("Prev recipe button should decrement current recipe index");
+                return;
+            }
+            if (!"Smelting".equals(menu.getCurrentRecipeTypeLabel())) {
+                helper.fail("Prev recipe button should sync type label back to Smelting, got " + menu.getCurrentRecipeTypeLabel());
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void duplicate_ingredients_are_aggregated_before_crafting(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -395,5 +747,32 @@ public class CraftingTests {
             }
             helper.succeed();
         });
+    }
+
+    private static int countInInventory(Player player, Item item) {
+        int count = 0;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (!stack.isEmpty() && stack.is(item)) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static int findDisplaySlot(CraftingTerminalMenu menu, Item item) {
+        for (int s = 0; s < StorageTerminalMenu.DISPLAY_SLOTS; s++) {
+            if (menu.getSlot(s).getItem().is(item)) return s;
+        }
+        return -1;
+    }
+
+    private static String labelFor(RecipeType<?> type) {
+        if (type == RecipeType.CRAFTING) return "Crafting";
+        if (type == RecipeType.SMELTING) return "Smelting";
+        if (type == RecipeType.BLASTING) return "Blasting";
+        if (type == RecipeType.SMOKING) return "Smoking";
+        if (type == RecipeType.CAMPFIRE_COOKING) return "Campfire";
+        if (type == RecipeType.STONECUTTING) return "Stonecutting";
+        if (type == RecipeType.SMITHING) return "Smithing";
+        return "No recipe";
     }
 }

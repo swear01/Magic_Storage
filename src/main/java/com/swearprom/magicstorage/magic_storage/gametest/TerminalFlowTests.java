@@ -679,6 +679,142 @@ public class TerminalFlowTests {
         });
     }
 
+    @GameTest(template = "platform")
+    public static void import_bus_does_not_extract_when_type_slots_full(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var busPos = corePos.east();
+        var chestPos = busPos.east();
+
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos,
+                MagicStorage.IMPORT_BUS.get().defaultBlockState().setValue(ImportBusBlock.FACING, net.minecraft.core.Direction.EAST),
+                Block.UPDATE_ALL);
+        level.setBlock(chestPos, net.minecraft.world.level.block.Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var coreBe = level.getBlockEntity(corePos);
+            if (!(coreBe instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            ItemStack[] tenTypes = {
+                    new ItemStack(Items.STONE), new ItemStack(Items.DIRT), new ItemStack(Items.COBBLESTONE),
+                    new ItemStack(Items.GRANITE), new ItemStack(Items.DIORITE), new ItemStack(Items.ANDESITE),
+                    new ItemStack(Items.OAK_LOG), new ItemStack(Items.SPRUCE_LOG), new ItemStack(Items.BIRCH_LOG),
+                    new ItemStack(Items.SAND)
+            };
+            for (ItemStack stack : tenTypes) {
+                long inserted = core.insertItem(stack.copy());
+                if (inserted != 1) { helper.fail("setup should fill each T1 type slot, got " + inserted + " for " + stack); return; }
+            }
+            if (core.getTypeCount() != core.getTotalTypeSlots()) {
+                helper.fail("setup should fill all type slots: types=" + core.getTypeCount() + " max=" + core.getTotalTypeSlots());
+                return;
+            }
+            var chestBe = level.getBlockEntity(chestPos);
+            if (!(chestBe instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity barrel)) {
+                helper.fail("Barrel not found"); return;
+            }
+            barrel.setItem(0, new ItemStack(Items.GOLD_INGOT, 16));
+            barrel.setChanged();
+            var busBe = level.getBlockEntity(busPos);
+            if (!(busBe instanceof ImportBusBlockEntity bus)) { helper.fail("Import bus not found"); return; }
+            for (int i = 0; i < 11; i++) bus.tick();
+            if (barrel.getItem(0).getCount() != 16) {
+                helper.fail("full type storage must not make import bus extract and lose items, got " + barrel.getItem(0));
+                return;
+            }
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.GOLD_INGOT))) != 0) {
+                helper.fail("new type should not be inserted when all type slots are full");
+                return;
+            }
+            if (core.getTypeCount() != core.getTotalTypeSlots()) {
+                helper.fail("type count should remain full without overflowing");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void search_filter_invalid_tag_tokens_return_empty(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.STONE, 1));
+            try {
+                if (!core.getDisplayStacks("#").isEmpty()) { helper.fail("bare # tag token should match nothing"); return; }
+                if (!core.getDisplayStacks("#:").isEmpty()) { helper.fail("invalid #: tag token should match nothing"); return; }
+            } catch (RuntimeException e) {
+                helper.fail("invalid tag tokens must not throw: " + e);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void incremental_growth_rebuilds_when_placed_block_bridges_detached_segment(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var connected = corePos.east();
+        var bridge = corePos.east(2);
+        var detached = corePos.east(3);
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(connected, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(detached, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            if (core.getConnectedBlocks().contains(detached)) { helper.fail("test setup invalid: detached segment already connected"); return; }
+            level.setBlock(bridge, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+            MagicStorage.findCoresAndGrow(level, bridge);
+            if (!core.getConnectedBlocks().contains(bridge)) { helper.fail("placed bridge should connect to core"); return; }
+            if (!core.getConnectedBlocks().contains(detached)) { helper.fail("bridge placement must rebuild and include detached segment"); return; }
+            if (core.getTotalTypeSlots() != 30) { helper.fail("all three T1 units should contribute 30 slots, got " + core.getTotalTypeSlots()); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void incremental_bridge_between_two_cores_conflicts_both_networks(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var coreA = helper.absolutePos(new BlockPos(1, 3, 1));
+        var unitA = coreA.east();
+        var bridge = coreA.east(2);
+        var unitB = coreA.east(3);
+        var coreB = coreA.east(4);
+        level.setBlock(coreA, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(unitA, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(unitB, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(coreB, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var beA = level.getBlockEntity(coreA);
+            var beB = level.getBlockEntity(coreB);
+            if (!(beA instanceof StorageCoreBlockEntity a)) { helper.fail("Core A not found"); return; }
+            if (!(beB instanceof StorageCoreBlockEntity b)) { helper.fail("Core B not found"); return; }
+            a.rebuildNetwork(level);
+            b.rebuildNetwork(level);
+            if (a.isConflicted() || b.isConflicted()) { helper.fail("test setup invalid: cores conflicted before bridge"); return; }
+            level.setBlock(bridge, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+            MagicStorage.findCoresAndGrow(level, bridge);
+            if (!a.isConflicted()) { helper.fail("core A should conflict when bridge joins two cores"); return; }
+            if (!b.isConflicted()) { helper.fail("core B should conflict when bridge joins two cores"); return; }
+            if (a.insertItem(new ItemStack(Items.STONE, 1)) != 0) { helper.fail("conflicted core A must not accept items"); return; }
+            if (b.insertItem(new ItemStack(Items.STONE, 1)) != 0) { helper.fail("conflicted core B must not accept items"); return; }
+            helper.succeed();
+        });
+    }
+
     @GameTest(template = "range_platform")
     public static void terminal_validates_against_access_block_not_core_distance(GameTestHelper helper) {
         var level = helper.getLevel();
@@ -717,6 +853,198 @@ public class TerminalFlowTests {
             player.moveTo(corePos.getX() + 100.5, corePos.getY() + 0.5, corePos.getZ() + 100.5, 0, 0);
             var menu = new CraftingTerminalMenu(0, player.getInventory(), core, corePos, true);
             if (!menu.stillValid(player)) helper.fail("remote terminal should remain valid away from bound core");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void terminal_pickup_click_amounts_match_vanilla_like_stacks(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var key = ItemKey.of(new ItemStack(Items.STONE));
+            core.insertItem(new ItemStack(Items.STONE, 100));
+            var leftPlayer = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var leftMenu = new StorageTerminalMenu(30, leftPlayer.getInventory(), core);
+            leftMenu.refreshDisplayItems(core);
+            leftMenu.clicked(0, 0, net.minecraft.world.inventory.ClickType.PICKUP, leftPlayer);
+            if (!leftMenu.getCarried().is(Items.STONE) || leftMenu.getCarried().getCount() != 64) {
+                helper.fail("left click should carry one stack of 64, got " + leftMenu.getCarried());
+                return;
+            }
+            if (core.getItemCount(key) != 36) { helper.fail("left click should leave 36, got " + core.getItemCount(key)); return; }
+
+            core.extractItem(key, 36);
+            core.insertItem(new ItemStack(Items.STONE, 100));
+            var rightPlayer = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var rightMenu = new StorageTerminalMenu(31, rightPlayer.getInventory(), core);
+            rightMenu.refreshDisplayItems(core);
+            rightMenu.clicked(0, 1, net.minecraft.world.inventory.ClickType.PICKUP, rightPlayer);
+            if (!rightMenu.getCarried().is(Items.STONE) || rightMenu.getCarried().getCount() != 32) {
+                helper.fail("right click should carry half stack of 32, got " + rightMenu.getCarried());
+                return;
+            }
+            if (core.getItemCount(key) != 68) { helper.fail("right click should leave 68, got " + core.getItemCount(key)); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void terminal_invalidates_when_access_block_is_removed(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var terminalPos = corePos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(terminalPos, MagicStorage.STORAGE_TERMINAL.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            player.moveTo(terminalPos.getX() + 0.5, terminalPos.getY() + 0.5, terminalPos.getZ() + 0.5, 0, 0);
+            var menu = new StorageTerminalMenu(32, player.getInventory(), core, terminalPos, false);
+            if (!menu.stillValid(player)) { helper.fail("menu should start valid while access terminal exists"); return; }
+            level.removeBlock(terminalPos, false);
+            if (menu.stillValid(player)) { helper.fail("menu must invalidate when the access terminal block is removed"); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void remote_terminal_invalidates_when_bound_core_is_removed(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            player.moveTo(corePos.getX() + 100.5, corePos.getY() + 0.5, corePos.getZ() + 100.5, 0, 0);
+            var menu = new CraftingTerminalMenu(33, player.getInventory(), core, corePos, true);
+            if (!menu.stillValid(player)) { helper.fail("remote menu should start valid while core exists"); return; }
+            level.removeBlock(corePos, false);
+            if (menu.stillValid(player)) { helper.fail("remote menu must invalidate when the bound core block is removed"); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void export_bus_only_extracts_what_target_can_accept(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var busPos = corePos.east();
+        var chestPos = busPos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos,
+                MagicStorage.EXPORT_BUS.get().defaultBlockState().setValue(ExportBusBlock.FACING, net.minecraft.core.Direction.EAST),
+                Block.UPDATE_ALL);
+        level.setBlock(chestPos, net.minecraft.world.level.block.Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var coreBe = level.getBlockEntity(corePos);
+            if (!(coreBe instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.STONE, 10));
+            var chestBe = level.getBlockEntity(chestPos);
+            if (!(chestBe instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity barrel)) { helper.fail("Barrel not found"); return; }
+            barrel.setItem(0, new ItemStack(Items.STONE, 63));
+            for (int i = 1; i < barrel.getContainerSize(); i++) {
+                barrel.setItem(i, new ItemStack(Items.DIRT, 64));
+            }
+            barrel.setChanged();
+            var busBe = level.getBlockEntity(busPos);
+            if (!(busBe instanceof ExportBusBlockEntity bus)) { helper.fail("Export bus not found"); return; }
+            bus.setFilter(new ItemStack(Items.STONE));
+            for (int i = 0; i < 11; i++) bus.tick();
+            if (barrel.getItem(0).getCount() != 64) { helper.fail("barrel should receive exactly one stone, got " + barrel.getItem(0)); return; }
+            long remaining = core.getItemCount(ItemKey.of(new ItemStack(Items.STONE)));
+            if (remaining != 9) { helper.fail("core should only lose one stone, got remaining=" + remaining); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void export_bus_stops_after_network_disconnect(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var unitPos = corePos.east();
+        var busPos = unitPos.east();
+        var chestPos = busPos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(unitPos, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos,
+                MagicStorage.EXPORT_BUS.get().defaultBlockState().setValue(ExportBusBlock.FACING, net.minecraft.core.Direction.EAST),
+                Block.UPDATE_ALL);
+        level.setBlock(chestPos, net.minecraft.world.level.block.Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            var coreBe = level.getBlockEntity(corePos);
+            if (!(coreBe instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.STONE, 1));
+            var chestBe = level.getBlockEntity(chestPos);
+            if (!(chestBe instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity barrel)) { helper.fail("Barrel not found"); return; }
+            var busBe = level.getBlockEntity(busPos);
+            if (!(busBe instanceof ExportBusBlockEntity bus)) { helper.fail("Export bus not found"); return; }
+            bus.setFilter(new ItemStack(Items.STONE));
+            for (int i = 0; i < 11; i++) bus.tick();
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 0) { helper.fail("initial export should remove one stone"); return; }
+            if (barrel.getItem(0).getCount() != 1) { helper.fail("initial export should place one stone in barrel, got " + barrel.getItem(0)); return; }
+            level.removeBlock(unitPos, false);
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.STONE, 1));
+            for (int i = 0; i < 11; i++) bus.tick();
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 1) { helper.fail("disconnected export bus must not keep exporting via cached core"); return; }
+            if (barrel.getItem(0).getCount() != 1) { helper.fail("disconnected export bus should not add another stone, got " + barrel.getItem(0)); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void crafting_menu_data_slot_parity_server_vs_buf_ctor(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var serverMenu = new CraftingTerminalMenu(34, player.getInventory(), core);
+            var byteBuf = new net.minecraft.network.RegistryFriendlyByteBuf(
+                    io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+            byteBuf.writeBlockPos(corePos);
+            byteBuf.writeBlockPos(corePos);
+            byteBuf.writeBoolean(false);
+            var bufMenu = new CraftingTerminalMenu(35, player.getInventory(), byteBuf);
+            int serverCount = dataSlotCount(serverMenu);
+            int bufCount = dataSlotCount(bufMenu);
+            if (serverCount != bufCount) { helper.fail("crafting data-slot count mismatch: server=" + serverCount + " buf=" + bufCount); return; }
+            if (serverCount < 12) { helper.fail("crafting menu should sync base 5 + crafting 7 data slots, got " + serverCount); return; }
+            int metadataStart = StorageTerminalMenu.DISPLAY_SLOTS + 36;
+            int metadataSlots = serverMenu.slots.size() - metadataStart;
+            if (metadataSlots != 10) { helper.fail("crafting selection/missing metadata should be 10 hidden slots after player inventory, got " + metadataSlots); return; }
+            for (int i = metadataStart; i < serverMenu.slots.size(); i++) {
+                var slot = serverMenu.getSlot(i);
+                if (slot.isActive()) { helper.fail("metadata slot " + i + " must be inactive"); return; }
+                if (slot.mayPlace(new ItemStack(Items.STONE))) { helper.fail("metadata slot " + i + " must reject manual placement"); return; }
+                if (slot.mayPickup(player)) { helper.fail("metadata slot " + i + " must reject pickup"); return; }
+                if (slot.x != -9999 || slot.y != -9999) { helper.fail("metadata slot " + i + " should live offscreen, got " + slot.x + "," + slot.y); return; }
+            }
             helper.succeed();
         });
     }

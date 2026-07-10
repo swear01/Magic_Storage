@@ -12,12 +12,12 @@
 
 ## Status (updated 2026-07-10)
 
-- **Done + verified** (currently SelfTest 104, GameTest 81):
+- **Done + verified** (currently SelfTest 104, GameTest 102):
   - A5b fuzzy match (Task 3/6) — commit `c94d37f`
   - A5a view-settings sync (Task 4) + A4 identity selection (Task 5) + A7 craft preview — commit `116664d`
   - A1 incremental network growth, **safe scope** (Task 8: incremental on place, full rebuild on break) — commit `3433e76`
   - A2 Action/Actor storage contract (Task 1) + A3 change-event foundation (Task 2) — `Action`, `Actor`, `StorageListener`, execute-only delta events.
-  - P0/P1/P2 RS2 parity polish:bus cached-core disconnect invalidation, conflicted core no extract, terminal access/remote `stillValid`, server-synced crafting recipe metadata, server-side craftable-only filter, EMI display-slot contract, duplicate-ingredient aggregation before preview/craft.
+  - P0/P1/P2 RS2 parity polish:bus cached-core disconnect invalidation, conflicted core no extract, bridge placement full-rebuild fallback, terminal access/remote `stillValid`, server-synced crafting recipe metadata, server-side craftable-only filter, EMI display/player input-source contract excluding hidden metadata slots, duplicate-ingredient aggregation before preview/craft, real crafting/smelting/player-inventory craft paths.
 - **Remaining**: **P3 incremental grid delta (Task 7)** only. A3 listener foundation exists, but the current paged grid is ≤81 slots and vanilla menu sync is already incremental; keep P3 deferred unless the UI changes to a whole-list client grid.
 
 ## Dispatch strategy (read before spawning agents)

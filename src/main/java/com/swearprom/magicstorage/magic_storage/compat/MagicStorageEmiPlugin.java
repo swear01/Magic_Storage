@@ -24,10 +24,12 @@ public class MagicStorageEmiPlugin implements EmiPlugin {
     }
 
     static class CraftingTerminalHandler implements StandardRecipeHandler<CraftingTerminalMenu> {
+        private static final int PLAYER_INVENTORY_SLOTS = 36;
+        private static final int INPUT_SOURCE_SLOTS = StorageTerminalMenu.DISPLAY_SLOTS + PLAYER_INVENTORY_SLOTS;
 
         @Override
         public List<Slot> getInputSources(CraftingTerminalMenu handler) {
-            return handler.slots;
+            return handler.slots.subList(0, Math.min(handler.slots.size(), INPUT_SOURCE_SLOTS));
         }
 
         @Override

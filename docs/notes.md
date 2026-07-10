@@ -100,7 +100,7 @@ Source: https://github.com/refinedmods/refinedstorage2
 
 - **網路邏輯一律伺服器端**;客戶端靠封包同步,絕不在客戶端保存儲存狀態。
 - Capability 註冊遵循 NeoForge 慣例。
-- 實作進度以**程式碼為準**:已有 40 個 Java 檔 + SelfTest 104 / GameTest 81;設計細節見 `PLAN.md`,即時狀態見 `docs/plan.md`。
+- 實作進度以**程式碼為準**:已有 40 個 Java 檔 + SelfTest 104 / GameTest 102;設計細節見 `PLAN.md`,即時狀態見 `docs/plan.md`。
 - 建置前需設 `JAVA_HOME`(JDK 21,見根 repo `docs/notes.md`)。
 - **SelfTest 在 dedicated server 也會跑**(mod 建構時呼叫):絕不可從 SelfTest 參照 client-only 類別(如 `*Screen` extends `AbstractContainerScreen`),否則 server 端 RuntimeDistCleaner 會擋下、整個 mod 載入失敗。純邏輯放 dist-中性類別(如 enum:`SearchMode.apply`)再測。
 - **`Slot.x`/`y` 是 `final`**:GUI 動態調整版面時不能改 slot 座標,需在 Screen(client)端 `menu.slots.set(i, new Slot(...))` 重建 slot(座標只供 client 渲染/命中,不上傳)。見 `StorageTerminalScreen.repositionPlayerInventory`。
@@ -108,10 +108,10 @@ Source: https://github.com/refinedmods/refinedstorage2
 - **終端 view 控制在左側 rail**:sort order / sort mode / search mode 三個按鈕位置走 dist-neutral `TerminalLayout`,位於 terminal 面板左外側(類 RS2 side buttons),避免佔用 grid/scrollbar;SelfTest 守護不可重新塞回右側。
 - **顯示數量不可 clamp 到 max stack size**:`StorageCoreBlockEntity.getDisplayStacks` 的 display `ItemStack` count 代表網路實際數量(夾到 `Integer.MAX_VALUE`),可顯示 999 等大於 64 的數字;`StorageTerminalMenu` 的 display-only `SimpleContainer` 必須 override `getMaxStackSize(ItemStack)` 避免 `setItem` 再夾回 64。取物仍由 menu click path 決定每次搬運量。
 - **Patchouli 1.20+ mod book 路徑**:`book.json` 留在 `data/magic_storage/patchouli_books/guide/book.json`,但 categories/entries/templates 必須放 `assets/magic_storage/patchouli_books/guide/en_us/...`;放在 `data/.../en_us` 會導致 `BookContentResourceListenerLoader preloaded 0 jsons` 與書內 `No Entries`。
-- **Menu data-slot client/server parity**:server(core 建構子)與 client(buf 建構子)的 `addDataSlots` 數量必須**完全一致**,否則 `advanced_container_set_data` 同步會 `IndexOutOfBounds` 崩潰(開 storage terminal 即崩)。基礎 type-count slots 放在**兩條建構子都會經過**的 `addTypeDataSlots()`;crafting 在其上再 `addContainerData()`(兩邊一致)。有 `data_slot_parity_server_vs_buf_ctor` GameTest 守護。畫面外/同步用的 slot(如 crafting 的 `selectionContainer`)要加在**玩家背包之後**,否則 `repositionPlayerInventory` 會錯位。
+- **Menu data-slot client/server parity**:server(core 建構子)與 client(buf 建構子)的 `addDataSlots` 數量必須**完全一致**,否則 `advanced_container_set_data` 同步會 `IndexOutOfBounds` 崩潰(開 storage terminal 即崩)。基礎 type-count slots 放在**兩條建構子都會經過**的 `addTypeDataSlots()`;crafting 在其上再 `addContainerData()`(兩邊一致)。有 `crafting_menu_data_slot_parity_server_vs_buf_ctor` GameTest 守護。畫面外/同步用的 slot(如 crafting 的 `selectionContainer`)要加在**玩家背包之後**且保持 inactive/offscreen,否則 `repositionPlayerInventory` 會錯位;EMI input sources 也必須排除這些 hidden metadata slots。
 - **Menu open buffer contract**:storage/crafting terminal 的 buf 依序寫 `corePos`、`accessPos`、`remoteAccess`。本地 terminal `stillValid` 以 `accessPos`(開啟的 terminal block)距離判斷,不是 core 距離;remote terminal 寫 `remoteAccess=true` 且不受距離限制。新增 buf 欄位時兩端 constructor 與 parity GameTest 要一起改。
 - **Storage API contract**:Core 的實際 mutation API 是 `insertItem(stack, Action, Actor)` / `extractItem(key, amount, Action, Actor)` / `extractMatching(predicate, amount, Action, Actor)`;`Action.SIMULATE` 只回報可處理量、不改 storage、不 fire event,`Action.EXECUTE` 才 setChanged + fire `StorageListener.onChanged(ItemKey, delta, newAmount, Actor)`。舊 boolean/no-arg overload 只是 bridge。
-- **Client crafting screen 不做 server 邏輯**:`CraftingTerminalScreen` 不掃 `RecipeManager`、不直接讀 core storage/energy;recipe count/type、craftable count、missing preview 由 `CraftingTerminalMenu` server data/hidden slots 同步。SelfTest/GameTest 在 dedicated server 跑,client-only 類別仍不可被 server test 直接引用。
+- **Client crafting screen 不做 server 邏輯**:`CraftingTerminalScreen` 不掃 `RecipeManager`、不直接讀 core storage/energy;recipe count/type、craftable count、missing preview 由 `CraftingTerminalMenu` server data/hidden slots 同步。SelfTest/GameTest 在 dedicated server 跑,client-only 類別仍不可被 server test 直接引用;Python static regressions 會守護這點。
 
 ## Decisions
 
@@ -142,5 +142,5 @@ Source: https://github.com/refinedmods/refinedstorage2
 - **view 設定 server 同步(A5a)**:sort / order / search 模式為 server 權威、經 data slot 同步;終端按鈕標籤/tooltip 反映真實狀態(非 client 私有)。
 - **選取物品身分化(A4)**:crafting 選取以 `ItemKey` 身分為準(經畫面外 `selectionContainer` slot 自動同步),非 grid slot index → 排序/捲動後配方面板不再亂指。
 - **合成 preview(A7)**:用 simulate 路徑算「可做 N / 缺什麼」顯示,不異動狀態。
-- **增量網路成長(A1,安全範圍)**:放置時 `StorageCoreBlockEntity.tryIncrementalAdd` O(1) 加入(無 full BFS);**破壞/不確定一律 full `rebuildNetwork`**(移除可能分裂網路,難增量)。`capacityOf()` 是兩條路徑唯一的容量計算來源。
+- **增量網路成長(A1,安全範圍)**:單純放置到既有 connected set 時 `StorageCoreBlockEntity.tryIncrementalAdd` O(1) 加入(無 full BFS);**破壞/不確定拓樸一律 full `rebuildNetwork`**(移除可能分裂網路,放置若 bridge detached segment 或連到多個 core 也屬不確定)。`capacityOf()` 是兩條路徑唯一的容量計算來源;GameTest 守護 simple growth、detached bridge full rebuild、multi-core bridge conflicted。
 - **仍未採用(未來)**:**P3 增量 grid delta**(grid 改收差異、不整份重建)與完整常駐 network graph;目前分頁式 grid(≤81 格,vanilla 已增量同步)低價值,除非改成整列表 client grid 才值得。

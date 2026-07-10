@@ -675,4 +675,111 @@ public class BehavioralTests {
             helper.succeed();
         });
     }
+
+    @GameTest(template = "platform")
+    public static void action_execute_consumes_input_but_simulate_preserves_it(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            ItemStack simulated = new ItemStack(Items.STONE, 7);
+            long accepted = core.insertItem(simulated, Action.SIMULATE, Actor.player(helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL)));
+            if (accepted != 7) { helper.fail("simulate should report accepting 7, got " + accepted); return; }
+            if (simulated.getCount() != 7) { helper.fail("simulate must not consume input stack, got " + simulated.getCount()); return; }
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 0) { helper.fail("simulate must not mutate storage"); return; }
+
+            ItemStack executed = new ItemStack(Items.STONE, 7);
+            long inserted = core.insertItem(executed, Action.EXECUTE, Actor.magicCrafting());
+            if (inserted != 7) { helper.fail("execute should insert 7, got " + inserted); return; }
+            if (executed.getCount() != 0) { helper.fail("execute must consume input stack, got " + executed.getCount()); return; }
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 7) { helper.fail("storage should contain 7 stone"); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void storage_listener_remove_stops_future_events(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            java.util.List<String> events = new java.util.ArrayList<>();
+            StorageListener listener = (key, delta, newAmount, actor) -> events.add(delta + ":" + newAmount + ":" + actor.name());
+            core.addListener(listener);
+            core.insertItem(new ItemStack(Items.STONE, 3), Action.EXECUTE, Actor.bus(corePos));
+            core.removeListener(listener);
+            core.insertItem(new ItemStack(Items.STONE, 2), Action.EXECUTE, Actor.bus(corePos));
+            if (events.size() != 1) { helper.fail("removed listener should see exactly 1 event, got " + events); return; }
+            if (!events.get(0).startsWith("3:3:bus@")) { helper.fail("first event should record inserted amount/new total/bus actor, got " + events); return; }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void extract_matching_simulate_preserves_variants_and_events(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            ItemStack plain = new ItemStack(Items.DIAMOND_SWORD);
+            ItemStack damaged = new ItemStack(Items.DIAMOND_SWORD);
+            damaged.setDamageValue(1);
+            core.insertItem(plain.copy());
+            core.insertItem(damaged.copy());
+            java.util.List<Long> deltas = new java.util.ArrayList<>();
+            core.addListener((key, delta, newAmount, actor) -> deltas.add(delta));
+
+            long simulated = core.extractMatching(s -> s.is(Items.DIAMOND_SWORD), 2, Action.SIMULATE, Actor.magicCrafting());
+            if (simulated != 2) { helper.fail("simulate fuzzy extract should report 2, got " + simulated); return; }
+            if (core.countMatching(s -> s.is(Items.DIAMOND_SWORD)) != 2) { helper.fail("simulate fuzzy extract changed storage"); return; }
+            if (!deltas.isEmpty()) { helper.fail("simulate fuzzy extract fired events: " + deltas); return; }
+
+            long executed = core.extractMatching(s -> s.is(Items.DIAMOND_SWORD), 2, Action.EXECUTE, Actor.magicCrafting());
+            if (executed != 2) { helper.fail("execute fuzzy extract should remove 2, got " + executed); return; }
+            if (core.countMatching(s -> s.is(Items.DIAMOND_SWORD)) != 0) { helper.fail("execute fuzzy extract should remove both variants"); return; }
+            if (deltas.size() != 2 || deltas.get(0) != -1 || deltas.get(1) != -1) {
+                helper.fail("execute fuzzy extract should fire one -1 delta per variant, got " + deltas);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void type_slot_is_reusable_after_last_variant_extracted(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            var be = level.getBlockEntity(corePos);
+            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.STONE, 1));
+            if (core.getTypeCount() != 1) { helper.fail("type count should be 1 after insert, got " + core.getTypeCount()); return; }
+            ItemStack extracted = core.extractItem(ItemKey.of(new ItemStack(Items.STONE)), 1, Action.EXECUTE, Actor.player(helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL)));
+            if (extracted.getCount() != 1) { helper.fail("should extract final stone, got " + extracted); return; }
+            if (core.getTypeCount() != 0) { helper.fail("type count should drop to 0 after final variant, got " + core.getTypeCount()); return; }
+            long inserted = core.insertItem(new ItemStack(Items.DIRT, 1), Action.EXECUTE, Actor.EMPTY);
+            if (inserted != 1) { helper.fail("freed type slot should accept dirt, got " + inserted); return; }
+            if (core.getTypeCount() != 1) { helper.fail("type count should be 1 after reusing slot, got " + core.getTypeCount()); return; }
+            helper.succeed();
+        });
+    }
 }

@@ -25,7 +25,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts
 ```
 
-Expected automated coverage is currently SelfTest 104 + GameTest 81, plus Python script tests.
+Expected automated coverage is currently SelfTest 104 + GameTest 102, plus 18 Python script/static regression tests.
 
 ## CI/CD
 
