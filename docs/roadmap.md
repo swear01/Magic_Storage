@@ -8,6 +8,7 @@
 
 ## Recently Done
 
+- Prism GUI session runner + optional client smoke:新增 `scripts/setup_prism_computer_use_wrapper.py` 讓 `/tmp` Computer Use wrapper/app 可重建,`scripts/run_prism_gui_session.py` 將 wrapper/world/Prism launch/本次 log polling/checklist 串成一鍵 session;`.github/workflows/client-smoke.yml` 手動啟 NeoForge client smoke,僅抓 client boot/resource 崩潰,不取代 Prism fullscreen 目視。
 - Prism GUI test world/CLI flow:`scripts/prepare_prism_gui_world.py` 從 `New World` 重建帶 marker 的 `MagicStorageGuiTest`,寫入 datapack `magic_storage_gui_test`(load/tick/functions,無 command block)、固定 storage/crafting/core/unit/bus 座標、patch Prism options,讓後續 GUI 驗證用 hotbar `1`–`6`/`9` 觸發 datapack view functions 對準方塊,先通過 mandatory fullscreen gate,並以 condition polling 取代固定 sleep。
 - GitHub public repo / CI/CD:新增 public repo https://github.com/swear01/Magic_Storage；CI 在 push/PR/manual 跑 JDK 21 build、GameTest、Python unittest、datagen drift check,並上傳 jar/log/report artifacts；CD 在 tag `v<mod_version>` 時驗版本、重跑 gates、產生 release notes 並建立 GitHub Release。
 - 健壯化 pass(地毯式掃描修正):持久化(setChanged、NBT components 存讀)、關閉複製、import bus 吃物、合成回滾、能量溢位、白框/tooltip/焦點、enqueueWork、BFS 上限等。

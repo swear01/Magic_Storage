@@ -82,6 +82,27 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("All Rights Reserved", readme)
         self.assertIn(".github/workflows/", structure)
 
+    def test_client_smoke_workflow_is_manual_only_and_uses_neoforge_runtime_client(self):
+        text = self.read_required(".github/workflows/client-smoke.yml")
+        self.assertIn("name: Client Smoke", text)
+        self.assertIn("workflow_dispatch:", text)
+        self.assertNotIn("pull_request", text)
+        self.assertNotIn("branches:", text)
+        self.assertIn("actions/checkout@v7", text)
+        self.assertIn("actions/setup-java@v5", text)
+        self.assertIn("gradle/actions/setup-gradle@v6", text)
+        self.assertIn("./gradlew build --console=plain --no-daemon", text)
+        self.assertIn("cp build/libs/magic_storage-*.jar run/mods/", text)
+        self.assertIn("headlesshq/mc-runtime-test@4.4.0", text)
+        self.assertIn("mc: '1.21.1'", text)
+        self.assertIn("modloader: neoforge", text)
+        self.assertIn("regex: '.*neoforge.*'", text)
+        self.assertIn("mc-runtime-test: neoforge", text)
+        self.assertIn("xvfb: 'true'", text)
+        self.assertIn("dummy-assets: 'true'", text)
+        self.assertIn("headlessmc-command: '--jvm \"-Djava.awt.headless=true\"'", text)
+        self.assertIn("Client Smoke is a boot/resource smoke test, not GUI layout approval", text)
+
 
 if __name__ == "__main__":
     unittest.main()

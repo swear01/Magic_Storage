@@ -25,13 +25,14 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts
 ```
 
-Expected automated coverage is currently SelfTest 104 + GameTest 102, plus 18 Python script/static regression tests.
+Expected automated coverage is currently SelfTest 104 + GameTest 102, plus the Python script/static regression suite under `scripts/`.
 
 ## CI/CD
 
 GitHub Actions runs on pushes to `main`, pull requests, and manual dispatch:
 
 - `.github/workflows/ci.yml` builds the mod, runs `./gradlew runGameTestServer`, runs Python script tests, runs `./gradlew runData` as a datagen drift check, uploads logs/reports, and uploads `build/libs/magic_storage-*.jar` as an artifact.
+- `.github/workflows/client-smoke.yml` is manual-only (`workflow_dispatch`) and launches a NeoForge client with HeadlessMC / MC-Runtime-Test to catch client boot/resource crashes; it is not GUI layout approval.
 - `.github/workflows/release.yml` runs when a tag `v<mod_version>` is pushed, verifies the tag matches `gradle.properties`, repeats the build/tests/datagen drift check, generates release notes from git history, uploads logs/reports, then creates a GitHub Release with the jar.
 
 Release example:
@@ -43,7 +44,7 @@ git push origin main v0.1.3
 
 ## Manual GUI verification
 
-Automated tests do not verify Minecraft GUI rendering. For terminal/Patchouli/visual changes, run `python3 scripts/prepare_prism_gui_world.py` and follow the fixed Prism dev + Computer Use workflow, including the mandatory fullscreen gate, in `docs/notes.md` under “Prism dev / Computer Use”.
+Automated tests and client smoke do not verify Minecraft GUI layout. For non-visual client boot/resource checks, run `python3 scripts/run_prism_gui_session.py --scenario boot-smoke`. For terminal/Patchouli/visual changes, run `python3 scripts/run_prism_gui_session.py --scenario terminal-left-rail` (or the relevant scenario) and follow the generated checklist plus the mandatory fullscreen gate in `docs/notes.md` under “Prism dev / Computer Use”.
 
 ## License
 

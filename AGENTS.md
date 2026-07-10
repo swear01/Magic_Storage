@@ -139,8 +139,9 @@ Expected `git status` after archiving:
 
 - Public repo: https://github.com/swear01/Magic_Storage
 - CI lives in `.github/workflows/ci.yml` and must keep `./gradlew build`, `./gradlew runGameTestServer`, `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts`, and the `./gradlew runData` datagen drift check green. It uploads jar + logs/reports artifacts.
+- Optional client boot/resource smoke lives in `.github/workflows/client-smoke.yml` and is `workflow_dispatch` only; it is not GUI layout approval.
 - CD lives in `.github/workflows/release.yml`: push tag `v<mod_version>` only after `gradle.properties` has the matching `mod_version`; the workflow rejects mismatched tags, regenerates release notes from git history, reruns all CI gates, and uploads jar + logs/reports.
-- GUI/Patchouli/visual changes require `python3 scripts/prepare_prism_gui_world.py` plus the fixed Prism dev / Computer Use checklist in `docs/notes.md`, including the mandatory fullscreen gate before any GUI action. Do not claim GUI verified from GameTest alone.
+- GUI/Patchouli/visual changes require `python3 scripts/run_prism_gui_session.py --scenario <scenario>` plus the fixed Prism dev / Computer Use checklist in `docs/notes.md`, including the mandatory fullscreen gate before any GUI action. `boot-smoke` does not require visual approval; visual scenarios do. Do not claim GUI verified from GameTest/client-smoke alone.
 
 ## Mod-Specific Essentials
 

@@ -1,0 +1,52 @@
+name: Client Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Build mod jar
+        run: ./gradlew build --console=plain --no-daemon
+
+      - name: Stage mod for runtime client
+        run: |
+          mkdir -p run/mods
+          cp build/libs/magic_storage-*.jar run/mods/
+
+      # Client Smoke is a boot/resource smoke test, not GUI layout approval.
+      # Manual Prism dev / Computer Use remains required for visible GUI/Patchouli changes.
+      - name: Run NeoForge client smoke
+        uses: headlesshq/mc-runtime-test@4.4.0
+        with:
+          mc: '1.21.1'
+          modloader: neoforge
+          regex: '.*neoforge.*'
+          mc-runtime-test: neoforge
+          java: '21'
+          xvfb: 'true'
+          dummy-assets: 'true'
+          cache-mc: github
+          headlessmc-command: '--jvm "-Djava.awt.headless=true"'
