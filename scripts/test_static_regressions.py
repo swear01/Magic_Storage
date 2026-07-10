@@ -62,6 +62,20 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotIn("Screen", text)
         self.assertNotIn("AbstractContainerScreen", text)
 
+    def test_client_screen_registration_avoids_deprecated_event_bus_subscriber_bus(self):
+        client_setup = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/ClientSetup.java")
+        self.assertNotIn("EventBusSubscriber", client_setup)
+        self.assertNotIn("SubscribeEvent", client_setup)
+        self.assertIn("import net.neoforged.bus.api.IEventBus;", client_setup)
+        self.assertIn("public static void register(IEventBus modEventBus)", client_setup)
+        self.assertIn("modEventBus.addListener(ClientSetup::registerScreens)", client_setup)
+
+        magic_storage = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java")
+        self.assertIn("import net.neoforged.api.distmarker.Dist;", magic_storage)
+        self.assertIn("import net.neoforged.fml.loading.FMLEnvironment;", magic_storage)
+        self.assertIn("FMLEnvironment.dist == Dist.CLIENT", magic_storage)
+        self.assertIn("ClientSetup.register(modEventBus)", magic_storage)
+
 
 if __name__ == "__main__":
     unittest.main()

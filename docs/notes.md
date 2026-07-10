@@ -103,6 +103,7 @@ Source: https://github.com/refinedmods/refinedstorage2
 - 實作進度以**程式碼為準**:已有 40 個 Java 檔 + SelfTest 104 / GameTest 102;設計細節見 `PLAN.md`,即時狀態見 `docs/plan.md`。
 - 建置前需設 `JAVA_HOME`(JDK 21,見根 repo `docs/notes.md`)。
 - **SelfTest 在 dedicated server 也會跑**(mod 建構時呼叫):絕不可從 SelfTest 參照 client-only 類別(如 `*Screen` extends `AbstractContainerScreen`),否則 server 端 RuntimeDistCleaner 會擋下、整個 mod 載入失敗。純邏輯放 dist-中性類別(如 enum:`SearchMode.apply`)再測。
+- **Client-only mod-bus listener 註冊**:`RegisterMenuScreensEvent` 這類 client-only mod bus event 由 `MagicStorage` 建構子在 `FMLEnvironment.dist == Dist.CLIENT` guard 內呼叫 `ClientSetup.register(modEventBus)`;不要用 NeoForge 1.21.1 已 deprecated-for-removal 的 `@EventBusSubscriber(bus = EventBusSubscriber.Bus.MOD)`。Dedicated server 必須仍能載入並跑 SelfTest/GameTest。
 - **`Slot.x`/`y` 是 `final`**:GUI 動態調整版面時不能改 slot 座標,需在 Screen(client)端 `menu.slots.set(i, new Slot(...))` 重建 slot(座標只供 client 渲染/命中,不上傳)。見 `StorageTerminalScreen.repositionPlayerInventory`。
 - **終端機背景為程式繪製**(`StorageTerminalScreen.drawPanels`,`g.fill`/`renderOutline`):`grid.png`/`crafting_grid.png` 是針對固定 6 列手繪,且 6 參數 `blit` 以 256×256 正規化、動態高度會破圖,故改程式繪製扁平面板;那兩張 PNG 已不再使用。
 - **終端 view 控制在左側 rail**:sort order / sort mode / search mode 三個按鈕位置走 dist-neutral `TerminalLayout`,位於 terminal 面板左外側(類 RS2 side buttons),避免佔用 grid/scrollbar;SelfTest 守護不可重新塞回右側。

@@ -13,8 +13,10 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
@@ -161,6 +163,9 @@ public class MagicStorage {
         BLOCK_ENTITIES.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         MENUS.register(modEventBus);
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientSetup.register(modEventBus);
+        }
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(this::onBlockPlaced);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(this::onBlockBroken);
         modEventBus.addListener((net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) -> {
