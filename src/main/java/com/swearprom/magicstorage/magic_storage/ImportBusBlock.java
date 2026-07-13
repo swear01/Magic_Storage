@@ -24,6 +24,14 @@ public class ImportBusBlock extends Block implements EntityBlock, IStorageNetwor
     }
 
     @Override
+    protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean moved) {
+        super.onPlace(state, level, pos, oldState, moved);
+        if (!oldState.is(state.getBlock()) && !level.isClientSide()) {
+            MagicStorage.scheduleNetworkGrowthAfterPlacement(level, pos);
+        }
+    }
+
+    @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING);
     }
@@ -49,5 +57,13 @@ public class ImportBusBlock extends Block implements EntityBlock, IStorageNetwor
                 bus.tick();
             }
         };
+    }
+
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean moved) {
+        if (!state.is(newState.getBlock())) {
+            MagicStorage.scheduleNetworkRebuildAfterRemoval(level, pos);
+        }
+        super.onRemove(state, level, pos, newState, moved);
     }
 }

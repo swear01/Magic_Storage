@@ -6,19 +6,27 @@
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:crafting_terminal",
-      "text": "The $(thing)Crafting Terminal$() is the Tier 2 terminal. It adds a $(thing)recipe panel$() below the item grid, allowing you to view and execute recipes for any stored item."
+      "text": "The $(thing)Crafting Terminal$() is the Tier 2 terminal. It automatically chooses a narrow stacked or side-by-side workspace while keeping the frame and left rail centered with visible margins. Use the Storage, Craftable, and Fuel tabs for stored items, currently executable recipes, and machine/fuel management."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)How to craft:$()$(br)1. Click any item in the display grid to select it.$(br)2. The recipe panel shows the item's recipe.$(br)3. Use the craft buttons: $(thing)x1$(), $(thing)x8$(), $(thing)x64$().$(br)4. Materials are consumed from network storage (or player inventory if enabled).$(br)5. Crafted items go directly to your inventory."
+      "text": "$(thing)How to craft:$()$(br)1. Install the matching station/tool on Fuel: Crafting Table, cooking machine, Stonecutter, Smithing Table, or axe.$(br)2. Select an output in Storage or Craftable. The server-synced input → output panel shows Ready/Missing and every item/process/Fuel/tool requirement as Available / Required.$(br)3. Use $(thing)×1$(), $(thing)×8$(), $(thing)×64$(), or $(thing)Max$(). Exact buttons dim when unavailable; Max rechecks the current maximum."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Recipe navigation:$() Use $(thing)arrow buttons$() (◀/▶) to cycle through different recipes for the same output item (e.g. crafting vs. smelting). Recipes are grouped by type: Crafting → Smelting → Blasting → Smoking → Campfire → Stonecutting → Smithing."
+      "text": "$(thing)Craftable and EMI:$() The Craftable tab catalogs supported server recipes, so an output can appear at zero stored count when it is currently executable; for example, logs plus Smelting Energy and Fuel expose Charcoal. Synthetic entries select recipes but cannot be extracted.$(br2)EMI sends the exact backing recipe, amount, and cursor/inventory destination for one-level server-authoritative crafting. It does not recursively craft intermediates."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Toggle options:$()$(br)$(li)$(thing)Craftable Only$() - Filter the grid to show only items you have materials for.$(li)$(thing)Use Player Inventory$() - Pull ingredients from your inventory as well.$(li)$(thing)Compact/Expanded$() - Compact mode groups identical items together, showing total count. Expanded mode shows each item variant separately."
+      "text": "$(thing)Adaptive left rail:$() Storage/Craftable/Fuel form the first group; on item pages a visible gap separates them from sorting, search, and player-inventory controls. On Fuel, only those three page tabs remain; the current Fuel Target lives in the Energy Reserves header instead of ambiguous arrow buttons. Name, Tag, and Mod search use magnifier, #, and @ icons. Item component variants always remain distinct.$(br2)Large network amounts use compact units and automatically shrink while staying right-aligned inside their own slot."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Fuel page:$() Installed Stations uses two adaptive flow rows. Machine and reserve tiles spread across the complete panel width and scroll only when they exceed capacity; the lower-right control panel contains Fuel Target and Fuel input instead of dead space. Coal, Blaze Rod, and Glass Bottle identify reserve types. Current stored types / total type capacity appears above the player inventory."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Safe output:$() Inventory crafting fills the visible player inventory first and returns overflow to the Storage Core. If neither destination can hold every result and container remainder, the server rejects the whole craft before consuming materials, energy, or tool durability. Requested output is never dropped or silently lost."
     }
   ]
 }

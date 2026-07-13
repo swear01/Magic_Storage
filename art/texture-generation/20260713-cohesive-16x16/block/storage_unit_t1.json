@@ -1,0 +1,29 @@
+{
+  "created_at_utc": "20260713T070755Z",
+  "type": "block",
+  "subject": "tier one carved deepslate storage unit housing",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "flat front-facing 16x16 Minecraft block face, carved dark deepslate and polished blackstone storage housing, chunky square stone panel and small recessed latch, mostly charcoal and near-black, one restrained cyan notch and one muted purple pixel, crisp limited-palette pixel art matching a vanilla block texture, no text, no letters, no numbers, no gradients, no perspective, no 3D cube, no scene",
+  "size": 16,
+  "seed": 64031,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "flat front-facing 16x16 Minecraft block face, carved dark deepslate and polished blackstone storage housing, chunky square stone panel and small recessed latch, mostly charcoal and near-black, one restrained cyan notch and one muted purple pixel, crisp limited-palette pixel art matching a vanilla block texture, no text, no letters, no numbers, no gradients, no perspective, no 3D cube, no scene",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 2,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": true,
+    "seed": 64031
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/block/storage_unit_t1.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260713-cohesive-16x16/block/storage_unit_t1.preview.png",
+  "raw_png": null,
+  "selected_candidate": "storage_unit_t1_01"
+}

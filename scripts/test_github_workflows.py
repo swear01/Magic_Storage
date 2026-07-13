@@ -75,12 +75,23 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("GitHub Actions", combined)
         self.assertIn("./gradlew runGameTestServer", combined)
         self.assertIn("tag `v<mod_version>`", combined)
-        self.assertIn("Prism dev / Computer Use", combined)
+        self.assertIn("Prism dev / manual handoff", combined)
+        self.assertIn("Visual verification owner: user", combined)
         self.assertIn("datagen drift", combined)
         self.assertIn("release notes", combined)
+        self.assertIn("-o MagicStorageBot", combined)
         self.assertIn("Modrinth / CurseForge", self.read_required("docs/roadmap.md"))
         self.assertIn("All Rights Reserved", readme)
         self.assertIn(".github/workflows/", structure)
+
+    def test_release_examples_match_current_mod_version(self):
+        properties = self.read_required("gradle.properties")
+        version = next(line.split("=", 1)[1] for line in properties.splitlines() if line.startswith("mod_version="))
+        readme = self.read_required("README.md")
+        notes = self.read_required("docs/notes.md")
+        self.assertIn(f"git tag v{version}", readme)
+        self.assertIn(f"git push origin main v{version}", readme)
+        self.assertIn(f"目前版本 {version}", notes)
 
     def test_client_smoke_workflow_is_manual_only_and_uses_neoforge_runtime_client(self):
         text = self.read_required(".github/workflows/client-smoke.yml")

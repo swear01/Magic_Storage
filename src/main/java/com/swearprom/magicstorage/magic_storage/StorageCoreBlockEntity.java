@@ -6,6 +6,9 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.world.Container;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -19,20 +22,45 @@ import net.minecraft.core.registries.BuiltInRegistries;
 
 public class StorageCoreBlockEntity extends BlockEntity {
 
-    public static final Map<BlockPos, CompoundTag> PENDING = new HashMap<>();
+    private static final String TAG_NETWORK_ID = "networkId";
+    private static final String TAG_MACHINES = "machines";
 
     private final Set<BlockPos> connectedBlocks = new HashSet<>();
+    private UUID networkId = UUID.randomUUID();
     private boolean conflicted = false;
+    private long topologyRevision;
     private int totalTypeSlots = 0;
     private int typeCount = 0;
+    private long machineRevision;
 
     // Energy
     private final Map<EnergyType, Long> energy = new HashMap<>();
+    private final SimpleContainer machines = new SimpleContainer(MachineEnergyTable.size()) {
+        @Override
+        public int getMaxStackSize() {
+            return 64;
+        }
+
+        @Override
+        public boolean canPlaceItem(int slot, ItemStack stack) {
+            MachineEnergyTable.Entry entry = MachineEnergyTable.get(slot);
+            return entry != null && entry.accepts(stack);
+        }
+
+        @Override
+        public void setChanged() {
+            super.setChanged();
+            machineRevision++;
+            StorageCoreBlockEntity.this.setChanged();
+        }
+    };
 
     // Two-tier inventory index
     private final Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
     private final Map<ItemKey, Long> flatCache = new HashMap<>();
     private final List<StorageListener> listeners = new ArrayList<>();
+    private final List<Runnable> deferredListenerEvents = new ArrayList<>();
+    private int mutationBatchDepth;
     private boolean cacheDirty = true;
 
     public StorageCoreBlockEntity(BlockPos pos, BlockState state) {
@@ -43,15 +71,30 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public void tick() {
-        if (level == null || level.isClientSide()) return;
+        if (level == null || level.isClientSide() || conflicted) return;
         boolean changed = false;
-        for (EnergyType type : EnergyType.values()) {
-            if (type.isAutoFill()) {
-                energy.merge(type, (long) type.getTickRate(), Long::sum);
+        for (int slot = 0; slot < machines.getContainerSize(); slot++) {
+            MachineEnergyTable.Entry entry = MachineEnergyTable.get(slot);
+            ItemStack machineStack = machines.getItem(slot);
+            if (entry == null || !entry.generatesEnergy() || !entry.accepts(machineStack)) continue;
+            long increment = (long) machineStack.getCount() * entry.energyPerTick();
+            long current = getEnergy(entry.energyType());
+            long updated = current > Long.MAX_VALUE - increment ? Long.MAX_VALUE : current + increment;
+            if (updated != current) {
+                energy.put(entry.energyType(), updated);
+                fireEnergyChanged(entry.energyType(), updated);
                 changed = true;
             }
         }
         if (changed) setChanged();
+    }
+
+    Container getMachineContainer() {
+        return machines;
+    }
+
+    public long getMachineRevision() {
+        return machineRevision;
     }
 
     public long getEnergy(EnergyType type) {
@@ -72,11 +115,16 @@ public class StorageCoreBlockEntity extends BlockEntity {
         if (getEnergy(cost.fuelType()) < fuelNeed) return false;
         energy.merge(cost.processType(), -processNeed, Long::sum);
         energy.merge(cost.fuelType(), -fuelNeed, Long::sum);
+        fireEnergyChanged(cost.processType(), getEnergy(cost.processType()));
+        if (cost.fuelType() != cost.processType()) {
+            fireEnergyChanged(cost.fuelType(), getEnergy(cost.fuelType()));
+        }
         setChanged();
         return true;
     }
 
     public boolean addFuel(ItemStack stack, EnergyType targetPool) {
+        if (stack.isEmpty() || conflicted) return false;
         List<FuelValue> values = FuelTable.getFuelValues(stack);
         for (FuelValue fv : values) {
             if (fv.pool() == targetPool) {
@@ -86,8 +134,11 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 } catch (ArithmeticException e) {
                     return false;
                 }
-                energy.merge(targetPool, amount, Long::sum);
+                long current = getEnergy(targetPool);
+                if (amount <= 0 || current > Long.MAX_VALUE - amount) return false;
+                energy.put(targetPool, current + amount);
                 stack.setCount(0);
+                fireEnergyChanged(targetPool, current + amount);
                 setChanged();
                 return true;
             }
@@ -111,6 +162,10 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return conflicted;
     }
 
+    public UUID getNetworkId() {
+        return networkId;
+    }
+
     private void rebuildCache() {
         if (!cacheDirty) return;
         flatCache.clear();
@@ -132,9 +187,44 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     private void fireChanged(ItemKey key, long delta, long newAmount, Actor actor) {
+        if (mutationBatchDepth > 0) {
+            deferredListenerEvents.add(() -> notifyChanged(key, delta, newAmount, actor));
+            return;
+        }
+        notifyChanged(key, delta, newAmount, actor);
+    }
+
+    private void notifyChanged(ItemKey key, long delta, long newAmount, Actor actor) {
         for (StorageListener listener : List.copyOf(listeners)) {
             listener.onChanged(key, delta, newAmount, actor);
         }
+    }
+
+    private void fireEnergyChanged(EnergyType type, long newAmount) {
+        if (mutationBatchDepth > 0) {
+            deferredListenerEvents.add(() -> notifyEnergyChanged(type, newAmount));
+            return;
+        }
+        notifyEnergyChanged(type, newAmount);
+    }
+
+    private void notifyEnergyChanged(EnergyType type, long newAmount) {
+        for (StorageListener listener : List.copyOf(listeners)) {
+            listener.onEnergyChanged(type, newAmount);
+        }
+    }
+
+    void beginMutationBatch() {
+        mutationBatchDepth++;
+    }
+
+    void endMutationBatch() {
+        if (mutationBatchDepth <= 0) throw new IllegalStateException("No active storage mutation batch");
+        mutationBatchDepth--;
+        if (mutationBatchDepth > 0) return;
+        List<Runnable> events = List.copyOf(deferredListenerEvents);
+        deferredListenerEvents.clear();
+        for (Runnable event : events) event.run();
     }
 
     public long insertItem(ItemStack stack, Action action, Actor actor) {
@@ -142,21 +232,26 @@ public class StorageCoreBlockEntity extends BlockEntity {
         ItemKey key = ItemKey.of(stack);
         Item primary = key.item();
 
-        var variants = inventory.computeIfAbsent(primary, k -> new Object2LongOpenHashMap<>());
-        long existing = variants.getLong(key);
+        var variants = inventory.get(primary);
+        long existing = variants != null ? variants.getLong(key) : 0;
         long toInsert = stack.getCount();
 
         if (existing == 0) {
             if (typeCount >= totalTypeSlots) return 0;
         }
 
-        long inserted = toInsert;
+        long inserted = Math.min(toInsert, Long.MAX_VALUE - existing);
+        if (inserted <= 0) return 0;
         if (action == Action.EXECUTE) {
+            if (variants == null) {
+                variants = new Object2LongOpenHashMap<>();
+                inventory.put(primary, variants);
+            }
             if (existing == 0) typeCount++;
             long newAmount = existing + inserted;
             variants.put(key, newAmount);
             cacheDirty = true;
-            stack.setCount(0);
+            stack.shrink((int) inserted);
             setChanged();
             fireChanged(key, inserted, newAmount, actor);
         }
@@ -268,7 +363,10 @@ public class StorageCoreBlockEntity extends BlockEntity {
         rebuildCache();
         long total = 0;
         for (var entry : flatCache.entrySet()) {
-            if (pred.test(entry.getKey().toStack(1))) total += entry.getValue();
+            if (!pred.test(entry.getKey().toStack(1))) continue;
+            long amount = entry.getValue();
+            if (total > Long.MAX_VALUE - amount) return Long.MAX_VALUE;
+            total += amount;
         }
         return total;
     }
@@ -293,11 +391,11 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return extractMatching(pred, amount, simulate ? Action.SIMULATE : Action.EXECUTE, Actor.EMPTY);
     }
 
-    private static boolean matchesFilter(ItemKey key, String filterText, Level level) {
+    static boolean matchesFilter(ItemKey key, String filterText, Level level) {
         if (filterText == null || filterText.isBlank()) return true;
         ItemStack stack = key.toStack(1);
 
-        for (String token : filterText.toLowerCase().split("\\s+")) {
+        for (String token : filterText.toLowerCase(Locale.ROOT).split("\\s+")) {
             if (token.isEmpty()) continue;
             if (token.startsWith("@")) {
                 String modid = token.substring(1);
@@ -305,9 +403,11 @@ public class StorageCoreBlockEntity extends BlockEntity {
                     return false;
             } else if (token.startsWith("#")) {
                 String tagName = token.substring(1);
+                var tagId = net.minecraft.resources.ResourceLocation.tryParse(tagName);
+                if (tagId == null) return false;
                 boolean found = false;
                 var tags = level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ITEM)
-                        .getTag(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, net.minecraft.resources.ResourceLocation.parse(tagName)));
+                        .getTag(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, tagId));
                 if (tags.isPresent()) {
                     for (var holder : tags.get()) {
                         if (holder.value() == stack.getItem()) { found = true; break; }
@@ -316,10 +416,10 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 if (!found) return false;
             } else if (token.startsWith("$")) {
                 String keyword = token.substring(1);
-                if (!stack.getHoverName().getString().toLowerCase().contains(keyword))
+                if (!stack.getHoverName().getString().toLowerCase(Locale.ROOT).contains(keyword))
                     return false;
             } else {
-                if (!stack.getHoverName().getString().toLowerCase().contains(token))
+                if (!stack.getHoverName().getString().toLowerCase(Locale.ROOT).contains(token))
                     return false;
             }
         }
@@ -331,11 +431,16 @@ public class StorageCoreBlockEntity extends BlockEntity {
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
+        tag.putUUID(TAG_NETWORK_ID, networkId);
         CompoundTag energyTag = new CompoundTag();
         for (Map.Entry<EnergyType, Long> entry : energy.entrySet()) {
             energyTag.putLong(entry.getKey().getId(), entry.getValue());
         }
         tag.put("energy", energyTag);
+
+        CompoundTag machinesTag = new CompoundTag();
+        ContainerHelper.saveAllItems(machinesTag, machines.getItems(), registries);
+        tag.put(TAG_MACHINES, machinesTag);
 
         ListTag invTag = new ListTag();
         for (var entry : inventory.entrySet()) {
@@ -352,11 +457,19 @@ public class StorageCoreBlockEntity extends BlockEntity {
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
+        if (tag.hasUUID(TAG_NETWORK_ID)) {
+            networkId = tag.getUUID(TAG_NETWORK_ID);
+        }
         CompoundTag energyTag = tag.getCompound("energy");
         for (EnergyType type : EnergyType.values()) {
             if (energyTag.contains(type.getId())) {
-                energy.put(type, energyTag.getLong(type.getId()));
+                energy.put(type, Math.max(0, energyTag.getLong(type.getId())));
             }
+        }
+
+        machines.clearContent();
+        if (tag.contains(TAG_MACHINES, Tag.TAG_COMPOUND)) {
+            ContainerHelper.loadAllItems(tag.getCompound(TAG_MACHINES), machines.getItems(), registries);
         }
 
         inventory.clear();
@@ -370,7 +483,9 @@ public class StorageCoreBlockEntity extends BlockEntity {
             ItemKey key = ItemKey.of(stack);
             Item primary = key.item();
             var variants = inventory.computeIfAbsent(primary, k -> new Object2LongOpenHashMap<>());
-            variants.put(key, count);
+            long existing = variants.getLong(key);
+            long merged = existing > Long.MAX_VALUE - count ? Long.MAX_VALUE : existing + count;
+            variants.put(key, merged);
         }
         typeCount = 0;
         for (var variants : inventory.values()) typeCount += variants.size();
@@ -380,6 +495,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
     // ===== Network =====
 
     public void rebuildNetwork(Level level) {
+        Set<BlockPos> previousConnectedBlocks = Set.copyOf(connectedBlocks);
+        int previousTotalTypeSlots = totalTypeSlots;
         boolean wasConflicted = conflicted;
         connectedBlocks.clear();
         totalTypeSlots = 0;
@@ -390,31 +507,40 @@ public class StorageCoreBlockEntity extends BlockEntity {
         queue.add(getBlockPos());
         visited.add(getBlockPos());
 
-        while (!queue.isEmpty()) {
-            BlockPos current = queue.poll();
+        int depth = 0;
+        while (!queue.isEmpty() && depth < MagicStorage.NETWORK_SCAN_DEPTH && visited.size() <= MagicStorage.MAX_NETWORK_BLOCKS) {
+            int size = queue.size();
+            for (int i = 0; i < size; i++) {
+                BlockPos current = queue.poll();
 
-            BlockState state = level.getBlockState(current);
-            if (state.getBlock() instanceof IStorageNetworkBlock networkBlock) {
-                if (networkBlock.isStorageCore() && !current.equals(getBlockPos())) {
-                    conflicted = true;
-                    continue;
+                BlockState state = level.getBlockState(current);
+                if (state.getBlock() instanceof IStorageNetworkBlock networkBlock) {
+                    if (networkBlock.isStorageCore() && !current.equals(getBlockPos())) {
+                        conflicted = true;
+                        continue;
+                    }
+                    connectedBlocks.add(current);
+                    totalTypeSlots += capacityOf(state);
                 }
-                connectedBlocks.add(current);
-                totalTypeSlots += capacityOf(state);
-            }
 
-            for (Direction dir : Direction.values()) {
-                BlockPos neighbor = current.relative(dir);
-                if (!visited.contains(neighbor) && level.hasChunkAt(neighbor)) {
-                    visited.add(neighbor);
-                    if (level.getBlockState(neighbor).getBlock() instanceof IStorageNetworkBlock) {
-                        queue.add(neighbor);
+                for (Direction dir : Direction.values()) {
+                    BlockPos neighbor = current.relative(dir);
+                    if (!visited.contains(neighbor) && level.hasChunkAt(neighbor)) {
+                        visited.add(neighbor);
+                        if (level.getBlockState(neighbor).getBlock() instanceof IStorageNetworkBlock) {
+                            queue.add(neighbor);
+                        }
                     }
                 }
             }
+            depth++;
         }
         if (conflicted && !wasConflicted) {
             MagicStorage.LOGGER.warn("Storage network at {} has multiple cores; multi-core is unsupported, network disabled until extra cores removed.", getBlockPos());
+        }
+        if (wasConflicted != conflicted || previousTotalTypeSlots != totalTypeSlots
+                || !previousConnectedBlocks.equals(connectedBlocks)) {
+            topologyRevision++;
         }
     }
 
@@ -427,18 +553,37 @@ public class StorageCoreBlockEntity extends BlockEntity {
         if (!(state.getBlock() instanceof IStorageNetworkBlock networkBlock)) return false;
         if (networkBlock.isStorageCore()) return false;
 
-        boolean adjacent = false;
-        for (Direction dir : Direction.values()) {
-            if (connectedBlocks.contains(placedPos.relative(dir))) {
-                adjacent = true;
-                break;
-            }
-        }
-        if (!adjacent) return false;
+        if (!isWithinIncrementalBounds(placedPos)) return false;
 
         connectedBlocks.add(placedPos);
         totalTypeSlots += capacityOf(state);
+        topologyRevision++;
         return true;
+    }
+
+    private boolean isWithinIncrementalBounds(BlockPos placedPos) {
+        if (connectedBlocks.size() >= MagicStorage.MAX_NETWORK_BLOCKS) return false;
+        Queue<BlockPos> queue = new ArrayDeque<>();
+        Set<BlockPos> visited = new HashSet<>();
+        queue.add(getBlockPos());
+        visited.add(getBlockPos());
+
+        int depth = 0;
+        while (!queue.isEmpty() && depth < MagicStorage.NETWORK_SCAN_DEPTH - 1) {
+            int size = queue.size();
+            for (int i = 0; i < size; i++) {
+                BlockPos current = queue.poll();
+                for (Direction dir : Direction.values()) {
+                    BlockPos next = current.relative(dir);
+                    if (next.equals(placedPos)) return true;
+                    if (connectedBlocks.contains(next) && visited.add(next)) {
+                        queue.add(next);
+                    }
+                }
+            }
+            depth++;
+        }
+        return false;
     }
 
     private int capacityOf(BlockState state) {
@@ -452,21 +597,17 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public void onLoad() {
         super.onLoad();
         if (level != null && !level.isClientSide()) {
-            // Restore data from previously broken core at this position
-            var tag = PENDING.remove(getBlockPos());
-            if (tag != null) {
-                loadAdditional(tag, level.registryAccess());
-            }
             rebuildNetwork(level);
         }
     }
 
     public void onBreak() {
+        if (!connectedBlocks.isEmpty() || totalTypeSlots != 0) topologyRevision++;
         connectedBlocks.clear();
         totalTypeSlots = 0;
-        // Inventory and energy data preserved via PENDING map
     }
 
     public Set<BlockPos> getConnectedBlocks() { return connectedBlocks; }
     public int getTotalTypeSlots() { return totalTypeSlots; }
+    public long getTopologyRevision() { return topologyRevision; }
 }

@@ -18,7 +18,6 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
-import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -27,17 +26,25 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.function.Predicate;
 
 @Mod(MagicStorage.MODID)
 public class MagicStorage {
     public static final String MODID = "magic_storage";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final int NETWORK_SCAN_DEPTH = 64;
-    private static final int MAX_NETWORK_BLOCKS = 8192;
+    static final int NETWORK_SCAN_DEPTH = 64;
+    static final int MAX_NETWORK_BLOCKS = 8192;
+    private static final Map<Level, Set<BlockPos>> PENDING_NETWORK_GROWTH = new WeakHashMap<>();
 
     // === Registries ===
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
@@ -166,12 +173,13 @@ public class MagicStorage {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientSetup.register(modEventBus);
         }
-        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(this::onBlockPlaced);
-        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(this::onBlockBroken);
         modEventBus.addListener((net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) -> {
             var registrar = event.registrar(MODID).versioned("1.0");
             registrar.playToServer(SearchFilterPacket.TYPE, SearchFilterPacket.STREAM_CODEC, this::handleSearchFilter);
             registrar.playToServer(TerminalSettingsPacket.TYPE, TerminalSettingsPacket.STREAM_CODEC, this::handleTerminalSettings);
+            registrar.playToServer(TerminalScrollPacket.TYPE, TerminalScrollPacket.STREAM_CODEC, this::handleTerminalScroll);
+            registrar.playToServer(CraftingRecipeSelectionPacket.TYPE, CraftingRecipeSelectionPacket.STREAM_CODEC,
+                    this::handleCraftingRecipeSelection);
         });
         SelfTest.runAll();
         LOGGER.info("Magic Storage initialized.");
@@ -182,8 +190,8 @@ public class MagicStorage {
             var player = ctx.player();
             if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
                     || menu.containerId != packet.containerId()) return;
-            if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
-                menu.refreshDisplayItemsFiltered(core, packet.filter());
+            StorageCoreBlockEntity core = menu.getCore(player.level());
+            if (core != null && menu.applyFilter(core, packet.filter())) {
                 menu.broadcastChanges();
             }
         });
@@ -194,33 +202,91 @@ public class MagicStorage {
             var player = ctx.player();
             if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
                     || menu.containerId != packet.containerId()) return;
-            menu.applySettings(packet);
-            if (player.level().getBlockEntity(menu.getCorePos()) instanceof StorageCoreBlockEntity core) {
+            if (menu.applySettings(packet)) {
+                StorageCoreBlockEntity core = menu.getCore(player.level());
+                if (core != null) {
+                    menu.refreshDisplayItems(core);
+                    menu.broadcastChanges();
+                }
+            }
+        });
+    }
+
+    private void handleTerminalScroll(TerminalScrollPacket packet,
+                                      net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            var player = ctx.player();
+            if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
+                    || menu.containerId != packet.containerId()) return;
+            StorageCoreBlockEntity core = menu.getCore(player.level());
+            if (core != null) {
+                menu.scrollTo(packet.offset());
                 menu.refreshDisplayItems(core);
                 menu.broadcastChanges();
             }
         });
     }
 
-    private void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
-        if (event.getLevel().isClientSide()) return;
-        Level level = (Level) event.getLevel();
-        BlockPos pos = event.getPos();
-        if (level.getBlockState(pos).getBlock() instanceof IStorageNetworkBlock) {
-            findCoresAndGrow(level, pos);
+    private void handleCraftingRecipeSelection(CraftingRecipeSelectionPacket packet,
+                                                net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            var player = ctx.player();
+            if (player == null || !(player.containerMenu instanceof CraftingTerminalMenu menu)
+                    || menu.containerId != packet.containerId()) return;
+            menu.handleRecipeRequest(player.level(), packet.recipeId(), packet.amount(), packet.destination(), player);
+        });
+    }
+
+    static void scheduleNetworkRebuildAfterRemoval(Level level, BlockPos pos) {
+        if (level.isClientSide()) return;
+        var server = level.getServer();
+        if (server != null) {
+            server.execute(() -> findCoresAndRebuild(level, pos));
+        } else {
+            findCoresAndRebuild(level, pos);
         }
     }
 
-    private void onBlockBroken(BlockEvent.BreakEvent event) {
-        if (event.getLevel().isClientSide()) return;
-        Level level = (Level) event.getLevel();
-        if (event.getState().getBlock() instanceof IStorageNetworkBlock) {
-            BlockPos pos = event.getPos();
-            var server = level.getServer();
-            if (server != null) {
-                server.execute(() -> findCoresAndRebuild(level, pos));
-            } else {
-                findCoresAndRebuild(level, pos);
+    static void scheduleNetworkGrowthAfterPlacement(Level level, BlockPos pos) {
+        if (level.isClientSide()) return;
+        var server = level.getServer();
+        if (server == null) {
+            findCoresAndGrow(level, pos);
+            return;
+        }
+        Set<BlockPos> pending = PENDING_NETWORK_GROWTH.computeIfAbsent(level, ignored -> new HashSet<>());
+        boolean schedule = pending.isEmpty();
+        pending.add(pos.immutable());
+        if (schedule) {
+            server.tell(new net.minecraft.server.TickTask(server.getTickCount() + 1,
+                    () -> flushNetworkGrowth(level)));
+        }
+    }
+
+    private static void flushNetworkGrowth(Level level) {
+        Set<BlockPos> pending = PENDING_NETWORK_GROWTH.remove(level);
+        if (pending == null || pending.isEmpty()) return;
+        if (pending.size() == 1) {
+            findCoresAndGrow(level, pending.iterator().next());
+            return;
+        }
+
+        Set<BlockPos> corePositions = new HashSet<>();
+        for (BlockPos pos : pending) {
+            if (level.getBlockEntity(pos) instanceof StorageCoreBlockEntity) {
+                corePositions.add(pos);
+            }
+            for (Direction direction : Direction.values()) {
+                BlockPos neighbor = pos.relative(direction);
+                if (pending.contains(neighbor) || !level.hasChunkAt(neighbor)) continue;
+                if (!(level.getBlockState(neighbor).getBlock() instanceof IStorageNetworkBlock)) continue;
+                StorageCoreBlockEntity core = bfsFindCore(level, neighbor);
+                if (core != null) corePositions.add(core.getBlockPos());
+            }
+        }
+        for (BlockPos corePos : corePositions) {
+            if (level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core) {
+                core.rebuildNetwork(level);
             }
         }
     }
@@ -387,5 +453,69 @@ public class MagicStorage {
             depth++;
         }
         return null;
+    }
+
+    static List<BlockPos> findLoadedNetworkPath(Level level, BlockPos start, BlockPos target) {
+        if (level == null || start == null || target == null
+                || !level.hasChunkAt(start) || !level.hasChunkAt(target)) return List.of();
+
+        Queue<BlockPos> queue = new ArrayDeque<>();
+        Map<BlockPos, BlockPos> previous = new HashMap<>();
+        Set<BlockPos> visited = new HashSet<>();
+        queue.add(start);
+        visited.add(start);
+
+        int depth = 0;
+        while (!queue.isEmpty() && depth < NETWORK_SCAN_DEPTH && visited.size() <= MAX_NETWORK_BLOCKS) {
+            int size = queue.size();
+            for (int i = 0; i < size; i++) {
+                BlockPos current = queue.remove();
+                if (!(level.getBlockState(current).getBlock() instanceof IStorageNetworkBlock)) continue;
+                if (current.equals(target)) {
+                    List<BlockPos> path = new ArrayList<>();
+                    for (BlockPos cursor = target; cursor != null; cursor = previous.get(cursor)) {
+                        path.add(cursor);
+                    }
+                    Collections.reverse(path);
+                    return List.copyOf(path);
+                }
+                for (Direction direction : Direction.values()) {
+                    BlockPos next = current.relative(direction);
+                    if (!visited.contains(next) && level.hasChunkAt(next)) {
+                        visited.add(next);
+                        if (level.getBlockState(next).getBlock() instanceof IStorageNetworkBlock) {
+                            previous.put(next, current);
+                            queue.add(next);
+                        }
+                    }
+                }
+            }
+            depth++;
+        }
+        return List.of();
+    }
+
+    static boolean hasLoadedNetworkPath(Level level, List<BlockPos> path, BlockPos start, BlockPos target) {
+        return level != null && isValidNetworkPath(path, start, target,
+                pos -> level.hasChunkAt(pos),
+                pos -> level.getBlockState(pos).getBlock() instanceof IStorageNetworkBlock);
+    }
+
+    static boolean isValidNetworkPath(
+            List<BlockPos> path,
+            BlockPos start,
+            BlockPos target,
+            Predicate<BlockPos> loaded,
+            Predicate<BlockPos> networkBlock
+    ) {
+        if (path == null || path.isEmpty() || path.size() > NETWORK_SCAN_DEPTH
+                || !path.getFirst().equals(start) || !path.getLast().equals(target)) return false;
+        BlockPos previous = null;
+        for (BlockPos pos : path) {
+            if (!loaded.test(pos) || !networkBlock.test(pos)) return false;
+            if (previous != null && previous.distManhattan(pos) != 1) return false;
+            previous = pos;
+        }
+        return true;
     }
 }

@@ -1,0 +1,29 @@
+{
+  "created_at_utc": "20260713T071216Z",
+  "type": "block",
+  "subject": "top face of dark carved deepslate export bus",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "flat front-facing 16x16 Minecraft block face, top face of a carved dark deepslate and polished blackstone export bus housing, one small amethyst outlet socket joined to a short thin cyan groove, mostly charcoal and near-black, restrained accents, crisp limited-palette vanilla-style pixel art, no text, no letters, no numbers, no gradients, no perspective, no 3D cube, no scene",
+  "size": 16,
+  "seed": 64050,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "flat front-facing 16x16 Minecraft block face, top face of a carved dark deepslate and polished blackstone export bus housing, one small amethyst outlet socket joined to a short thin cyan groove, mostly charcoal and near-black, restrained accents, crisp limited-palette vanilla-style pixel art, no text, no letters, no numbers, no gradients, no perspective, no 3D cube, no scene",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 2,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": true,
+    "seed": 64050
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/block/export_bus_top.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260713-cohesive-16x16/block/export_bus_top.preview.png",
+  "raw_png": null,
+  "selected_candidate": "export_bus_top_01"
+}

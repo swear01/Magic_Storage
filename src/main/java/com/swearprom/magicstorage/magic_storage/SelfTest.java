@@ -1,11 +1,24 @@
 package com.swearprom.magicstorage.magic_storage;
 
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponentMap;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.BlastingRecipe;
+import net.minecraft.world.item.crafting.CampfireCookingRecipe;
+import net.minecraft.world.item.crafting.CookingBookCategory;
+import net.minecraft.world.item.crafting.CraftingBookCategory;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.ShapelessRecipe;
+import net.minecraft.world.item.crafting.SmeltingRecipe;
+import net.minecraft.world.item.crafting.SmokingRecipe;
+import net.neoforged.neoforge.common.ItemAbilities;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 class SelfTest {
@@ -14,7 +27,10 @@ class SelfTest {
 
     static void runAll() {
         testItemKey();
+        testAxeSyntheticDiscovery();
+        testAxeCatalogCacheKey();
         testFuelTable();
+        testFuelAutoPriority();
         testRecipeEnergyTable();
         testEnergyType();
         testEnergyCost();
@@ -25,8 +41,8 @@ class SelfTest {
         testSearchMode();
         testTerminalSettingsPacketCodec();
         testSearchModeApply();
-        testTerminalGeometryNoOverlap();
-        testTerminalViewButtonsUseLeftSideRail();
+        testTerminalAmountFormatter();
+        testAdaptiveTerminalLayout();
 
         MagicStorage.LOGGER.info("SelfTest: {} passed, {} failed, {} total",
                 passed, failed, passed + failed);
@@ -52,6 +68,43 @@ class SelfTest {
         assertTrue("key = itself", key1.equals(key1));
         assertTrue("key != null", !key1.equals(null));
         assertTrue("primaryKey returns item", key1.item() == Items.DIAMOND_SWORD);
+    }
+
+    private static void testAxeSyntheticDiscovery() {
+        ResourceLocation vanillaBlock = ResourceLocation.fromNamespaceAndPath("minecraft", "oak_log");
+        ResourceLocation arbitraryModBlock = ResourceLocation.fromNamespaceAndPath("audit_mod", "hooked_log");
+
+        assertTrue("axe discovery allows minecraft namespace blocks",
+                AxeTransformationCatalog.isSyntheticDiscoveryAllowed(vanillaBlock));
+        assertTrue("axe discovery rejects arbitrary mod namespace blocks",
+                !AxeTransformationCatalog.isSyntheticDiscoveryAllowed(arbitraryModBlock));
+    }
+
+    private static void testAxeCatalogCacheKey() {
+        ItemStack pristine = new ItemStack(Items.IRON_AXE);
+        ItemStack damaged = pristine.copy();
+        damaged.setDamageValue(17);
+        ItemStack broken = pristine.copy();
+        broken.setDamageValue(broken.getMaxDamage());
+
+        assertTrue("axe catalog cache ignores tool damage",
+                AxeTransformationCatalog.toolCacheKey(pristine)
+                        .equals(AxeTransformationCatalog.toolCacheKey(damaged))
+                        && AxeTransformationCatalog.toolCacheKey(pristine)
+                        .equals(AxeTransformationCatalog.toolCacheKey(broken)));
+        assertTrue("axe durability validation keeps exact installed damage",
+                AxeTransformationCatalog.remainingDurability(pristine) == pristine.getMaxDamage()
+                        && AxeTransformationCatalog.remainingDurability(damaged) == damaged.getMaxDamage() - 17
+                        && AxeTransformationCatalog.remainingDurability(broken) == 0);
+
+        ItemStack named = pristine.copy();
+        named.set(DataComponents.CUSTOM_NAME, Component.literal("Audit Axe"));
+        assertTrue("axe catalog cache preserves non-damage components",
+                !AxeTransformationCatalog.toolCacheKey(pristine)
+                        .equals(AxeTransformationCatalog.toolCacheKey(named)));
+        assertTrue("axe tool action validation keeps the exact installed item",
+                pristine.canPerformAction(ItemAbilities.AXE_STRIP)
+                        && !new ItemStack(Items.IRON_PICKAXE).canPerformAction(ItemAbilities.AXE_STRIP));
     }
 
     private static void testEnergyCost() {
@@ -80,53 +133,147 @@ class SelfTest {
     }
 
     private static void testFuelTable() {
-        assertTrue("coal is fuel", FuelTable.isFuel(new ItemStack(Items.COAL)));
-        assertTrue("coal gives furnace_fuel", FuelTable.getFuelValues(new ItemStack(Items.COAL))
-                .stream().anyMatch(fv -> fv.pool() == EnergyType.FURNACE_FUEL && fv.valuePerItem() == 1600));
         assertTrue("glass_bottle gives bottle_fuel", FuelTable.isFuel(new ItemStack(Items.GLASS_BOTTLE)));
-        assertTrue("blaze_rod has two pools", FuelTable.getFuelValues(new ItemStack(Items.BLAZE_ROD)).size() == 2);
-        assertTrue("stone is not fuel", !FuelTable.isFuel(new ItemStack(Items.STONE)));
-        assertTrue("charcoal is fuel", FuelTable.isFuel(new ItemStack(Items.CHARCOAL)));
-        assertTrue("coal block is fuel", FuelTable.isFuel(new ItemStack(Items.COAL_BLOCK)));
-        assertTrue("coal block 16000 furnace_fuel", FuelTable.getFuelValues(new ItemStack(Items.COAL_BLOCK))
-                .stream().anyMatch(fv -> fv.pool() == EnergyType.FURNACE_FUEL && fv.valuePerItem() == 16000));
-        assertTrue("lava bucket 20000 furnace_fuel", FuelTable.getFuelValues(new ItemStack(Items.LAVA_BUCKET))
-                .stream().anyMatch(fv -> fv.pool() == EnergyType.FURNACE_FUEL && fv.valuePerItem() == 20000));
-        assertTrue("blaze powder 600 blaze_fuel", FuelTable.getFuelValues(new ItemStack(Items.BLAZE_POWDER))
+        assertTrue("glass_bottle value is one", FuelTable.getFuelValues(new ItemStack(Items.GLASS_BOTTLE))
+                .stream().anyMatch(fv -> fv.pool() == EnergyType.BOTTLE_FUEL && fv.valuePerItem() == 1));
+        assertTrue("potion gives bottle_fuel", FuelTable.isFuel(new ItemStack(Items.POTION)));
+        assertTrue("potion value is one", FuelTable.getFuelValues(new ItemStack(Items.POTION))
+                .stream().anyMatch(fv -> fv.pool() == EnergyType.BOTTLE_FUEL && fv.valuePerItem() == 1));
+        assertTrue("blaze rod has explicit brew overlay", FuelTable.isFuel(new ItemStack(Items.BLAZE_ROD)));
+        assertTrue("blaze rod brew overlay is 1200", FuelTable.getFuelValues(new ItemStack(Items.BLAZE_ROD))
+                .stream().anyMatch(fv -> fv.pool() == EnergyType.BLAZE_FUEL && fv.valuePerItem() == 1200));
+        assertTrue("blaze powder has explicit brew overlay", FuelTable.isFuel(new ItemStack(Items.BLAZE_POWDER)));
+        assertTrue("blaze powder brew overlay is 600", FuelTable.getFuelValues(new ItemStack(Items.BLAZE_POWDER))
                 .stream().anyMatch(fv -> fv.pool() == EnergyType.BLAZE_FUEL && fv.valuePerItem() == 600));
+        assertTrue("stone is not fuel", !FuelTable.isFuel(new ItemStack(Items.STONE)));
+        assertTrue("blaze rod has one explicit brew overlay", FuelTable.getFuelValues(new ItemStack(Items.BLAZE_ROD))
+                .stream().filter(fv -> fv.pool() == EnergyType.BLAZE_FUEL).count() == 1);
+    }
+
+    private static void testFuelAutoPriority() {
+        FuelValue bottleAuto = FuelTable.getAutoFuelValue(new ItemStack(Items.GLASS_BOTTLE), type -> 0L);
+        assertTrue("single explicit pool is selected without runtime fuel data",
+                bottleAuto != null && bottleAuto.pool() == EnergyType.BOTTLE_FUEL);
+        assertTrue("blaze fuel has two distinct suppliers",
+                FuelTable.getSupplierCount(EnergyType.BLAZE_FUEL) == 2);
+        assertTrue("bottle fuel has two distinct suppliers",
+                FuelTable.getSupplierCount(EnergyType.BOTTLE_FUEL) == 2);
+
+        FuelValue blazeRodAuto = FuelTable.getAutoFuelValue(new ItemStack(Items.BLAZE_ROD), type -> 0L);
+        assertTrue("auto blaze rod prefers the pool with fewer fuel choices",
+                blazeRodAuto != null && blazeRodAuto.pool() == EnergyType.BLAZE_FUEL);
+
+        List<FuelValue> equalScarcity = List.of(
+                new FuelValue(EnergyType.BLAZE_FUEL, 1),
+                new FuelValue(EnergyType.BOTTLE_FUEL, 1));
+        FuelValue lowerAmount = FuelTable.selectAutoFuelValue(equalScarcity,
+                type -> type == EnergyType.BLAZE_FUEL ? 20L : 10L);
+        assertTrue("equal scarcity prefers the lower accumulated pool",
+                lowerAmount != null && lowerAmount.pool() == EnergyType.BOTTLE_FUEL);
+
+        FuelValue enumTie = FuelTable.selectAutoFuelValue(equalScarcity, type -> 10L);
+        assertTrue("equal scarcity and amount use stable enum order",
+                enumTie != null && enumTie.pool() == EnergyType.BLAZE_FUEL);
+        assertTrue("non-fuel has no auto target",
+                FuelTable.getAutoFuelValue(new ItemStack(Items.STONE), type -> 0L) == null);
     }
 
     private static void testRecipeEnergyTable() {
-        var smeltCost = RecipeEnergyTable.getCost(RecipeType.SMELTING);
+        var smeltCost = RecipeEnergyTable.getCost(new SmeltingRecipe("", CookingBookCategory.MISC,
+                Ingredient.of(Items.DIRT), new ItemStack(Items.STONE), 0, 37));
         assertTrue("smelting needs smelting_energy", smeltCost.processType() == EnergyType.SMELTING_ENERGY);
-        assertTrue("smelting process cost 200", smeltCost.processAmount() == 200);
+        assertTrue("smelting process uses concrete cooking time", smeltCost.processAmount() == 37);
         assertTrue("smelting needs furnace_fuel", smeltCost.fuelType() == EnergyType.FURNACE_FUEL);
-        assertTrue("smelting fuel cost 200", smeltCost.fuelAmount() == 200);
+        assertTrue("smelting fuel uses concrete cooking time", smeltCost.fuelAmount() == 37);
 
-        var blastCost = RecipeEnergyTable.getCost(RecipeType.BLASTING);
-        assertTrue("blasting process cost 100", blastCost.processAmount() == 100);
+        var blastCost = RecipeEnergyTable.getCost(new BlastingRecipe("", CookingBookCategory.MISC,
+                Ingredient.of(Items.DIRT), new ItemStack(Items.STONE), 0, 23));
+        assertTrue("blasting uses concrete cooking time", blastCost.processAmount() == 23);
         assertTrue("blasting uses blast energy", blastCost.processType() == EnergyType.BLASTING_ENERGY);
 
-        var smokeCost = RecipeEnergyTable.getCost(RecipeType.SMOKING);
+        var smokeCost = RecipeEnergyTable.getCost(new SmokingRecipe("", CookingBookCategory.MISC,
+                Ingredient.of(Items.BEEF), new ItemStack(Items.COOKED_BEEF), 0, 19));
         assertTrue("smoking uses smoking_energy", smokeCost.processType() == EnergyType.SMOKING_ENERGY);
+        assertTrue("smoking uses concrete cooking time", smokeCost.processAmount() == 19);
 
-        var campCost = RecipeEnergyTable.getCost(RecipeType.CAMPFIRE_COOKING);
-        assertTrue("campfire process cost 600", campCost.processAmount() == 600);
+        var campCost = RecipeEnergyTable.getCost(new CampfireCookingRecipe("", CookingBookCategory.MISC,
+                Ingredient.of(Items.BEEF), new ItemStack(Items.COOKED_BEEF), 0, 71));
+        assertTrue("campfire uses campfire energy", campCost.processType() == EnergyType.CAMPFIRE_ENERGY);
+        assertTrue("campfire uses concrete cooking time", campCost.processAmount() == 71);
 
-        assertTrue("crafting cost is null (instant)", RecipeEnergyTable.getCost(RecipeType.CRAFTING) == null);
-        assertTrue("stonecutting cost is null (instant)", RecipeEnergyTable.getCost(RecipeType.STONECUTTING) == null);
-        assertTrue("smithing cost is null (instant)", RecipeEnergyTable.getCost(RecipeType.SMITHING) == null);
+        var crafting = new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT)));
+        assertTrue("non-cooking recipe cost is null", RecipeEnergyTable.getCost(crafting) == null);
     }
 
     private static void testEnergyType() {
-        assertTrue("smelting auto-fills", EnergyType.SMELTING_ENERGY.isAutoFill());
-        assertTrue("blasting auto-fills", EnergyType.BLASTING_ENERGY.isAutoFill());
-        assertTrue("furnace_fuel does NOT auto-fill", !EnergyType.FURNACE_FUEL.isAutoFill());
-        assertTrue("blaze_fuel does NOT auto-fill", !EnergyType.BLAZE_FUEL.isAutoFill());
-        assertTrue("bottle_fuel does NOT auto-fill", !EnergyType.BOTTLE_FUEL.isAutoFill());
+        assertTrue("smelting is machine-generated", EnergyType.SMELTING_ENERGY.isMachineGenerated());
+        assertTrue("blasting is machine-generated", EnergyType.BLASTING_ENERGY.isMachineGenerated());
+        assertTrue("furnace_fuel is not machine-generated", !EnergyType.FURNACE_FUEL.isMachineGenerated());
+        assertTrue("blaze_fuel is not machine-generated", !EnergyType.BLAZE_FUEL.isMachineGenerated());
+        assertTrue("bottle_fuel is not machine-generated", !EnergyType.BOTTLE_FUEL.isMachineGenerated());
         assertTrue("8 types total", EnergyType.values().length == 8);
         assertTrue("smelting id", EnergyType.SMELTING_ENERGY.getId().equals("smelting_energy"));
-        assertTrue("smelting tickRate 1", EnergyType.SMELTING_ENERGY.getTickRate() == 1);
+        assertTrue("every energy type has a representative item",
+                java.util.Arrays.stream(EnergyType.values())
+                        .allMatch(type -> !type.representativeStack().isEmpty()));
+        assertTrue("every representative item is a single display icon",
+                java.util.Arrays.stream(EnergyType.values())
+                        .allMatch(type -> type.representativeStack().getCount() == 1));
+        assertTrue("Smelting Energy uses Furnace as its representative item",
+                EnergyType.SMELTING_ENERGY.representativeStack().is(Items.FURNACE));
+        assertTrue("Blasting Energy uses Blast Furnace as its representative item",
+                EnergyType.BLASTING_ENERGY.representativeStack().is(Items.BLAST_FURNACE));
+        assertTrue("Smoking Energy uses Smoker as its representative item",
+                EnergyType.SMOKING_ENERGY.representativeStack().is(Items.SMOKER));
+        assertTrue("Campfire Energy uses Campfire as its representative item",
+                EnergyType.CAMPFIRE_ENERGY.representativeStack().is(Items.CAMPFIRE));
+        assertTrue("Brew Energy uses Brewing Stand as its representative item",
+                EnergyType.BREW_ENERGY.representativeStack().is(Items.BREWING_STAND));
+        assertTrue("Fuel uses coal as its representative item",
+                EnergyType.FURNACE_FUEL.representativeStack().is(Items.COAL));
+        assertTrue("Brew Energy uses blaze rod as its representative item",
+                EnergyType.BLAZE_FUEL.representativeStack().is(Items.BLAZE_ROD));
+        assertTrue("Bottle Energy uses glass bottle as its representative item",
+                EnergyType.BOTTLE_FUEL.representativeStack().is(Items.GLASS_BOTTLE));
+        assertTrue("9 installed machine and tool mappings", MachineEnergyTable.size() == 9);
+        assertTrue("Furnace maps to smelting", MachineEnergyTable.get(0).machine() == Items.FURNACE
+                && MachineEnergyTable.get(0).energyType() == EnergyType.SMELTING_ENERGY);
+        assertTrue("Blast Furnace maps to blasting", MachineEnergyTable.get(1).machine() == Items.BLAST_FURNACE
+                && MachineEnergyTable.get(1).energyType() == EnergyType.BLASTING_ENERGY);
+        assertTrue("Smoker maps to smoking", MachineEnergyTable.get(2).machine() == Items.SMOKER
+                && MachineEnergyTable.get(2).energyType() == EnergyType.SMOKING_ENERGY);
+        assertTrue("Campfire maps to campfire", MachineEnergyTable.get(3).machine() == Items.CAMPFIRE
+                && MachineEnergyTable.get(3).energyType() == EnergyType.CAMPFIRE_ENERGY);
+        assertTrue("Brewing Stand maps to brew", MachineEnergyTable.get(4).machine() == Items.BREWING_STAND
+                && MachineEnergyTable.get(4).energyType() == EnergyType.BREW_ENERGY);
+        assertTrue("Crafting Table maps to crafting station slot",
+                MachineEnergyTable.get(MachineEnergyTable.CRAFTING_TABLE_SLOT).machine() == Items.CRAFTING_TABLE);
+        assertTrue("Stonecutter maps to stonecutting station slot",
+                MachineEnergyTable.get(MachineEnergyTable.STONECUTTER_SLOT).machine() == Items.STONECUTTER);
+        assertTrue("Smithing Table maps to smithing station slot",
+                MachineEnergyTable.get(MachineEnergyTable.SMITHING_TABLE_SLOT).machine() == Items.SMITHING_TABLE);
+        assertTrue("Axe slot accepts axes and rejects pickaxes",
+                MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT).accepts(new ItemStack(Items.DIAMOND_AXE))
+                        && !MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT)
+                                .accepts(new ItemStack(Items.DIAMOND_PICKAXE)));
+        assertTrue("machine rate is one per installed block", MachineEnergyTable.get(0).energyPerTick() == 1);
+    }
+
+    private static void testTerminalAmountFormatter() {
+        assertTrue("slot amount zero stays exact", TerminalAmountFormatter.formatCompact(0).equals("0"));
+        assertTrue("slot amount 999 stays exact", TerminalAmountFormatter.formatCompact(999).equals("999"));
+        assertTrue("slot amount 1000 uses K", TerminalAmountFormatter.formatCompact(1_000).equals("1K"));
+        assertTrue("slot amount 1500 keeps one decimal", TerminalAmountFormatter.formatCompact(1_500).equals("1.5K"));
+        assertTrue("slot amount floors instead of overstating",
+                TerminalAmountFormatter.formatCompact(8_192).equals("8.1K"));
+        assertTrue("slot amount removes decimal at 100K",
+                TerminalAmountFormatter.formatCompact(100_000).equals("100K"));
+        assertTrue("slot amount 1M uses M", TerminalAmountFormatter.formatCompact(1_000_000).equals("1M"));
+        assertTrue("slot amount 1.5M keeps one decimal",
+                TerminalAmountFormatter.formatCompact(1_500_000).equals("1.5M"));
+        assertTrue("slot amount supports exa scale",
+                TerminalAmountFormatter.formatCompact(Long.MAX_VALUE).equals("9.2E"));
     }
 
     private static void testSortMode() {
@@ -197,44 +344,210 @@ class SelfTest {
                 SearchMode.MOD.apply("").isEmpty());
     }
 
-    private static void testTerminalGeometryNoOverlap() {
-        int imageWidth = 210;
-        int sbX = 174;
-        int searchX = 102;
-        int searchBgX = 100;
-        int buttonX = TerminalLayout.viewButtonX();
-        int buttonW = TerminalLayout.VIEW_BUTTON_SIZE;
-        int buttonH = TerminalLayout.VIEW_BUTTON_SIZE;
+    private static void testAdaptiveTerminalLayout() {
+        var narrow = TerminalLayout.crafting(320, 240, 5, 3);
+        assertTrue("320x240 crafting uses narrow fallback", !narrow.wide());
+        assertTrue("narrow fallback leaves vertical breathing room", narrow.imageHeight() <= 232);
+        assertTrue("narrow grid follows nine-column slot rhythm",
+                narrow.itemGrid().width() == 9 * TerminalLayout.SLOT_SIZE
+                        && narrow.itemGrid().height() == narrow.visibleRows() * TerminalLayout.SLOT_SIZE);
+        assertTrue("narrow recipe workspace follows item grid",
+                narrow.workspace().y() >= narrow.itemGrid().bottom()
+                        && narrow.workspace().bottom() <= narrow.playerInventory().y());
+        assertTrue("narrow player inventory fits inside frame",
+                narrow.playerInventory().bottom() <= narrow.imageHeight());
+        assertTrue("narrow Fuel machine grid derives five entries", narrow.machineGrid().itemCount() == 5
+                && narrow.machineGrid().cells().size() == 5);
+        assertTrue("narrow Fuel reserve grid derives three entries", narrow.reserveGrid().itemCount() == 3
+                && narrow.reserveGrid().cells().size() == 3);
+        assertTrue("narrow Fuel input stays in Fuel card",
+                narrow.fuelPanel().contains(narrow.fuelInput().x(), narrow.fuelInput().y()));
+        assertTrue("narrow Fuel target selector stays in the Fuel header",
+                narrow.fuelTargetSelector().x() >= narrow.fuelPanel().x()
+                        && narrow.fuelTargetSelector().y() >= narrow.fuelPanel().y()
+                        && narrow.fuelTargetSelector().right() <= narrow.fuelPanel().right()
+                        && narrow.fuelTargetSelector().bottom() <= narrow.reserveGrid().bounds().y());
+        assertTrue("narrow recipe resource grid exposes all nine cells",
+                narrow.recipeResourceCells().size() == 9
+                        && rectanglesDoNotOverlap(narrow.recipeResourceCells()));
 
-        int scrollbarLeft = sbX;
-        int searchRight = searchX + searchBoxWidth();
-        assertTrue("searchRight <= scrollbarLeft (" + searchRight + " <= " + scrollbarLeft + ")",
-                searchRight <= scrollbarLeft);
-        int searchBgRight = searchBgX + searchBgWidth();
-        assertTrue("search bg right <= scrollbarLeft (" + searchBgRight + " <= " + scrollbarLeft + ")",
-                searchBgRight <= scrollbarLeft);
-        assertTrue("buttons sit left of image", buttonX + buttonW <= 0);
+        var sideBySide = TerminalLayout.crafting(423, 291, 5, 3);
+        assertTrue("guiScale-4 fullscreen width uses side-by-side layout", sideBySide.wide());
+        assertTrue("side-by-side frame shrinks within its supported range",
+                sideBySide.imageWidth() == 367);
+        assertTrue("side-by-side workspace remains usable", sideBySide.workspace().width() >= 162);
+        assertTrue("side-by-side layout reserves vertical breathing room", sideBySide.imageHeight() <= 243);
+        assertTrue("side-by-side workspace sits right of item grid",
+                sideBySide.workspace().x() >= sideBySide.scrollbar().right());
+        assertTrue("side-by-side recipe resource grid exposes all nine cells",
+                sideBySide.recipeResourceCells().size() == 9
+                        && rectanglesDoNotOverlap(sideBySide.recipeResourceCells()));
+        assertTrue("side-by-side boundary is based on complete usable width",
+                !TerminalLayout.crafting(415, 291, 5, 3).wide()
+                        && TerminalLayout.crafting(416, 291, 5, 3).wide());
+        assertTrue("Fuel content uses the full inner frame width",
+                sideBySide.machinePanel().x() == 8
+                        && sideBySide.machinePanel().width() == sideBySide.imageWidth() - 16
+                        && sideBySide.fuelPanel().x() == 8
+                        && sideBySide.fuelPanel().width() == sideBySide.imageWidth() - 16);
+        assertTrue("page tabs are visually separated from item controls",
+                sideBySide.railButtons().get(3).y() - sideBySide.railButtons().get(2).bottom() >= 6);
+        assertTrue("Fuel rail contains only the three page tabs",
+                sideBySide.fuelRailButtons().size() == 3);
+        assertTrue("Fuel rail panel wraps only the Fuel page tabs",
+                sideBySide.fuelRailPanel().equals(new TerminalLayout.Rect(
+                        sideBySide.fuelRailButtons().getFirst().x() - 3,
+                        sideBySide.fuelRailButtons().getFirst().y() - 3,
+                        sideBySide.fuelRailButtons().getFirst().width() + 6,
+                        sideBySide.fuelRailButtons().getLast().bottom()
+                                - sideBySide.fuelRailButtons().getFirst().y() + 6)));
+        assertTrue("five machine entries span the complete flow width",
+                sideBySide.machineGrid().cells().getFirst().x() == sideBySide.machineGrid().bounds().x()
+                        && sideBySide.machineGrid().cells().getLast().right()
+                        == sideBySide.machineGrid().bounds().right());
+        assertTrue("three reserve entries span the complete flow width",
+                sideBySide.reserveGrid().cells().getFirst().x() == sideBySide.reserveGrid().bounds().x()
+                        && sideBySide.reserveGrid().cells().getLast().right()
+                        == sideBySide.reserveGrid().bounds().right());
 
-        for (int rows : new int[]{3, 9}) {
-            for (int i = 0; i < 3; i++) {
-                int by = TerminalLayout.viewButtonY(i);
-                assertTrue("button " + i + " bottom <= imageHeight at rows " + rows,
-                        by + buttonH <= 19 + 99 + rows * 18);
-                assertTrue("button " + i + " top >= title row", by >= 0);
+        var manyFuelDescriptors = TerminalLayout.crafting(320, 240, 5, 60);
+        int manyFuelLeft = manyFuelDescriptors.centeredFrameLeft(320);
+        assertTrue("Fuel target rail stays fixed-size when reserve descriptors grow",
+                manyFuelDescriptors.fuelRailButtons().size() == 3);
+        assertTrue("large reserve descriptor sets cannot push rail or frame offscreen",
+                manyFuelLeft + manyFuelDescriptors.railPanel().x() >= 0
+                        && manyFuelLeft + manyFuelDescriptors.imageWidth() <= 320);
+
+        var pageCapacity = TerminalLayout.crafting(320, 240, 5, 3);
+        var partialLastPage = TerminalLayout.crafting(
+                320, 240,
+                pageCapacity.machineGrid().capacity() + 1,
+                pageCapacity.reserveGrid().capacity() + 1);
+        List<TerminalLayout.Rect> lastMachineCells = partialLastPage.machineGrid().cells(1);
+        List<TerminalLayout.Rect> lastReserveCells = partialLastPage.reserveGrid().cells(1);
+        assertTrue("partial last machine page spans the complete flow width",
+                lastMachineCells.size() == 1
+                        && lastMachineCells.getFirst().x() == partialLastPage.machineGrid().bounds().x()
+                        && lastMachineCells.getFirst().right() == partialLastPage.machineGrid().bounds().right());
+        assertTrue("partial last reserve page spans the complete flow width",
+                lastReserveCells.size() == 1
+                        && lastReserveCells.getFirst().x() == partialLastPage.reserveGrid().bounds().x()
+                        && lastReserveCells.getFirst().right() == partialLastPage.reserveGrid().bounds().right());
+
+        for (int machineCount : new int[]{0, 1, 5, 6, 9, 10, 40}) {
+            for (int reserveCount : new int[]{0, 1, 3, 4, 8, 30}) {
+                var flow = TerminalLayout.crafting(320, 240, machineCount, reserveCount);
+                assertTrue("machine descriptor count is preserved", flow.machineGrid().itemCount() == machineCount);
+                assertTrue("reserve descriptor count is preserved", flow.reserveGrid().itemCount() == reserveCount);
+                assertTrue("machine visible cells are bounded by capacity",
+                        flow.machineGrid().cells().size() == Math.min(machineCount, flow.machineGrid().capacity()));
+                assertTrue("reserve visible cells are bounded by capacity",
+                        flow.reserveGrid().cells().size() == Math.min(reserveCount, flow.reserveGrid().capacity()));
+                assertTrue("machine overflow exposes deterministic pages",
+                        flow.machineGrid().pageCount() == Math.max(1,
+                                (machineCount + flow.machineGrid().capacity() - 1) / flow.machineGrid().capacity()));
+                assertTrue("reserve overflow exposes deterministic pages",
+                        flow.reserveGrid().pageCount() == Math.max(1,
+                                (reserveCount + flow.reserveGrid().capacity() - 1) / flow.reserveGrid().capacity()));
+                assertTrue("machine cells do not overlap", rectanglesDoNotOverlap(flow.machineGrid().cells()));
+                assertTrue("reserve cells do not overlap", rectanglesDoNotOverlap(flow.reserveGrid().cells()));
+                if (!flow.machineGrid().cells().isEmpty()) {
+                    assertTrue("machine cells span their complete flow width",
+                            flow.machineGrid().cells().getFirst().x() == flow.machineGrid().bounds().x()
+                                    && flow.machineGrid().cells().getLast().right()
+                                    == flow.machineGrid().bounds().right());
+                }
+                if (!flow.reserveGrid().cells().isEmpty()) {
+                    assertTrue("reserve cells span their complete flow width",
+                            flow.reserveGrid().cells().getFirst().x() == flow.reserveGrid().bounds().x()
+                                    && flow.reserveGrid().cells().getLast().right()
+                                    == flow.reserveGrid().bounds().right());
+                }
+                for (TerminalLayout.Rect cell : flow.machineGrid().cells()) {
+                    assertTrue("machine cell stays in machine flow bounds",
+                            cell.x() >= flow.machineGrid().bounds().x()
+                                    && cell.y() >= flow.machineGrid().bounds().y()
+                                    && cell.right() <= flow.machineGrid().bounds().right()
+                                    && cell.bottom() <= flow.machineGrid().bounds().bottom());
+                }
+                for (TerminalLayout.Rect cell : flow.reserveGrid().cells()) {
+                    assertTrue("reserve cell stays in reserve flow bounds",
+                            cell.x() >= flow.reserveGrid().bounds().x()
+                                    && cell.y() >= flow.reserveGrid().bounds().y()
+                                    && cell.right() <= flow.reserveGrid().bounds().right()
+                                    && cell.bottom() <= flow.reserveGrid().bounds().bottom());
+                }
             }
+        }
+
+        for (int height = 240; height <= 600; height++) {
+            for (int width : new int[]{320, 415, 416, 423, 480, 854}) {
+                var geometry = TerminalLayout.crafting(width, height, 5, 3);
+                int left = geometry.centeredFrameLeft(width);
+                int top = (height - geometry.imageHeight()) / 2;
+                assertTrue("crafting frame stays onscreen at " + width + "x" + height,
+                        left >= 0 && top >= 0 && left + geometry.imageWidth() <= width
+                                && top + geometry.imageHeight() <= height);
+                assertTrue("crafting rail stays onscreen at " + width + "x" + height,
+                        left + geometry.railPanel().x() >= 0
+                                && top + geometry.railPanel().y() >= 0
+                                && top + geometry.railPanel().bottom() <= height);
+                int groupLeft = left + geometry.railPanel().x();
+                int groupRight = left + geometry.imageWidth();
+                assertTrue("crafting rail+frame group is centered at " + width + "x" + height,
+                        Math.abs(groupLeft - (width - groupRight)) <= 1);
+                if (geometry.wide()) {
+                    assertTrue("side-by-side group keeps horizontal breathing room at "
+                                    + width + "x" + height,
+                            groupLeft >= 16 && width - groupRight >= 16);
+                }
+                assertTrue("crafting row count stays supported at " + width + "x" + height,
+                        geometry.visibleRows() >= 1 && geometry.visibleRows() <= 9);
+                assertTrue("crafting exclusion covers frame and rail at " + width + "x" + height,
+                        geometry.exclusionRects().size() == 2
+                                && geometry.exclusionRects().get(1).equals(geometry.railPanel()));
+                assertTrue("crafting rail buttons do not overlap at " + width + "x" + height,
+                        rectanglesDoNotOverlap(geometry.railButtons()));
+                assertTrue("crafting resource cells do not overlap at " + width + "x" + height,
+                        geometry.recipeResourceCells().size() == 9
+                                && rectanglesDoNotOverlap(geometry.recipeResourceCells()));
+                for (TerminalLayout.Rect cell : geometry.recipeResourceCells()) {
+                    assertTrue("crafting resource cell stays inside workspace at " + width + "x" + height,
+                            cell.x() >= geometry.workspace().x()
+                                    && cell.y() >= geometry.workspace().y()
+                                    && cell.right() <= geometry.workspace().right()
+                                    && cell.bottom() <= geometry.workspace().bottom() - 18);
+                }
+                assertTrue("Fuel cards do not overlap player inventory at " + width + "x" + height,
+                        geometry.machinePanel().bottom() <= geometry.fuelPanel().y()
+                                && !geometry.machinePanel().overlaps(geometry.playerInventory())
+                                && !geometry.fuelPanel().overlaps(geometry.playerInventory()));
+            }
+        }
+
+        for (int height = 240; height <= 600; height++) {
+            var geometry = TerminalLayout.storage(320, height, 3);
+            assertTrue("storage frame stays onscreen at height " + height,
+                    geometry.imageHeight() <= height);
+            assertTrue("storage rows stay 3..9 at height " + height,
+                    geometry.visibleRows() >= 3 && geometry.visibleRows() <= 9);
+            assertTrue("storage search ends before scrollbar at height " + height,
+                    geometry.searchBackground().right() <= geometry.scrollbar().x());
+            int left = geometry.centeredFrameLeft(320);
+            int groupLeft = left + geometry.railPanel().x();
+            int groupRight = left + geometry.imageWidth();
+            assertTrue("storage rail+frame group is centered at height " + height,
+                    Math.abs(groupLeft - (320 - groupRight)) <= 1);
         }
     }
 
-    private static int searchBoxWidth() { return 70; }
-    private static int searchBgWidth() { return 72; }
-
-    private static void testTerminalViewButtonsUseLeftSideRail() {
-        assertTrue("view buttons sit left of terminal panel", TerminalLayout.viewButtonX() < 0);
-        assertTrue("view buttons do not overlap slots", TerminalLayout.viewButtonX() + TerminalLayout.VIEW_BUTTON_SIZE <= 0);
-        assertTrue("view buttons stack with two-pixel spacing",
-                TerminalLayout.viewButtonY(1) - TerminalLayout.viewButtonY(0) == TerminalLayout.VIEW_BUTTON_SIZE + 2);
-        assertTrue("third view button remains near top controls",
-                TerminalLayout.viewButtonY(2) <= StorageTerminalMenu.MAX_DISPLAY_ROWS * 18);
+    private static boolean rectanglesDoNotOverlap(List<TerminalLayout.Rect> rectangles) {
+        for (int left = 0; left < rectangles.size(); left++) {
+            for (int right = left + 1; right < rectangles.size(); right++) {
+                if (rectangles.get(left).overlaps(rectangles.get(right))) return false;
+            }
+        }
+        return true;
     }
 
     private static void assertTrue(String message, boolean condition) {

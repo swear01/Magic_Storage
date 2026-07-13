@@ -1,29 +1,28 @@
 package com.swearprom.magicstorage.magic_storage;
 
+import net.minecraft.world.item.crafting.AbstractCookingRecipe;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
 
-import java.util.HashMap;
-import java.util.Map;
-
 public final class RecipeEnergyTable {
-    private static final Map<RecipeType<?>, EnergyCost> TABLE = new HashMap<>();
+    public static EnergyCost getCost(Recipe<?> recipe) {
+        if (!(recipe instanceof AbstractCookingRecipe cookingRecipe)) return null;
+        long cookingTime = cookingRecipe.getCookingTime();
+        if (cookingTime <= 0) return null;
 
-    static {
-        TABLE.put(RecipeType.SMELTING,
-            new EnergyCost(EnergyType.SMELTING_ENERGY, 200, EnergyType.FURNACE_FUEL, 200));
-        TABLE.put(RecipeType.BLASTING,
-            new EnergyCost(EnergyType.BLASTING_ENERGY, 100, EnergyType.FURNACE_FUEL, 100));
-        TABLE.put(RecipeType.SMOKING,
-            new EnergyCost(EnergyType.SMOKING_ENERGY, 100, EnergyType.FURNACE_FUEL, 100));
-        TABLE.put(RecipeType.CAMPFIRE_COOKING,
-            new EnergyCost(EnergyType.CAMPFIRE_ENERGY, 600, EnergyType.FURNACE_FUEL, 600));
-    }
-
-    public static EnergyCost getCost(RecipeType<?> recipeType) {
-        return TABLE.get(recipeType);
-    }
-
-    public static EnergyCost getBrewingCost() {
-        return new EnergyCost(EnergyType.BREW_ENERGY, 400, EnergyType.BLAZE_FUEL, 20);
+        EnergyType processType;
+        RecipeType<?> recipeType = recipe.getType();
+        if (recipeType == RecipeType.SMELTING) {
+            processType = EnergyType.SMELTING_ENERGY;
+        } else if (recipeType == RecipeType.BLASTING) {
+            processType = EnergyType.BLASTING_ENERGY;
+        } else if (recipeType == RecipeType.SMOKING) {
+            processType = EnergyType.SMOKING_ENERGY;
+        } else if (recipeType == RecipeType.CAMPFIRE_COOKING) {
+            processType = EnergyType.CAMPFIRE_ENERGY;
+        } else {
+            return null;
+        }
+        return new EnergyCost(processType, cookingTime, EnergyType.FURNACE_FUEL, cookingTime);
     }
 }

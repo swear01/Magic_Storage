@@ -5,19 +5,19 @@
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "Fuel items are inserted into the network to fill the $(thing)Furnace Fuel$(), $(thing)Blaze Fuel$(), and $(thing)Bottle Fuel$() pools. Shift-click fuel items from your inventory in any terminal to convert them."
+      "text": "Open the Crafting Terminal's $(thing)Fuel page$() with the third page button on the left rail. The rail then contains only the three page tabs. Use the $(thing)Fuel Target$() selector in the Energy Reserves header to choose Auto, Fuel, Brew Energy, or Bottle Energy; click to move forward, or Shift-click/scroll over it to move backward. Then place fuel in the dedicated input or Shift-click it."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Furnace Fuel values:$()$(br)$(li)$(item:minecraft:coal) Coal: $(thing)1,600$() fuel$(li)$(item:minecraft:charcoal) Charcoal: $(thing)1,600$() fuel$(li)$(item:minecraft:coal_block) Coal Block: $(thing)16,000$() fuel$(li)$(item:minecraft:lava_bucket) Lava Bucket: $(thing)20,000$() fuel"
+      "text": "$(thing)Installed Stations:$() Nine exact slots use two flow rows: Furnace, Blast Furnace, Smoker, Campfire, Brewing Stand, Crafting Table, Stonecutter, Smithing Table, and one compatible axe. The first five generate energy at their stack count per tick; the final four only unlock recipes/actions. All stay installed across page changes and menu close and can be Shift-clicked back."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Blaze Fuel values:$()$(br)$(li)$(item:minecraft:blaze_rod) Blaze Rod: $(thing)2,400$() furnace + $(thing)1,200$() blaze$(li)$(item:minecraft:blaze_powder) Blaze Powder: $(thing)600$() blaze$(br2)A Blaze Rod gives $(thing)both$() furnace and blaze fuel simultaneously!"
+      "text": "$(thing)Runtime Fuel:$() Any item with a positive current runtime burn time is accepted. Each item adds exactly that many Fuel ticks, so logs, datapack fuels, and compatible modded fuels work without a Magic Storage whitelist. Container remainders such as the empty Lava Bucket are returned, and overflow rejects the whole conversion."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Bottle Fuel:$()$(br)$(li)Glass Bottle or any Potion: $(thing)1$() bottle fuel per item.$(br2)$(thing)Multi-pool items:$() When an item can fuel multiple pools, you'll see a selection popup to choose which pool to fill. For example, Blaze Rods can go into either Furnace Fuel or Blaze Fuel."
+      "text": "$(thing)Brew Energy:$() Blaze Rod $(thing)1,200$(); Blaze Powder $(thing)600$().$(br)$(thing)Bottle Energy:$() Glass Bottle or Potion $(thing)1$().$(br2)Auto prefers the compatible pool with fewer distinct suppliers, then lower stored total, then stable order. A Blaze Rod therefore fills Brew Energy under Auto. The Storage page stores machines and fuel normally."
     }
   ]
 }

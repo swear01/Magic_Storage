@@ -5,19 +5,19 @@
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "The Storage Core maintains $(thing)8 energy pools$() used to power various recipe types. Energy is required for smelting, blasting, smoking, campfire cooking, and brewing operations performed through the Crafting Terminal."
+      "text": "The Storage Core currently maintains $(thing)8 energy pools$(). Energy powers smelting, blasting, smoking, and campfire cooking through the Crafting Terminal. Brewing process energy plus Brew and Bottle fuel reserves can be stockpiled, but brewing execution is not implemented yet."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Auto-Fill Pools$() (regenerate +1 per tick):$(br)$(li)$(thing)Smelting Energy$() - used for furnace smelting$(li)$(thing)Blasting Energy$() - used for blast furnace$(li)$(thing)Smoking Energy$() - used for smoker$(li)$(thing)Campfire Energy$() - used for campfire cooking$(li)$(thing)Brew Energy$() - used for brewing stands($(thing)+1/tick auto$())"
+      "text": "$(thing)Installed process stations:$()$(br)$(li)Furnace → Smelting Energy$(li)Blast Furnace → Blasting Energy$(li)Smoker → Smoking Energy$(li)Campfire → Campfire Energy$(li)Brewing Stand → Brewing Energy$(br2)An empty slot generates nothing. A stack of N energy machines produces exactly N matching energy per tick. Crafting Table, Stonecutter, Smithing Table, and axe slots unlock recipes/actions but produce no energy."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Fuel Pools$() (require fuel items):$(br)$(li)$(thing)Furnace Fuel$() - inserted via fuel items like Coal$(li)$(thing)Blaze Fuel$() - inserted via Blaze Rods/Powder$(li)$(thing)Bottle Fuel$() - inserted via Glass Bottles/Potions$(br2)Fuel pools have $(thing)unlimited capacity$() - stockpile as much as you want."
+      "text": "$(thing)Fuel-conversion pools:$()$(br)$(li)$(thing)Fuel$() - every stack whose current NeoForge runtime burn time is positive, including logs and modded fuels$(li)$(thing)Brew Energy$() - Blaze Rods/Powder$(li)$(thing)Bottle Energy$() - Glass Bottles/Potions$(br2)These labels do not change the save-compatible internal pool IDs."
     },
     {
       "type": "patchouli:text",
-      "text": "All energy pools are stored in the Storage Core's $(thing)NBT data$() and persist across world saves. Energy generates every tick automatically for auto-fill pools, giving you passive energy generation over time.$(br2)See $(l:magic_storage:fuel_conversion)Fuel Conversion$() for how to add fuel, and $(l:magic_storage:recipe_costs)Recipe Costs$() for exact energy costs."
+      "text": "All energy and installed station/tool stacks live in the Storage Core's $(thing)NBT data$() and survive saves and the data-carrying Core drop. Removing a process machine stops future generation but keeps stored energy.$(br2)The Crafting Terminal $(thing)Fuel page$() displays all currently registered totals live; scroll inside a panel when its page indicator appears. See $(l:magic_storage:fuel_conversion)Fuel Conversion$() and $(l:magic_storage:recipe_costs)Recipe Costs$()."
     }
   ]
 }

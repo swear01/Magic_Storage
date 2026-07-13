@@ -1,46 +1,40 @@
 package com.swearprom.magicstorage.magic_storage;
 
+import com.mojang.datafixers.util.Pair;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class StorageTerminalScreen<T extends StorageTerminalMenu> extends AbstractContainerScreen<T> {
 
     protected static final ResourceLocation ICONS_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "textures/gui/icons.png");
 
-    protected static final int TOP_HEIGHT = 19;
-    protected static final int BOTTOM_HEIGHT = 99;
-    protected static final int ROW_HEIGHT = 18;
-    protected static final int MIN_VISIBLE_ROWS = 3;
-    protected static final int MAX_VISIBLE_ROWS = 9;
+    private static final int SCROLLER_HEIGHT = 15;
+    private static final int SB_TEXTURE_HEIGHT = 16;
+    private static final int SCROLL_TRACK_INSET = 2;
+    private static final int SCROLLER_UV_X = 232;
 
-    protected static final int SB_X = 174;
-    protected static final int SB_WIDTH = 12;
-    protected static final int SB_SCROLLER_H = 15;
-    private static final int SB_TRACK_INSET = 2;
-    private static final int SB_UV_X = 232;
-
-    private static final int SEARCH_X = 102;
-    private static final int SEARCH_W = 70;
-    private static final int SEARCH_BG_X = 100;
-    private static final int SEARCH_BG_W = 72;
-
-    private static final int BUTTON_X = TerminalLayout.viewButtonX();
-    private static final int BUTTON_W = TerminalLayout.VIEW_BUTTON_SIZE;
-    private static final int BUTTON_H = TerminalLayout.VIEW_BUTTON_SIZE;
-
+    private final List<Slot> semanticSlots;
     private EditBox searchBox;
     private boolean isScrolling;
-    private int searchTimer = 0;
+    private int lastRequestedScroll = Integer.MIN_VALUE;
+    private int searchTimer;
     private String lastSentSearch = "";
     protected int visibleRows;
+    protected TerminalLayout.Geometry geometry;
     private SearchMode lastSeenSearchMode = SearchMode.NORMAL;
     private SortMode lastSeenSortMode = SortMode.NAME;
     private SortOrder lastSeenSortOrder = SortOrder.ASCENDING;
@@ -51,92 +45,211 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     public StorageTerminalScreen(T menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
+        this.semanticSlots = List.copyOf(menu.slots);
     }
 
-    protected int getTopHeight() { return TOP_HEIGHT; }
-    protected int getBottomHeight() { return BOTTOM_HEIGHT; }
-    protected int gridTopLocal() { return getTopHeight(); }
+    protected TerminalLayout.Geometry createGeometry() {
+        return TerminalLayout.storage(this.width, this.height, railButtonCount());
+    }
 
-    protected int computeVisibleRows() {
-        return Math.clamp((this.height - getTopHeight() - getBottomHeight()) / ROW_HEIGHT,
-                MIN_VISIBLE_ROWS, MAX_VISIBLE_ROWS);
+    protected int railButtonCount() {
+        return 3;
+    }
+
+    protected boolean isItemViewActive() {
+        return true;
+    }
+
+    protected int playerInvLocalTop() {
+        return geometry.playerInventory().y();
+    }
+
+    protected int playerInvLocalLeft() {
+        return geometry.playerInventory().x();
+    }
+
+    protected TerminalLayout.Rect railButton(int index) {
+        return geometry.railButtons().get(index);
     }
 
     @Override
     protected void init() {
-        this.visibleRows = computeVisibleRows();
-        this.imageWidth = 210;
-        this.imageHeight = getTopHeight() + getBottomHeight() + visibleRows * ROW_HEIGHT;
-        this.inventoryLabelX = 8;
-        this.inventoryLabelY = imageHeight - 94;
+        String previousSearchValue = searchBox != null ? searchBox.getValue() : "";
+        boolean previousSearchFocused = searchBox != null && searchBox.isFocused();
+        this.geometry = createGeometry();
+        this.visibleRows = geometry.visibleRows();
+        this.imageWidth = geometry.imageWidth();
+        this.imageHeight = geometry.imageHeight();
+        this.inventoryLabelX = geometry.playerInventory().x();
+        this.inventoryLabelY = geometry.playerInventory().y() - 12;
         super.init();
+        this.leftPos = geometry.centeredFrameLeft(this.width);
 
-        int x = leftPos;
-        int y = topPos;
-        this.searchBox = new EditBox(font, x + SEARCH_X, y + 6, SEARCH_W, font.lineHeight, Component.translatable("gui.magic_storage.search"));
+        TerminalLayout.Rect search = geometry.searchBox();
+        this.searchBox = new EditBox(font, leftPos + search.x(), topPos + search.y(),
+                search.width(), font.lineHeight, Component.translatable("gui.magic_storage.search"));
         this.searchBox.setBordered(false);
         this.searchBox.setVisible(true);
         this.searchBox.setTextColor(0xFFFFFF);
         this.searchBox.setMaxLength(50);
+        this.searchBox.setValue(previousSearchValue);
+        this.searchBox.setFocused(previousSearchFocused);
         this.addRenderableWidget(searchBox);
+        if (previousSearchFocused) setFocused(searchBox);
 
-        sortOrderBtn = Button.builder(sortOrderLabel(), b -> { sendButton(11); setFocused(null); })
-                .bounds(x + BUTTON_X, y + TerminalLayout.viewButtonY(0), BUTTON_W, BUTTON_H).build();
+        TerminalLayout.Rect orderBounds = railButton(0);
+        sortOrderBtn = Button.builder(sortOrderLabel(), button -> {
+                    sendButton(11);
+                    setFocused(null);
+                }).bounds(leftPos + orderBounds.x(), topPos + orderBounds.y(),
+                        orderBounds.width(), orderBounds.height()).build();
         addRenderableWidget(sortOrderBtn);
 
-        sortModeBtn = Button.builder(sortModeLabel(), b -> { sendButton(12); setFocused(null); })
-                .bounds(x + BUTTON_X, y + TerminalLayout.viewButtonY(1), BUTTON_W, BUTTON_H).build();
+        TerminalLayout.Rect modeBounds = railButton(1);
+        sortModeBtn = Button.builder(sortModeLabel(), button -> {
+                    sendButton(12);
+                    setFocused(null);
+                }).bounds(leftPos + modeBounds.x(), topPos + modeBounds.y(),
+                        modeBounds.width(), modeBounds.height()).build();
         addRenderableWidget(sortModeBtn);
 
-        searchModeBtn = Button.builder(searchModeLabel(), b -> { sendButton(13); setFocused(null); })
-                .bounds(x + BUTTON_X, y + TerminalLayout.viewButtonY(2), BUTTON_W, BUTTON_H).build();
+        TerminalLayout.Rect searchBounds = railButton(2);
+        searchModeBtn = Button.builder(searchModeLabel(), button -> {
+                    sendButton(13);
+                    setFocused(null);
+                }).bounds(leftPos + searchBounds.x(), topPos + searchBounds.y(),
+                        searchBounds.width(), searchBounds.height()).build();
         addRenderableWidget(searchModeBtn);
 
         updateViewSettingButtons();
-
-        repositionPlayerInventory();
-        int slotLimit = visibleRows * 9;
-        for (int i = 0; i < StorageTerminalMenu.DISPLAY_SLOTS; i++) {
-            if (menu.slots.get(i) instanceof GhostSlot g) g.activeLimit = slotLimit;
-        }
+        setItemViewControlsVisible(isItemViewActive());
+        repositionSlots();
         sendSettings();
     }
 
-    protected int playerInvLocalTop() {
-        return getTopHeight() + visibleRows * ROW_HEIGHT + 14;
+    protected void setItemViewControlsVisible(boolean visible) {
+        setSearchControlVisible(visible);
+        setViewButtonsVisible(visible);
     }
 
-    protected int playerInvLocalLeft() {
-        return 8;
-    }
-
-    protected void repositionPlayerInventory() {
-        int playerInvTop = playerInvLocalTop();
-        int left = playerInvLocalLeft();
-        int start = StorageTerminalMenu.DISPLAY_SLOTS;
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 9; col++) {
-                int i = start + col + row * 9;
-                Slot old = menu.slots.get(i);
-                Slot moved = new Slot(old.container, old.getContainerSlot(),
-                        left + col * 18, playerInvTop + row * 18);
-                moved.index = i;
-                menu.slots.set(i, moved);
+    protected void setSearchControlVisible(boolean visible) {
+        if (searchBox != null) {
+            searchBox.visible = visible;
+            searchBox.active = visible;
+            if (!visible) {
+                searchBox.setFocused(false);
+                searchTimer = 0;
+                setFocused(null);
             }
         }
-        for (int col = 0; col < 9; col++) {
-            int i = start + 27 + col;
-            Slot old = menu.slots.get(i);
-            Slot moved = new Slot(old.container, old.getContainerSlot(),
-                    left + col * 18, playerInvTop + 3 * 18 + 4);
-            moved.index = i;
-            menu.slots.set(i, moved);
+    }
+
+    protected void setViewButtonsVisible(boolean visible) {
+        setWidgetVisible(sortOrderBtn, visible);
+        setWidgetVisible(sortModeBtn, visible);
+        setWidgetVisible(searchModeBtn, visible);
+    }
+
+    private static void setWidgetVisible(Button button, boolean visible) {
+        if (button == null) return;
+        button.visible = visible;
+        button.active = visible;
+    }
+
+    protected void repositionSlots() {
+        TerminalLayout.Rect grid = geometry.itemGrid();
+        for (int row = 0; row < StorageTerminalMenu.MAX_DISPLAY_ROWS; row++) {
+            for (int column = 0; column < StorageTerminalMenu.DISPLAY_COLS; column++) {
+                int menuIndex = column + row * StorageTerminalMenu.DISPLAY_COLS;
+                replaceSlot(menuIndex,
+                        grid.x() + column * TerminalLayout.SLOT_SIZE,
+                        grid.y() + row * TerminalLayout.SLOT_SIZE);
+            }
         }
+
+        TerminalLayout.Rect playerInventory = geometry.playerInventory();
+        int start = StorageTerminalMenu.DISPLAY_SLOTS;
+        for (int row = 0; row < 3; row++) {
+            for (int column = 0; column < 9; column++) {
+                replaceSlot(start + column + row * 9,
+                        playerInventory.x() + column * TerminalLayout.SLOT_SIZE,
+                        playerInventory.y() + row * TerminalLayout.SLOT_SIZE);
+            }
+        }
+        for (int column = 0; column < 9; column++) {
+            replaceSlot(start + 27 + column,
+                    playerInventory.x() + column * TerminalLayout.SLOT_SIZE,
+                    playerInventory.y() + 3 * TerminalLayout.SLOT_SIZE + 4);
+        }
+    }
+
+    protected void replaceSlot(int menuIndex, int x, int y) {
+        Slot delegate = semanticSlots.get(menuIndex);
+        Slot moved = new Slot(delegate.container, delegate.getContainerSlot(), x, y) {
+            @Override
+            public void onQuickCraft(ItemStack oldStack, ItemStack newStack) {
+                delegate.onQuickCraft(oldStack, newStack);
+            }
+
+            @Override
+            public void onTake(Player player, ItemStack stack) {
+                delegate.onTake(player, stack);
+            }
+
+            @Override
+            public boolean mayPlace(ItemStack stack) {
+                return delegate.mayPlace(stack);
+            }
+
+            @Override
+            public int getMaxStackSize() {
+                return delegate.getMaxStackSize();
+            }
+
+            @Override
+            public int getMaxStackSize(ItemStack stack) {
+                return delegate.getMaxStackSize(stack);
+            }
+
+            @Override
+            public Pair<ResourceLocation, ResourceLocation> getNoItemIcon() {
+                return delegate.getNoItemIcon();
+            }
+
+            @Override
+            public boolean mayPickup(Player player) {
+                return delegate.mayPickup(player);
+            }
+
+            @Override
+            public boolean isActive() {
+                return (menuIndex >= StorageTerminalMenu.DISPLAY_SLOTS
+                        || menuIndex < visibleRows * StorageTerminalMenu.DISPLAY_COLS)
+                        && delegate.isActive();
+            }
+
+            @Override
+            public boolean allowModification(Player player) {
+                return delegate.allowModification(player);
+            }
+
+            @Override
+            public boolean isHighlightable() {
+                return delegate.isHighlightable();
+            }
+
+            @Override
+            public boolean isFake() {
+                return delegate.isFake();
+            }
+        };
+        moved.index = menuIndex;
+        menu.slots.set(menuIndex, moved);
     }
 
     private Component searchModeLabel() {
         return switch (menu.getSearchMode()) {
-            case NORMAL -> Component.literal("A");
+            case NORMAL -> Component.literal("⌕");
             case TAG -> Component.literal("#");
             case MOD -> Component.literal("@");
         };
@@ -144,14 +257,15 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     private Component sortModeLabel() {
         return switch (menu.getSortMode()) {
-            case NAME -> Component.literal("N");
+            case NAME -> Component.literal("≡");
             case QUANTITY -> Component.literal("#");
-            case ID -> Component.literal("I");
+            case ID -> Component.literal("ID");
         };
     }
 
     private Component sortOrderLabel() {
-        return menu.getSortOrder() == SortOrder.ASCENDING ? Component.literal("v") : Component.literal("^");
+        return menu.getSortOrder() == SortOrder.ASCENDING
+                ? Component.literal("↓") : Component.literal("↑");
     }
 
     private void updateViewSettingButtons() {
@@ -172,143 +286,217 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     private void sendSettings() {
         if (minecraft != null && minecraft.player != null && minecraft.getConnection() != null) {
-            minecraft.getConnection().send(new TerminalSettingsPacket(
-                    menu.containerId, visibleRows));
+            minecraft.getConnection().send(new TerminalSettingsPacket(menu.containerId, visibleRows));
         }
     }
 
-    public void refreshSearch(String text) { searchBox.setValue(text); }
-
-    @Override
-    public void render(GuiGraphics g, int mx, int my, float partial) {
-        super.render(g, mx, my, partial);
-        this.renderTooltip(g, mx, my);
+    public void refreshSearch(String text) {
+        searchBox.setValue(text);
     }
 
     @Override
-    protected void renderTooltip(GuiGraphics g, int mx, int my) {
-        super.renderTooltip(g, mx, my);
-        if (hoveredSlot != null && hoveredSlot.index < visibleRows * 9
-                && hoveredSlot.hasItem() && menu.getCarried().isEmpty()) {
-            g.renderTooltip(font, hoveredSlot.getItem(), mx, my);
-        }
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.render(graphics, mouseX, mouseY, partialTick);
+        this.renderTooltip(graphics, mouseX, mouseY);
     }
 
     @Override
-    protected void renderBg(GuiGraphics g, float partial, int mx, int my) {
-        int x = leftPos;
-        int y = topPos;
-        drawPanels(g, x, y);
-
+    protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
+        drawPanels(graphics, leftPos, topPos);
+        if (!isItemViewActive()) return;
         int totalItems = menu.getTotalItemTypes();
-        int maxOffset = Math.max(0, totalItems - visibleRows * 9);
-        int travel = scrollTrackHeight() - SB_SCROLLER_H;
+        int maxOffset = Math.max(0,
+                totalItems - visibleRows * StorageTerminalMenu.DISPLAY_COLS);
+        int travel = scrollTrackHeight() - SCROLLER_HEIGHT;
         if (maxOffset > 0 && travel > 0) {
             float ratio = (float) menu.getScrollOffset() / maxOffset;
             int thumbY = scrollTrackTop() + (int) (ratio * travel);
-            g.blit(ICONS_TEXTURE, x + SB_X, thumbY, SB_UV_X, 0, SB_WIDTH, SB_SCROLLER_H, 256, 256);
+            graphics.blit(ICONS_TEXTURE,
+                    leftPos + geometry.scrollbar().x(), thumbY,
+                    SCROLLER_UV_X, 0,
+                    geometry.scrollbar().width(), SCROLLER_HEIGHT,
+                    256, SB_TEXTURE_HEIGHT);
         }
     }
 
     private int scrollTrackTop() {
-        return topPos + getTopHeight() + SB_TRACK_INSET;
+        return topPos + geometry.scrollbar().y() + SCROLL_TRACK_INSET;
     }
 
     private int scrollTrackHeight() {
-        return visibleRows * ROW_HEIGHT - 2 * SB_TRACK_INSET;
+        return geometry.scrollbar().height() - 2 * SCROLL_TRACK_INSET;
     }
 
-    protected void drawPanels(GuiGraphics g, int x, int y) {
-        g.fill(x, y, x + imageWidth, y + imageHeight, 0xFF1E1E1E);
-        int left = x + playerInvLocalLeft() - 1;
-        int right = left + 9 * ROW_HEIGHT + 2;
-        int gridTop = y + gridTopLocal();
-        g.fill(left, gridTop, right, gridTop + visibleRows * ROW_HEIGHT, 0xFF1A1A1A);
-        g.renderOutline(left, gridTop, right - left, visibleRows * ROW_HEIGHT, 0xFF555555);
-        int invTop = y + playerInvLocalTop();
-        g.fill(left, invTop, right, invTop + 4 * ROW_HEIGHT + 4, 0xFF252525);
-        int sx = x + SEARCH_BG_X, sy = y + 4;
-        g.fill(sx, sy, sx + SEARCH_BG_W, sy + 12, 0xFF000000);
-        g.renderOutline(sx, sy, SEARCH_BG_W, 12, 0xFF555555);
+    protected void drawPanels(GuiGraphics graphics, int x, int y) {
+        drawRaisedPanel(graphics, x, y, new TerminalLayout.Rect(0, 0, imageWidth, imageHeight));
+        drawInsetPanel(graphics, x, y, geometry.itemGrid());
+        drawInsetPanel(graphics, x, y, geometry.playerInventory());
+        drawInsetPanel(graphics, x, y, geometry.searchBackground());
+    }
+
+    protected static void drawRaisedPanel(
+            GuiGraphics graphics,
+            int originX,
+            int originY,
+            TerminalLayout.Rect rectangle
+    ) {
+        int left = originX + rectangle.x();
+        int top = originY + rectangle.y();
+        int right = left + rectangle.width();
+        int bottom = top + rectangle.height();
+        graphics.fill(left, top, right, bottom, 0xFFC6C6C6);
+        graphics.fill(left, top, right, top + 1, 0xFFFFFFFF);
+        graphics.fill(left, top, left + 1, bottom, 0xFFFFFFFF);
+        graphics.fill(left, bottom - 1, right, bottom, 0xFF555555);
+        graphics.fill(right - 1, top, right, bottom, 0xFF555555);
+    }
+
+    protected static void drawInsetPanel(
+            GuiGraphics graphics,
+            int originX,
+            int originY,
+            TerminalLayout.Rect rectangle
+    ) {
+        int left = originX + rectangle.x();
+        int top = originY + rectangle.y();
+        int right = left + rectangle.width();
+        int bottom = top + rectangle.height();
+        graphics.fill(left, top, right, bottom, 0xFF8B8B8B);
+        graphics.fill(left, top, right, top + 1, 0xFF373737);
+        graphics.fill(left, top, left + 1, bottom, 0xFF373737);
+        graphics.fill(left, bottom - 1, right, bottom, 0xFFFFFFFF);
+        graphics.fill(right - 1, top, right, bottom, 0xFFFFFFFF);
     }
 
     @Override
-    protected void renderLabels(GuiGraphics g, int mx, int my) {
-        g.drawString(font, title, titleLabelX, titleLabelY, 0xCCCCCC);
-        g.drawString(font, playerInventoryTitle, inventoryLabelX, inventoryLabelY, 0xAAAAAA);
-        var countText = menu.getTypeCount() + " / " + menu.getMaxTypes() + " types";
-        g.drawString(font, countText, imageWidth - 8 - font.width(countText), inventoryLabelY, 0xAAAAAA);
+    protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
+        graphics.drawString(font, title, titleLabelX, titleLabelY, 0xFF404040, false);
+        graphics.drawString(font, playerInventoryTitle,
+                inventoryLabelX, inventoryLabelY, 0xFF404040, false);
+        drawTypeCapacity(graphics);
+    }
+
+    protected void drawTypeCapacity(GuiGraphics graphics) {
+        Component text = Component.translatable(
+                "gui.magic_storage.type_capacity", menu.getTypeCount(), menu.getMaxTypes());
+        int textWidth = font.width(text);
+        int right = imageWidth - 8;
+        int left = inventoryLabelX + font.width(playerInventoryTitle) + 8;
+        float scale = Math.min(1.0F, (float) Math.max(1, right - left) / Math.max(1, textWidth));
+        graphics.pose().pushPose();
+        graphics.pose().translate(right, inventoryLabelY, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, text, -textWidth, 0, 0xFF404040, false);
+        graphics.pose().popPose();
     }
 
     @Override
-    protected void renderSlot(GuiGraphics g, Slot slot) {
+    protected void renderSlot(GuiGraphics graphics, Slot slot) {
         if (slot.index >= StorageTerminalMenu.DISPLAY_SLOTS) {
-            super.renderSlot(g, slot);
+            super.renderSlot(graphics, slot);
             return;
         }
-        if (slot.index >= visibleRows * 9) return;
-        super.renderSlot(g, slot);
+        if (!isItemViewActive() || slot.index >= visibleRows * StorageTerminalMenu.DISPLAY_COLS) return;
+        super.renderSlot(graphics, slot);
     }
 
     @Override
-    protected boolean hasClickedOutside(double mx, double my, int l, int t, int button) {
-        if (searchBox.isMouseOver(mx, my)) return false;
-        return super.hasClickedOutside(mx, my, l, t, button);
+    protected void renderSlotContents(
+            GuiGraphics graphics,
+            ItemStack stack,
+            Slot slot,
+            String countString
+    ) {
+        if (slot.index >= StorageTerminalMenu.DISPLAY_SLOTS) {
+            super.renderSlotContents(graphics, stack, slot, countString);
+            return;
+        }
+        if (stack.isEmpty()) return;
+
+        ItemStack icon = stack.copyWithCount(1);
+        graphics.renderItem(icon, slot.x, slot.y);
+        graphics.renderItemDecorations(font, icon, slot.x, slot.y);
+        renderNetworkAmount(graphics, slot.x, slot.y, stack.getCount());
+    }
+
+    private void renderNetworkAmount(GuiGraphics graphics, int x, int y, long amount) {
+        String text = TerminalAmountFormatter.formatCompact(amount);
+        boolean large = font.width(text) <= 16;
+        int textX = large ? 16 - font.width(text) : 30 - font.width(text);
+        graphics.pose().pushPose();
+        graphics.pose().translate(x + (large ? 1.0F : 0.0F), y + (large ? 1.0F : 0.0F), 200.0F);
+        if (!large) graphics.pose().scale(0.5F, 0.5F, 1.0F);
+        graphics.drawString(font, text, textX, large ? 8 : 22, 0xFFFFFFFF, true);
+        graphics.pose().popPose();
     }
 
     @Override
-    public boolean mouseClicked(double mx, double my, int button) {
-        if (isOverScrollBar(mx, my) && button == 0) {
+    protected boolean hasClickedOutside(double mouseX, double mouseY, int left, int top, int button) {
+        if (isItemViewActive() && searchBox != null && searchBox.isMouseOver(mouseX, mouseY)) return false;
+        return super.hasClickedOutside(mouseX, mouseY, left, top, button);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (isItemViewActive() && isOverScrollBar(mouseX, mouseY) && button == 0) {
             isScrolling = true;
-            handleScrollClick(my);
+            lastRequestedScroll = Integer.MIN_VALUE;
+            handleScrollClick(mouseY);
             return true;
         }
-        if (hoveredSlot != null && hoveredSlot.index >= visibleRows * 9
+        if (isItemViewActive() && hoveredSlot != null
+                && hoveredSlot.index >= visibleRows * StorageTerminalMenu.DISPLAY_COLS
                 && hoveredSlot.index < StorageTerminalMenu.DISPLAY_SLOTS) {
             return false;
         }
-        return super.mouseClicked(mx, my, button);
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseReleased(double mx, double my, int button) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) isScrolling = false;
-        return super.mouseReleased(mx, my, button);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseDragged(double mx, double my, int btn, double dx, double dy) {
-        if (isScrolling) { handleScrollClick(my); return true; }
-        return super.mouseDragged(mx, my, btn, dx, dy);
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (isItemViewActive() && isScrolling) {
+            handleScrollClick(mouseY);
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double sx, double sy) {
-        if (isOverGrid(mx, my) || isOverScrollBar(mx, my)) {
-            if (sy > 0 && menu.getScrollOffset() > 0) sendButton(0);
-            else if (sy < 0 && menu.getScrollOffset() < Math.max(0, menu.getTotalItemTypes() - visibleRows * 9))
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (isItemViewActive() && (isOverGrid(mouseX, mouseY) || isOverScrollBar(mouseX, mouseY))) {
+            if (scrollY > 0 && menu.getScrollOffset() > 0) {
+                sendButton(0);
+            } else if (scrollY < 0 && menu.getScrollOffset() < Math.max(0,
+                    menu.getTotalItemTypes() - visibleRows * StorageTerminalMenu.DISPLAY_COLS)) {
                 sendButton(1);
+            }
             return true;
         }
-        return super.mouseScrolled(mx, my, sx, sy);
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     @Override
-    public boolean keyPressed(int key, int scan, int mods) {
-        if (searchBox.keyPressed(key, scan, mods)) {
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (isItemViewActive() && searchBox.keyPressed(keyCode, scanCode, modifiers)) {
             scheduleSearch();
             return true;
         }
-        return super.keyPressed(key, scan, mods);
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
-    public boolean charTyped(char cp, int mods) {
-        if (searchBox.charTyped(cp, mods)) {
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (isItemViewActive() && searchBox.charTyped(codePoint, modifiers)) {
             scheduleSearch();
             return true;
         }
-        return super.charTyped(cp, mods);
+        return super.charTyped(codePoint, modifiers);
     }
 
     private void scheduleSearch() {
@@ -316,25 +504,16 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     @Override
-    public void removed() {
-        super.removed();
-    }
-
-    @Override
     protected void containerTick() {
         super.containerTick();
-        if (menu.getSortOrder() != lastSeenSortOrder || menu.getSortMode() != lastSeenSortMode
+        if (menu.getSortOrder() != lastSeenSortOrder
+                || menu.getSortMode() != lastSeenSortMode
                 || menu.getSearchMode() != lastSeenSearchMode) {
             boolean searchModeChanged = menu.getSearchMode() != lastSeenSearchMode;
             updateViewSettingButtons();
             if (searchModeChanged) sendSearchPacket();
         }
-        if (searchTimer > 0) {
-            searchTimer--;
-            if (searchTimer == 0) {
-                sendSearchPacket();
-            }
-        }
+        if (searchTimer > 0 && --searchTimer == 0) sendSearchPacket();
     }
 
     private void sendSearchPacket() {
@@ -347,33 +526,48 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     void sendButton(int id) {
-        if (minecraft != null && minecraft.gameMode != null)
+        if (minecraft != null && minecraft.gameMode != null) {
             minecraft.gameMode.handleInventoryButtonClick(menu.containerId, id);
+        }
     }
 
-    boolean isOverGrid(double mx, double my) {
-        int left = leftPos + 8;
-        int top = topPos + getTopHeight();
-        return mx >= left && mx < left + 9 * 18 && my >= top && my < top + visibleRows * ROW_HEIGHT;
+    boolean isOverGrid(double mouseX, double mouseY) {
+        TerminalLayout.Rect grid = geometry.itemGrid();
+        return isItemViewActive()
+                && mouseX >= leftPos + grid.x() && mouseX < leftPos + grid.right()
+                && mouseY >= topPos + grid.y() && mouseY < topPos + grid.bottom();
     }
 
-    boolean isOverScrollBar(double mx, double my) {
-        return mx >= leftPos + SB_X && mx < leftPos + SB_X + SB_WIDTH
-                && my >= topPos + getTopHeight() && my < topPos + getTopHeight() + visibleRows * ROW_HEIGHT;
+    boolean isOverScrollBar(double mouseX, double mouseY) {
+        TerminalLayout.Rect scrollbar = geometry.scrollbar();
+        return isItemViewActive()
+                && mouseX >= leftPos + scrollbar.x() && mouseX < leftPos + scrollbar.right()
+                && mouseY >= topPos + scrollbar.y() && mouseY < topPos + scrollbar.bottom();
     }
 
-    void handleScrollClick(double my) {
-        if (minecraft == null || minecraft.gameMode == null) return;
-        int totalItems = menu.getTotalItemTypes();
-        int maxOffset = Math.max(0, totalItems - visibleRows * 9);
+    void handleScrollClick(double mouseY) {
+        if (minecraft == null || minecraft.getConnection() == null) return;
+        int maxOffset = Math.max(0,
+                menu.getTotalItemTypes() - visibleRows * StorageTerminalMenu.DISPLAY_COLS);
         if (maxOffset <= 0) return;
-        int travel = scrollTrackHeight() - SB_SCROLLER_H;
+        int travel = scrollTrackHeight() - SCROLLER_HEIGHT;
         if (travel <= 0) return;
-        float ratio = (float) (my - scrollTrackTop() - SB_SCROLLER_H / 2.0) / travel;
+        float ratio = (float) (mouseY - scrollTrackTop() - SCROLLER_HEIGHT / 2.0) / travel;
         int target = Math.clamp((int) (ratio * maxOffset), 0, maxOffset);
-        target = (target / 9) * 9;
-        int delta = target - menu.getScrollOffset();
-        while (delta < 0) { sendButton(0); delta += 9; }
-        while (delta >= 9) { sendButton(1); delta -= 9; }
+        if (target == lastRequestedScroll) return;
+        lastRequestedScroll = target;
+        minecraft.getConnection().send(new TerminalScrollPacket(menu.containerId, target));
+    }
+
+    protected List<Rect2i> terminalExclusionAreas() {
+        List<Rect2i> result = new ArrayList<>(geometry.exclusionRects().size());
+        for (TerminalLayout.Rect rectangle : geometry.exclusionRects()) {
+            result.add(new Rect2i(
+                    leftPos + rectangle.x(),
+                    topPos + rectangle.y(),
+                    rectangle.width(),
+                    rectangle.height()));
+        }
+        return result;
     }
 }

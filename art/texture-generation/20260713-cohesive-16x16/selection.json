@@ -1,0 +1,90 @@
+{
+  "model": "retro-diffusion/rd-fast",
+  "runtime_size": [
+    16,
+    16
+  ],
+  "direction": "Carved dark deepslate and blackstone housings with restrained amethyst and cyan accents.",
+  "selected": {
+    "textures/block/storage_core.png": {
+      "selected_candidate": "storage_core_01",
+      "metadata": "block/storage_core.json",
+      "preview": "block/storage_core.preview.png"
+    },
+    "textures/block/storage_terminal.png": {
+      "selected_candidate": "storage_terminal_01",
+      "metadata": "block/storage_terminal.json",
+      "preview": "block/storage_terminal.preview.png"
+    },
+    "textures/block/crafting_terminal.png": {
+      "selected_candidate": "crafting_terminal_02",
+      "metadata": "block/crafting_terminal.json",
+      "preview": "block/crafting_terminal.preview.png"
+    },
+    "textures/block/storage_unit_t1.png": {
+      "selected_candidate": "storage_unit_t1_01",
+      "metadata": "block/storage_unit_t1.json",
+      "preview": "block/storage_unit_t1.preview.png"
+    },
+    "textures/block/storage_unit_t2.png": {
+      "selected_candidate": "storage_unit_t2_02",
+      "metadata": "block/storage_unit_t2.json",
+      "preview": "block/storage_unit_t2.preview.png"
+    },
+    "textures/block/storage_unit_t3.png": {
+      "selected_candidate": "storage_unit_t3_02",
+      "metadata": "block/storage_unit_t3.json",
+      "preview": "block/storage_unit_t3.preview.png"
+    },
+    "textures/block/storage_unit_t4.png": {
+      "selected_candidate": "storage_unit_t4_02",
+      "metadata": "block/storage_unit_t4.json",
+      "preview": "block/storage_unit_t4.preview.png"
+    },
+    "textures/block/storage_unit_t5.png": {
+      "selected_candidate": "storage_unit_t5_02",
+      "metadata": "block/storage_unit_t5.json",
+      "preview": "block/storage_unit_t5.preview.png"
+    },
+    "textures/block/storage_unit_t6.png": {
+      "selected_candidate": "storage_unit_t6_02",
+      "metadata": "block/storage_unit_t6.json",
+      "preview": "block/storage_unit_t6.preview.png"
+    },
+    "textures/block/export_bus_top.png": {
+      "selected_candidate": "export_bus_top_01",
+      "metadata": "block/export_bus_top.json",
+      "preview": "block/export_bus_top.preview.png"
+    },
+    "textures/block/export_bus_side.png": {
+      "selected_candidate": "export_bus_side_02",
+      "metadata": "block/export_bus_side.json",
+      "preview": "block/export_bus_side.preview.png"
+    },
+    "textures/block/export_bus_front.png": {
+      "selected_candidate": "export_bus_front_02",
+      "metadata": "block/export_bus_front.json",
+      "preview": "block/export_bus_front.preview.png"
+    },
+    "textures/block/import_bus_top.png": {
+      "selected_candidate": "import_bus_top_02",
+      "metadata": "block/import_bus_top.json",
+      "preview": "block/import_bus_top.preview.png"
+    },
+    "textures/block/import_bus_side.png": {
+      "selected_candidate": "import_bus_side_01",
+      "metadata": "block/import_bus_side.json",
+      "preview": "block/import_bus_side.preview.png"
+    },
+    "textures/block/import_bus_front.png": {
+      "selected_candidate": "import_bus_front_01",
+      "metadata": "block/import_bus_front.json",
+      "preview": "block/import_bus_front.preview.png"
+    },
+    "textures/item/remote_terminal.png": {
+      "selected_candidate": "remote_terminal_02",
+      "metadata": "item/remote_terminal.json",
+      "preview": "item/remote_terminal.preview.png"
+    }
+  }
+}

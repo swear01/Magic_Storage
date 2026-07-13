@@ -13,7 +13,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Pro tips:$()$(br2)$(li)You can build in any shape you like - lines, cubes, or sprawling webs.$(li)All network blocks (Units, Terminals, Buses) must be in loaded chunks for reliable operation.$(li)Breaking the Storage Core detaches the network; replacing a Core at the same position during the same server session restores its saved Core data. Do not rely on moving the Core elsewhere."
+      "text": "$(thing)Pro tips:$()$(br2)$(li)You can build in any shape you like - lines, cubes, or sprawling webs.$(li)All network blocks (Units, Terminals, Buses) must be in loaded chunks for reliable operation.$(li)Breaking the Storage Core detaches the network. Break it with the correct tool and keep the dropped Core item: that item carries the saved inventory and energy and can be placed at the same position or moved elsewhere."
     }
   ]
 }

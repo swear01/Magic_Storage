@@ -5,19 +5,19 @@
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "Each recipe type has specific energy costs when crafting through the Crafting Terminal. Costs are $(thing)per item$() crafted."
+      "text": "Cooking recipes use the concrete recipe's current datapack $(thing)cooking time$() when crafted through the Crafting Terminal. The cost is resolved again on the server for every preview and execution."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Energy Costs Table:$()$(br2)$(thing)Smelting$(): 200 smelting_energy + 200 furnace_fuel$(br)$(thing)Blasting$(): 100 blasting_energy + 100 furnace_fuel$(br)$(thing)Smoking$(): 100 smoking_energy + 100 furnace_fuel$(br)$(thing)Campfire$(): 600 campfire_energy + 600 furnace_fuel$(br)$(thing)Brewing$(): 400 brew_energy + 20 blaze_fuel"
+      "text": "$(thing)Recipe-derived cost:$()$(br2)Smelting, Blasting, Smoking, and Campfire Cooking each consume their exact cooking time from both the matching installed-machine process pool and $(thing)Fuel$(). No fixed 200/100/600 table or fallback value is used."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Free recipes (0 energy):$()$(br)$(li)Crafting Table recipes$(li)Stonecutting recipes$(li)Smithing Table recipes$(br2)These use no energy at all - craft freely!"
+      "text": "$(thing)Free recipes (0 energy):$()$(br)$(li)Crafting Table recipes$(li)Stonecutting recipes$(li)Exact Smithing Transform recipes$(li)Vanilla block axe strip, scrape, and wax-off transformations$(br2)Each requires its matching installed station/tool. Smithing matches and preserves exact base components. Axe actions spend one raw durability per craft. Mod block hooks, Smithing Trim, dynamic/context recipes, and Brewing execution remain unsupported."
     },
     {
       "type": "patchouli:text",
-      "text": "When you click the craft button, the terminal checks if you have enough energy. If not, the craft is cancelled. The $(thing)energy indicators$() in the recipe panel show $(thing)current/total$() - green means ready, red means insufficient.$(br2)Tip: Build your energy buffer before bulk-crafting. One coal gives enough furnace fuel for 8 smelting operations!"
+      "text": "When you click a craft button, the server simulates joint material reservations, destination capacity, and both required energy pools before committing. If anything is missing, the craft is cancelled without partial consumption.$(br2)Install matching machines to build process energy, then add enough Fuel for the recipe's exact cooking time."
     }
   ]
 }

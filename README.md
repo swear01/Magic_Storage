@@ -25,7 +25,9 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts
 ```
 
-Expected automated coverage is currently SelfTest 104 + GameTest 102, plus the Python script/static regression suite under `scripts/`.
+Expected automated coverage is currently SelfTest 40608 + GameTest 222 + 72 Python script/static regression tests.
+
+Version 0.1.15 keeps the explicit Storage/Craftable/Fuel tabs and adds nine persistent station/tool slots: the five energy machines plus Crafting Table, Stonecutter, Smithing Table, and an axe. Recipes are server-gated by their installed station; exact crafting/cooking/stonecutting, component-exact smithing transforms, and deterministic vanilla default-state axe strip/scrape/wax-off actions are supported. Inventory delivery fills the player inventory first, routes overflow back to the Core, and rejects atomically if neither can hold the full result; Max searches for the largest fully deliverable amount and chunks Core reservations and outputs across both `ItemStack` and `Integer.MAX_VALUE` boundaries. Installed Stations now uses two adaptive rows, the Fuel control panel occupies the former lower-right gap, the recipe workspace follows a native EMI-like input/output/resource grammar without embedding EMI internals, and all model-referenced mod textures are 16×16. EMI remains optional and performs exact one-level server-authoritative crafting, not recursive autocrafting. The final fullscreen user-owned GUI checklist remains the visual release gate. Active contracts: `docs/superpowers/plans/2026-07-12-fuel-craftable-emi-adaptive-ui.md` and `docs/superpowers/plans/2026-07-13-stations-recipes-output-textures.md`.
 
 ## CI/CD
 
@@ -38,13 +40,13 @@ GitHub Actions runs on pushes to `main`, pull requests, and manual dispatch:
 Release example:
 
 ```bash
-git tag v0.1.3
-git push origin main v0.1.3
+git tag v0.1.15
+git push origin main v0.1.15
 ```
 
 ## Manual GUI verification
 
-Automated tests and client smoke do not verify Minecraft GUI layout. For non-visual client boot/resource checks, run `python3 scripts/run_prism_gui_session.py --scenario boot-smoke`. For terminal/Patchouli/visual changes, run `python3 scripts/run_prism_gui_session.py --scenario terminal-left-rail` (or the relevant scenario) and follow the generated checklist plus the mandatory fullscreen gate in `docs/notes.md` under “Prism dev / Computer Use”.
+Automated tests and client smoke do not verify Minecraft GUI layout. For non-visual client boot/resource checks, run `python3 scripts/run_prism_gui_session.py --scenario boot-smoke`. For terminal/Patchouli/visual changes, run the relevant scenario (`crafting-fuel-page` covers the dedicated Fuel page); the runner clears the optional Computer Use wrapper, disables Prism's error-console pop-up for this instance, launches native Prism offline with `-o MagicStorageBot`, waits for the fixed world to reach `MS_GUI_TEST_READY`, then prints a manual handoff message. Visual verification owner: user. The user takes over, enters native fullscreen, and follows the generated checklist under `docs/notes.md` “Prism dev / manual handoff”. Offline mode skips Microsoft/Xbox account refresh. Vanilla authlib can still write a harmless offline profile-properties 401 to `latest.log`; the runner recognizes only that exact stack and still fails on every other current-run error.
 
 ## License
 

@@ -14,7 +14,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "When a Storage Unit is broken, it drops the basic $(thing)Storage Unit$() block regardless of tier. All type slots remain in the Core - breaking a Unit $(thing)does not delete items$().$(br2)You can freely add or remove Units to adjust your network's type capacity."
+      "text": "When a Storage Unit is broken, it drops itself at the same tier. The network's available type capacity decreases immediately, but stored items stay in the Core and are not deleted.$(br2)Add enough Units before inserting any new item types."
     }
   ]
 }

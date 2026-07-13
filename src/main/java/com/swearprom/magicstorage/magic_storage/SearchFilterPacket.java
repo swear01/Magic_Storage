@@ -9,13 +9,15 @@ import io.netty.buffer.ByteBuf;
 
 public record SearchFilterPacket(int containerId, String filter) implements CustomPacketPayload {
 
+    public static final int MAX_FILTER_LENGTH = 64;
+
     public static final Type<SearchFilterPacket> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "search_filter"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, SearchFilterPacket> STREAM_CODEC =
             StreamCodec.composite(
                     ByteBufCodecs.VAR_INT, SearchFilterPacket::containerId,
-                    ByteBufCodecs.STRING_UTF8, SearchFilterPacket::filter,
+                    ByteBufCodecs.stringUtf8(MAX_FILTER_LENGTH), SearchFilterPacket::filter,
                     SearchFilterPacket::new
             );
 

@@ -11,12 +11,16 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 
+import java.util.function.Consumer;
+import java.util.List;
+
 public class ImportBusBlockEntity extends BlockEntity {
 
     private static final int COOLDOWN_TICKS = 10;
 
     private BlockPos corePos;
     private StorageCoreBlockEntity cachedCore;
+    private List<BlockPos> cachedPath = List.of();
     private int cooldown = 0;
 
     public ImportBusBlockEntity(BlockPos pos, BlockState state) {
@@ -49,32 +53,47 @@ public class ImportBusBlockEntity extends BlockEntity {
         IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, targetPos, facing.getOpposite());
         if (handler == null) return;
 
+        transferOneStack(core, handler, Actor.bus(getBlockPos()),
+                stack -> net.minecraft.world.level.block.Block.popResource(level, getBlockPos(), stack));
+    }
+
+    static boolean transferOneStack(StorageCoreBlockEntity core, IItemHandler handler, Actor actor,
+                                    Consumer<ItemStack> overflow) {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             ItemStack peek = handler.extractItem(slot, 64, true);
             if (peek.isEmpty()) continue;
-            long accepted = core.insertItem(peek, Action.SIMULATE, Actor.bus(getBlockPos()));
+            long accepted = core.insertItem(peek, Action.SIMULATE, actor);
             if (accepted <= 0) continue;
             ItemStack real = handler.extractItem(slot, (int) accepted, false);
             if (real.isEmpty()) continue;
-            long inserted = core.insertItem(real, Action.EXECUTE, Actor.bus(getBlockPos()));
-            if (inserted < real.getCount()) {
-                real.setCount((int) (real.getCount() - inserted));
-                handler.insertItem(slot, real, false);
+            core.insertItem(real, Action.EXECUTE, actor);
+            if (!real.isEmpty()) {
+                ItemStack unreturned = handler.insertItem(slot, real.copy(), false);
+                if (!unreturned.isEmpty()) overflow.accept(unreturned);
             }
-            break;
+            return true;
         }
+        return false;
     }
 
     private StorageCoreBlockEntity resolveCore() {
         if (level == null) return null;
         if (cachedCore != null && !cachedCore.isRemoved()
                 && cachedCore.getConnectedBlocks().contains(getBlockPos())) {
-            return cachedCore;
+            if (MagicStorage.hasLoadedNetworkPath(level, cachedPath, getBlockPos(), cachedCore.getBlockPos())) {
+                return cachedCore;
+            }
+            cachedPath = MagicStorage.findLoadedNetworkPath(level, getBlockPos(), cachedCore.getBlockPos());
+            if (!cachedPath.isEmpty()) return cachedCore;
         }
         cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
         if (cachedCore != null && !cachedCore.getConnectedBlocks().contains(getBlockPos())) {
             cachedCore = null;
         }
+        cachedPath = cachedCore != null
+                ? MagicStorage.findLoadedNetworkPath(level, getBlockPos(), cachedCore.getBlockPos())
+                : List.of();
+        if (cachedCore != null && cachedPath.isEmpty()) cachedCore = null;
         corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
         return cachedCore;
     }

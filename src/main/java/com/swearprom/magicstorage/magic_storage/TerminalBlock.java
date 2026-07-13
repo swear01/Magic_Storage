@@ -23,6 +23,14 @@ public class TerminalBlock extends Block implements IStorageNetworkBlock {
     }
 
     @Override
+    protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean moved) {
+        super.onPlace(state, level, pos, oldState, moved);
+        if (!oldState.is(state.getBlock()) && !level.isClientSide()) {
+            MagicStorage.scheduleNetworkGrowthAfterPlacement(level, pos);
+        }
+    }
+
+    @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
         if (!level.isClientSide()) {
             StorageCoreBlockEntity core = MagicStorage.bfsFindCore(level, pos);
@@ -49,5 +57,13 @@ public class TerminalBlock extends Block implements IStorageNetworkBlock {
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide());
+    }
+
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean moved) {
+        if (!state.is(newState.getBlock())) {
+            MagicStorage.scheduleNetworkRebuildAfterRemoval(level, pos);
+        }
+        super.onRemove(state, level, pos, newState, moved);
     }
 }

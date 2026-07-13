@@ -10,11 +10,11 @@
     },
     {
       "type": "patchouli:text",
-      "text": "The Core $(thing)tile entity$() stores all items inserted into the network. Items are tracked as $(thing)ItemKey$() entries - each unique item (different NBT = different type) gets its own slot with unlimited capacity.$(br2)The Core also holds $(l:magic_storage:energy_overview)energy pools$() for powered crafting."
+      "text": "The Core stores network items as $(thing)ItemKey$() entries - each unique component variant uses one type slot with long-count capacity.$(br2)It also owns all $(l:magic_storage:energy_overview)energy pools$() and nine persistent station/tool equipment slots. Equipment does not consume Storage Unit type capacity."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Breaking the Core:$() The Core stores all inventory and energy data. If you break and replace a Core at the same position during the same server session, Magic Storage restores the saved Core data.$(br2)Do $(thing)not$() rely on moving a Core to a different position, and do not shut down after breaking it before replacement.$(br2)$(thing)Strength:$() 3.0 | $(thing)Blast Resistance:$() 6.0$(br)$(thing)Requires correct tool$() for drops."
+      "text": "$(thing)Breaking the Core:$() With the correct tool, its drop carries inventory, energy, installed stations/tools, and Core identity. Replacing that same item restores them anywhere.$(br2)A blank Core never inherits previous data. If the data-carrying drop is destroyed, its contents cannot be recovered.$(br2)$(thing)Strength:$() 3.0 | $(thing)Blast Resistance:$() 6.0$(br)$(thing)Requires correct tool$() for drops."
     }
   ]
 }

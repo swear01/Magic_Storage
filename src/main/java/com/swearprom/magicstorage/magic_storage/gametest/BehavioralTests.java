@@ -5,6 +5,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -12,11 +14,99 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 
+import java.util.HashMap;
+import java.util.Locale;
+
 @GameTestHolder(MagicStorage.MODID)
 public class BehavioralTests {
 
     private static ResourceLocation key(String path) {
         return ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, path);
+    }
+
+    @GameTest(template = "platform")
+    public static void item_key_snapshots_source_stack_components(GameTestHelper helper) {
+        ItemStack source = new ItemStack(Items.DIAMOND_SWORD);
+        source.setDamageValue(7);
+        ItemKey key = ItemKey.of(source);
+        int originalHash = key.hashCode();
+        var index = new HashMap<ItemKey, String>();
+        index.put(key, "stored");
+
+        source.setDamageValue(19);
+
+        if (key.hashCode() != originalHash) {
+            helper.fail("ItemKey hash must not change when the source stack changes");
+            return;
+        }
+        if (!"stored".equals(index.get(key))) {
+            helper.fail("ItemKey must remain retrievable from hash indexes after source mutation");
+            return;
+        }
+        if (key.toStack(1).getDamageValue() != 7) {
+            helper.fail("ItemKey must retain the original component snapshot");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void storage_search_is_locale_independent(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.IRON_INGOT));
+            Locale previous = Locale.getDefault();
+            try {
+                Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+                var matches = core.getDisplayStacks("iron");
+                if (matches.size() != 1 || !matches.get(0).is(Items.IRON_INGOT)) {
+                    helper.fail("Search must match Iron Ingot under Turkish default locale");
+                    return;
+                }
+            } finally {
+                Locale.setDefault(previous);
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void cached_network_path_rejects_unloaded_or_non_network_middle(GameTestHelper helper) {
+        BlockPos start = new BlockPos(0, 0, 0);
+        BlockPos middle = start.east();
+        BlockPos target = middle.east();
+        var path = java.util.List.of(start, middle, target);
+
+        if (MagicStorage.isValidNetworkPath(path, start, target,
+                pos -> !pos.equals(middle), pos -> true)) {
+            helper.fail("A cached path must fail when its middle chunk is unloaded");
+            return;
+        }
+        if (MagicStorage.isValidNetworkPath(path, start, target,
+                pos -> true, pos -> !pos.equals(middle))) {
+            helper.fail("A cached path must fail when its middle block is no longer a network block");
+            return;
+        }
+        if (!MagicStorage.isValidNetworkPath(path, start, target,
+                pos -> true, pos -> true)) {
+            helper.fail("A contiguous loaded network path must remain valid");
+            return;
+        }
+        if (MagicStorage.isValidNetworkPath(java.util.List.of(start, target), start, target,
+                pos -> true, pos -> true)) {
+            helper.fail("A cached path must reject non-adjacent jumps");
+            return;
+        }
+        helper.succeed();
     }
 
     @GameTest(template = "platform")
@@ -118,7 +208,7 @@ public class BehavioralTests {
     }
 
     @GameTest(template = "platform")
-    public static void energy_auto_fills_after_setup(GameTestHelper helper) {
+    public static void machine_energy_requires_installed_machine_and_scales_with_count(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
         level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
@@ -129,13 +219,76 @@ public class BehavioralTests {
                 helper.fail("Core BE not found, got: " + (be == null ? "null" : be.getClass().getName()));
                 return;
             }
-            if (core.getEnergy(EnergyType.SMELTING_ENERGY) == 0) {
-                helper.fail("No energy accumulated after 5 ticks");
+            for (EnergyType type : new EnergyType[]{
+                    EnergyType.SMELTING_ENERGY,
+                    EnergyType.BLASTING_ENERGY,
+                    EnergyType.SMOKING_ENERGY,
+                    EnergyType.CAMPFIRE_ENERGY,
+                    EnergyType.BREW_ENERGY
+            }) {
+                if (core.getEnergy(type) != 0) {
+                    helper.fail(type.getId() + " must stay at zero while no machine is installed");
+                    return;
+                }
+            }
+
+            loadInstalledMachines(core, helper, new ItemStack(Items.FURNACE, 3));
+            core.tick();
+            if (core.getEnergy(EnergyType.SMELTING_ENERGY) != 3) {
+                helper.fail("Three installed Furnaces must generate exactly 3 Smelting Energy per tick");
                 return;
             }
-            if (core.getEnergy(EnergyType.FURNACE_FUEL) != 0) {
-                helper.fail("furnace_fuel should remain 0 (not auto-fill)");
+            if (core.getEnergy(EnergyType.BLASTING_ENERGY) != 0
+                    || core.getEnergy(EnergyType.SMOKING_ENERGY) != 0
+                    || core.getEnergy(EnergyType.CAMPFIRE_ENERGY) != 0
+                    || core.getEnergy(EnergyType.BREW_ENERGY) != 0) {
+                helper.fail("A Furnace must not generate another machine's energy");
                 return;
+            }
+
+            loadInstalledMachines(core, helper);
+            core.tick();
+            if (core.getEnergy(EnergyType.SMELTING_ENERGY) != 3) {
+                helper.fail("Removing the machine must stop generation without deleting stored energy");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void installed_machine_types_generate_only_their_mapped_energy(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            loadInstalledMachines(core, helper,
+                    new ItemStack(Items.FURNACE, 2),
+                    new ItemStack(Items.BLAST_FURNACE, 3),
+                    new ItemStack(Items.SMOKER, 4),
+                    new ItemStack(Items.CAMPFIRE, 5),
+                    new ItemStack(Items.BREWING_STAND, 6));
+            core.tick();
+
+            long[] expected = {2, 3, 4, 5, 6};
+            EnergyType[] types = {
+                    EnergyType.SMELTING_ENERGY,
+                    EnergyType.BLASTING_ENERGY,
+                    EnergyType.SMOKING_ENERGY,
+                    EnergyType.CAMPFIRE_ENERGY,
+                    EnergyType.BREW_ENERGY
+            };
+            for (int i = 0; i < types.length; i++) {
+                if (core.getEnergy(types[i]) != expected[i]) {
+                    helper.fail(types[i].getId() + " expected " + expected[i]
+                            + " after one tick, got " + core.getEnergy(types[i]));
+                    return;
+                }
             }
             helper.succeed();
         });
@@ -271,7 +424,7 @@ public class BehavioralTests {
                 return;
             }
             
-            // tick enough times to accumulate SMELTING_ENERGY
+            loadInstalledMachines(core, helper, new ItemStack(Items.FURNACE));
             for (int i = 0; i < 200; i++) {
                 core.tick();
             }
@@ -439,6 +592,9 @@ public class BehavioralTests {
         helper.runAfterDelay(1, () -> {
             var be = level.getBlockEntity(corePos);
             if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
+            loadInstalledMachines(core, helper,
+                    ItemStack.EMPTY,
+                    new ItemStack(Items.BLAST_FURNACE));
             for (int i = 0; i < 200; i++) core.tick();
             long smeltBefore = core.getEnergy(EnergyType.SMELTING_ENERGY);
             long blastBefore = core.getEnergy(EnergyType.BLASTING_ENERGY);
@@ -488,6 +644,10 @@ public class BehavioralTests {
             var be = level.getBlockEntity(corePos);
             if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
             core.rebuildNetwork(level);
+            core.getMachineContainer().setItem(
+                    MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE));
+            core.getMachineContainer().setItem(
+                    MachineEnergyTable.BLAST_FURNACE_SLOT, new ItemStack(Items.BLAST_FURNACE));
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new CraftingTerminalMenu(0, player.getInventory(), core);
             menu.lookUpRecipes(level, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_INGOT));
@@ -507,6 +667,8 @@ public class BehavioralTests {
             var be = level.getBlockEntity(corePos);
             if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
             core.rebuildNetwork(level);
+            core.getMachineContainer().setItem(
+                    MachineEnergyTable.CRAFTING_TABLE_SLOT, new ItemStack(Items.CRAFTING_TABLE));
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new CraftingTerminalMenu(1, player.getInventory(), core);
             menu.lookUpRecipes(level, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STICK));
@@ -515,7 +677,7 @@ public class BehavioralTests {
             var holder = menu.getCurrentRecipes().get(menu.getCurrentRecipeIndex());
             if (holder.value().getType() != net.minecraft.world.item.crafting.RecipeType.CRAFTING)
                 helper.fail("Stick recipe should be Crafting type");
-            var cost = RecipeEnergyTable.getCost(holder.value().getType());
+            var cost = RecipeEnergyTable.getCost(holder.value());
             if (cost != null) helper.fail("Crafting table recipe should have no energy cost (null)");
             // Verify recipe has ingredients
             if (holder.value().getIngredients().isEmpty()) helper.fail("Recipe should have ingredients");
@@ -620,6 +782,7 @@ public class BehavioralTests {
             var be = level.getBlockEntity(corePos);
             if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
             core.rebuildNetwork(level);
+            loadInstalledMachines(core, helper, new ItemStack(Items.FURNACE));
             for (int i = 0; i < 200; i++) core.tick();
             core.addFuel(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COAL), EnergyType.FURNACE_FUEL);
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
@@ -630,7 +793,7 @@ public class BehavioralTests {
             for (int r = 0; r < menu.getRecipeCount(); r++) {
                 var holder = menu.getCurrentRecipes().get(menu.getCurrentRecipeIndex());
                 if (holder.value().getType() == net.minecraft.world.item.crafting.RecipeType.SMELTING) {
-                    var cost = RecipeEnergyTable.getCost(holder.value().getType());
+                    var cost = RecipeEnergyTable.getCost(holder.value());
                     if (cost == null || cost.processAmount() <= 0) helper.fail("Smelting should have energy cost");
                     if (cost.fuelAmount() <= 0) helper.fail("Smelting should require fuel energy");
                     helper.succeed();
@@ -652,6 +815,8 @@ public class BehavioralTests {
             var be = level.getBlockEntity(corePos);
             if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
             core.rebuildNetwork(level);
+            core.getMachineContainer().setItem(
+                    MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE));
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new CraftingTerminalMenu(3, player.getInventory(), core);
             menu.lookUpRecipes(level, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_INGOT));
@@ -670,7 +835,7 @@ public class BehavioralTests {
             var holder = menu.getCurrentRecipes().get(menu.getCurrentRecipeIndex());
             if (holder.value().getIngredients().isEmpty()) helper.fail("Recipe should have ingredients");
             // Verify energy cost exists for smelting
-            var cost = RecipeEnergyTable.getCost(holder.value().getType());
+            var cost = RecipeEnergyTable.getCost(holder.value());
             if (cost == null) helper.fail("Smelting should have energy cost");
             helper.succeed();
         });
@@ -781,5 +946,26 @@ public class BehavioralTests {
             if (core.getTypeCount() != 1) { helper.fail("type count should be 1 after reusing slot, got " + core.getTypeCount()); return; }
             helper.succeed();
         });
+    }
+
+    private static void loadInstalledMachines(
+            StorageCoreBlockEntity core,
+            GameTestHelper helper,
+            ItemStack... machines
+    ) {
+        var items = new ListTag();
+        for (int slot = 0; slot < machines.length; slot++) {
+            ItemStack stack = machines[slot];
+            if (stack.isEmpty()) continue;
+            CompoundTag entry = new CompoundTag();
+            entry.putByte("Slot", (byte) slot);
+            entry = (CompoundTag) stack.save(helper.getLevel().registryAccess(), entry);
+            items.add(entry);
+        }
+        var machinesTag = new CompoundTag();
+        machinesTag.put("Items", items);
+        var root = new CompoundTag();
+        root.put("machines", machinesTag);
+        core.loadAdditional(root, helper.getLevel().registryAccess());
     }
 }

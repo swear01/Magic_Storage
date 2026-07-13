@@ -1,0 +1,29 @@
+{
+  "created_at_utc": "20260713T071518Z",
+  "type": "item",
+  "subject": "dark blackstone and amethyst remote storage terminal",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_item",
+  "tileable": false,
+  "prompt": "single centered front-facing orthographic 16x16 Minecraft item sprite, compact handheld remote terminal carved from dark polished blackstone, clear rectangular silhouette, tiny cyan screen rune and one restrained purple amethyst socket, mostly charcoal and near-black, crisp limited-palette vanilla-style pixel art, transparent background, no text, no letters, no numbers, no frame, no hand, no character, no gradients, no perspective, no 3D scene",
+  "size": 16,
+  "seed": 64060,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "single centered front-facing orthographic 16x16 Minecraft item sprite, compact handheld remote terminal carved from dark polished blackstone, clear rectangular silhouette, tiny cyan screen rune and one restrained purple amethyst socket, mostly charcoal and near-black, crisp limited-palette vanilla-style pixel art, transparent background, no text, no letters, no numbers, no frame, no hand, no character, no gradients, no perspective, no 3D scene",
+    "style": "mc_item",
+    "width": 16,
+    "height": 16,
+    "num_images": 2,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": true,
+    "bypass_prompt_expansion": true,
+    "seed": 64060
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/item/remote_terminal.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260713-cohesive-16x16/item/remote_terminal.preview.png",
+  "raw_png": null,
+  "selected_candidate": "remote_terminal_02"
+}

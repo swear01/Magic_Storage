@@ -10,11 +10,11 @@
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Binding:$()$(br)1. Craft and hold a Remote Terminal.$(br)2. $(thing)Shift + right-click$() on your Storage Core.$(br)3. The terminal is now bound. Tooltip shows the Core's position.$(br2)To rebind, simply shift-right-click a different Core."
+      "text": "$(thing)Binding:$()$(br)1. Craft and hold a Remote Terminal.$(br)2. $(thing)Shift + right-click$() on your Storage Core.$(br)3. The terminal records that exact Core's persistent identity. Its tooltip shows the Core's position.$(br2)To rebind, shift-right-click the intended Core again."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Using:$() Right-click while holding the bound Remote Terminal to open the Crafting Terminal menu from anywhere.$(br2)$(thing)Requirements:$()$(br)$(li)You must be in the $(thing)same dimension$() as the bound Core.$(li)The Core's $(thing)chunk must be loaded$() (use chunk loaders).$(li)The Core must still exist."
+      "text": "$(thing)Using:$() Right-click while holding the bound Remote Terminal to open the Crafting Terminal menu from anywhere.$(br2)$(thing)Requirements:$()$(br)$(li)You must be in the $(thing)same dimension$() as the bound Core.$(li)The Core's $(thing)chunk must be loaded$() (use chunk loaders).$(li)The exact bound Core must still exist. Replacing it at the same coordinates requires rebinding."
     },
     {
       "type": "patchouli:text",

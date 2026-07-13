@@ -9,19 +9,20 @@
 
 | # | RS2 慣例 | Magic_Storage 現況 | 缺口/風險 | 建議 | 工作量 |
 |---|---------|------------------|----------|------|--------|
-| A1 | **持久化 network graph + node visitor 增量更新**:RS2 維護常駐的 NodeGraph,方塊增刪時只增量更新受影響節點 | 已採用安全範圍:放置時 `tryIncrementalAdd` O(1) 成長;破壞/不確定拓樸仍 full `rebuildNetwork`;無 core 的 bus 每 cooldown 重掃(已加上限) | 大網路破壞/分裂仍 O(全網);尚無常駐 adjacency graph | 若真的需要,再改成常駐鄰接圖 + 局部 invalidation;目前低優先 | 大 |
+| A1 | **持久化 network graph + node visitor 增量更新**:RS2 維護常駐的 NodeGraph,方塊增刪時只增量更新受影響節點 | 已採用安全範圍:放置 callback 合併到 next-tick pass；單一安全放置用 cached-set bounded path check 後 `tryIncrementalAdd`，批次/破壞/不確定拓樸用 bounded full `rebuildNetwork`;活塞 old/new positions 與指令放置同樣覆蓋。Terminal/Bus 另 cache access path，每次只驗目前 loaded chunks/network blocks，失效時找 alternate loaded path | 大網路增量 depth check 仍需走 cached set BFS，破壞/分裂仍 O(min(全網,`MAX_NETWORK_BLOCKS`));尚無常駐 adjacency graph | 若真的需要,再改成常駐鄰接圖 + 局部 invalidation;目前低優先 | 大 |
 | A2 | **統一 Storage 介面**:`insert/extract(resource, amount, Action, Actor)`,回傳實際處理量 | 已採用:`Action.SIMULATE/EXECUTE` + `Actor` 傳入 core insert/extract/extractMatching;舊 boolean/no-arg overload 保留為 bridge | 僅 item 資源;Actor 目前用於事件/追蹤,尚未做防自抽邏輯 | 泛型資源(流體)可暫緩;未來自動化可用 Actor 做來源隔離 | 小 |
-| A3 | **事件驅動 + 增量 delta**:storage 變動發事件,grid/autocraft 訂閱只收差異 | 已有 foundation:`StorageListener.onChanged(ItemKey, delta, newAmount, Actor)` 由 execute insert/extract 觸發;grid 仍保留 `cacheDirty` + vanilla slot sync | 尚未做整列表 client grid 的 delta packet;目前分頁式 grid ≤81 格,實益偏低 | 若改成整列表 client grid,再基於 listener 實作 P3 delta sync | 中 |
-| A4 | **以資源身分(ResourceKey)為主,而非槽位 index**:選取、捲動、配方面板都綁資源身分 | 已採用:`crafting_terminal` selection 以 `ItemKey` 身分同步,非 grid slot index | (大致到位) | 後續 UI 新增選取功能仍要綁資源身分 | 小(慣例) |
+| A3 | **事件驅動 + 增量 delta**:storage 變動發事件,grid/autocraft 訂閱只收差異 | `StorageListener.onChanged(...)` 由 execute insert/extract 觸發;開啟中的 server menu 訂閱後即時刷新 grid/preview,仍用 vanilla slot sync。多步合成用 mutation batch 延後 listener callback，玩家背包 fingerprint 與 Core topology revision 也會使 preview 失效 | 尚未做整列表 client grid 的自訂 delta packet;目前分頁式 grid ≤81 格,實益偏低 | 若改成整列表 client grid,再基於 listener 實作 P3 delta sync | 中 |
+| A4 | **以資源身分(ResourceKey)為主,而非槽位 index**:選取、捲動、配方面板都綁資源身分 | 已採用：一般 selection 用 `ItemKey`；Craftable server catalog 以 recipe/output identity 產生 zero-storage synthetic output；EMI 傳 exact recipe id/amount/destination，不再依賴 output 已存或目前可見槽位 | (到位；synthetic output extraction 仍由 server count=0 明確拒絕) | 新 recipe type 仍須保留 exact identity/reload revalidation | 小(慣例) |
 | A5 | **同步的 view 設定 + 比對模式(fuzzy/ignore-NBT/ignore-damage)** | 已採用:sort/order/search 模式 server 同步;合成材料 fuzzy 配對走 `Ingredient.test` | (大致到位) | 後續若加 ignore-damage/ignore-NBT UI,仍需 server 權威同步 | 小-中 |
-| A6 | **simulate-then-commit 貫穿所有操作**(I/O、autocraft) | 本次已補:import bus、craftItem;Core insert/extract 有 simulate | (大致到位) | 確保所有未來新增的搬運/合成都走 simulate-first | 小(慣例) |
-| A7 | **合成前 preview「缺什麼/可做幾個」**:RS2 autocraft 先算缺料再執行 | 已採用:配方面板用 simulate path 顯示可做數/缺料 | (大致到位) | 新增 recipe type 時保持 preview 與 execute 共用 simulate contract | 小(慣例) |
+| A6 | **simulate-then-commit 貫穿所有操作**(I/O、autocraft) | Import/export bus 與 `craftItem` 皆先驗證;bus commit 後精確交還 remainder，來源/core 若拒收 rollback 就顯式掉出世界；crafting 保留每個 `Ingredient` predicate 身分並建 joint reservation，再先規劃 post-consumption 玩家 inventory + Core overflow capacity。兩邊無法完整收下 requested output 就整批拒絕；execute 前重解 recipe/station/tool identity，整個扣料/插 output/扣能/耗耐久交易用 deferred-listener mutation batch 包住並可 rollback | (大致到位；只接受能完整建模的 exact recipe class，其他 dynamic/context behavior fail closed) | 未來搬運/合成都共用 reserve/commit contract；unsupported/stale recipe fail closed，不加 world-drop output fallback | 小(慣例) |
+| A7 | **合成前 preview「缺什麼/可做幾個」**:RS2 autocraft 先算缺料再執行 | 已採用：配方面板用同一 simulate/joint-reservation path 顯示 `Ready ×N`；server 另同步每個 ingredient predicate、axe raw durability 與 cooking process/Fuel 的 `Available / Required for one`。每次 refresh 只 snapshot 一次 Core/可選玩家材料來源，再供上界與 binary search 重用；overlapping predicates 的 row available 只是匹配量，整體 Ready 才是共同保留後真值 | (到位) | 新增 recipe type 時保持 preview、station/tool gate、resource rows、destination planning 與 execute 共用 contract | 小(慣例) |
+| A8 | **大量資源數量先 compact format，再受 slot 邊界約束 render** | 已採用：`TerminalAmountFormatter` 產生不高估的 K/M/G/T/P/E；display slot 以 16px 門檻選正常/0.5 scale，兩者皆右對齊在自己的 cell。模式參考 RS2 `ItemGridResource` + `ResourceSlotRendering`，實作未照抄 | tooltip 尚未另加完整 exact amount 行；目前 server display stack 仍受 `int` wire/display 上限 | 若未來做 full-list custom packet，再同步 `long` exact amount 並於 tooltip 顯示完整值 | 小 |
 
 ## B. 故意分歧(要改哲學才採用 — 先別動,列為選項)
 
 | # | RS2 慣例 | 為何 Magic_Storage 不同 | 採用條件 |
 |---|---------|----------------------|---------|
-| B1 | **autocrafting 依賴樹任務系統**(Pattern → 算樹 → 遞迴合成中間物 → 執行) | 哲學是「配方書一鍵、單層合成、合成能量取代等待」——刻意不做 RS2 那套複雜 pattern/排程 | 若要「自動合成多階產物」才採用(大工程) |
+| B1 | **autocrafting 依賴樹任務系統**(Pattern → 算樹 → 遞迴合成中間物 → 執行) | 哲學是「配方書一鍵、單層合成、合成能量取代等待」——EMI 已支援 exact recipe 的單層立即執行，但刻意不做 RS2 pattern tree/排程 | 若要「自動合成多階產物」才採用(大工程) |
 | B2 | **每個 disk 有容量 + 優先序 + 分區(白/黑名單/voiding)** | 哲學是「無限數量、只限種類數;Unit 只貢獻種類槽」 | 若要改成「容量制」才採用 |
 | B3 | **External Storage(把相鄰箱子當網路儲存)** | 目前用 import/export bus 搬運,不直接暴露 | 想要無縫整合外部箱子時 |
 | B4 | **升級系統(speed/stack/range/fortune/silk)** | 尚未引入升級概念 | 想加深度時(可選) |

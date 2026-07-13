@@ -11,12 +11,16 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 
+import java.util.function.Consumer;
+import java.util.List;
+
 public class ExportBusBlockEntity extends BlockEntity {
 
     private static final int COOLDOWN_TICKS = 10;
 
     private BlockPos corePos;
     private StorageCoreBlockEntity cachedCore;
+    private List<BlockPos> cachedPath = List.of();
     private int cooldown = 0;
     private ItemKey filterItem = null;
 
@@ -49,8 +53,14 @@ public class ExportBusBlockEntity extends BlockEntity {
         IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, targetPos, facing.getOpposite());
         if (handler == null) return;
 
-        ItemStack toExport = core.extractItem(filterItem, 64, Action.SIMULATE, Actor.bus(getBlockPos()));
-        if (toExport.isEmpty()) return;
+        transferOneStack(core, filterItem, handler, Actor.bus(getBlockPos()),
+                stack -> net.minecraft.world.level.block.Block.popResource(level, getBlockPos(), stack));
+    }
+
+    static boolean transferOneStack(StorageCoreBlockEntity core, ItemKey filterItem, IItemHandler handler,
+                                    Actor actor, Consumer<ItemStack> overflow) {
+        ItemStack toExport = core.extractItem(filterItem, 64, Action.SIMULATE, actor);
+        if (toExport.isEmpty()) return false;
 
         ItemStack leftoverSim = toExport.copy();
         for (int slot = 0; slot < handler.getSlots(); slot++) {
@@ -58,28 +68,39 @@ public class ExportBusBlockEntity extends BlockEntity {
             if (leftoverSim.isEmpty()) break;
         }
         int fits = toExport.getCount() - leftoverSim.getCount();
-        if (fits <= 0) return;
+        if (fits <= 0) return false;
 
-        ItemStack extracted = core.extractItem(filterItem, fits, Action.EXECUTE, Actor.bus(getBlockPos()));
+        ItemStack extracted = core.extractItem(filterItem, fits, Action.EXECUTE, actor);
+        if (extracted.isEmpty()) return false;
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             extracted = handler.insertItem(slot, extracted, false);
             if (extracted.isEmpty()) break;
         }
         if (!extracted.isEmpty()) {
-            core.insertItem(extracted, Action.EXECUTE, Actor.bus(getBlockPos()));
+            core.insertItem(extracted, Action.EXECUTE, actor);
+            if (!extracted.isEmpty()) overflow.accept(extracted.copy());
         }
+        return true;
     }
 
     private StorageCoreBlockEntity resolveCore() {
         if (level == null) return null;
         if (cachedCore != null && !cachedCore.isRemoved()
                 && cachedCore.getConnectedBlocks().contains(getBlockPos())) {
-            return cachedCore;
+            if (MagicStorage.hasLoadedNetworkPath(level, cachedPath, getBlockPos(), cachedCore.getBlockPos())) {
+                return cachedCore;
+            }
+            cachedPath = MagicStorage.findLoadedNetworkPath(level, getBlockPos(), cachedCore.getBlockPos());
+            if (!cachedPath.isEmpty()) return cachedCore;
         }
         cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
         if (cachedCore != null && !cachedCore.getConnectedBlocks().contains(getBlockPos())) {
             cachedCore = null;
         }
+        cachedPath = cachedCore != null
+                ? MagicStorage.findLoadedNetworkPath(level, getBlockPos(), cachedCore.getBlockPos())
+                : List.of();
+        if (cachedCore != null && cachedPath.isEmpty()) cachedCore = null;
         corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
         return cachedCore;
     }

@@ -10,14 +10,14 @@
 
 ---
 
-## Status (updated 2026-07-10)
+## Status (updated 2026-07-12)
 
-- **Done + verified** (currently SelfTest 104, GameTest 102):
+- **Done + verified** (this plan's 0.1.8 baseline was SelfTest 117, GameTest 180, Python 61; current counts live in `docs/plan.md`):
   - A5b fuzzy match (Task 3/6) — commit `c94d37f`
   - A5a view-settings sync (Task 4) + A4 identity selection (Task 5) + A7 craft preview — commit `116664d`
   - A1 incremental network growth, **safe scope** (Task 8: incremental on place, full rebuild on break) — commit `3433e76`
   - A2 Action/Actor storage contract (Task 1) + A3 change-event foundation (Task 2) — `Action`, `Actor`, `StorageListener`, execute-only delta events.
-  - P0/P1/P2 RS2 parity polish:bus cached-core disconnect invalidation, conflicted core no extract, bridge placement full-rebuild fallback, terminal access/remote `stillValid`, server-synced crafting recipe metadata, server-side craftable-only filter, EMI display/player input-source contract excluding hidden metadata slots, duplicate-ingredient aggregation before preview/craft, real crafting/smelting/player-inventory craft paths.
+  - P0/P1/P2 RS2 parity polish:bus cached-core disconnect invalidation plus currently-loaded path validation, conflicted core no extract, bridge placement/full-removal rebuild fallback, terminal access + exact-Core UUID remote `stillValid`, server-synced crafting metadata/live preview, player/topology fingerprint refresh, one-snapshot preview planning, deferred-listener atomic commit, server-side craftable-only filter, EMI input-source contract excluding hidden slots, predicate-preserving overlapping-ingredient joint reservation, exact static recipe contract + current-manager revalidation, visible-36-slot player inventory paths, item-level/stacked fuel remainders, energy-driven preview refresh, and the server-authoritative dedicated Fuel page.
 - **Remaining**: **P3 incremental grid delta (Task 7)** only. A3 listener foundation exists, but the current paged grid is ≤81 slots and vanilla menu sync is already incremental; keep P3 deferred unless the UI changes to a whole-list client grid.
 
 ## Dispatch strategy (read before spawning agents)

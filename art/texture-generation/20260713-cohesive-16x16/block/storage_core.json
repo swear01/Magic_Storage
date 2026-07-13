@@ -1,0 +1,29 @@
+{
+  "created_at_utc": "20260713T070636Z",
+  "type": "block",
+  "subject": "dark deepslate magical storage core",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "flat front-facing 16x16 Minecraft block face, carved dark deepslate and polished blackstone machine housing, chunky crisp one-pixel stone cuts, central restrained amethyst crystal diamond with a thin cyan rune cross, limited charcoal purple cyan palette, no text, no letters, no numbers, no gradients, no perspective, no 3D cube, no scene",
+  "size": 16,
+  "seed": 64021,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "flat front-facing 16x16 Minecraft block face, carved dark deepslate and polished blackstone machine housing, chunky crisp one-pixel stone cuts, central restrained amethyst crystal diamond with a thin cyan rune cross, limited charcoal purple cyan palette, no text, no letters, no numbers, no gradients, no perspective, no 3D cube, no scene",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 2,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": true,
+    "seed": 64021
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/src/main/resources/assets/magic_storage/textures/block/storage_core.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260713-cohesive-16x16/block/storage_core.preview.png",
+  "raw_png": null,
+  "selected_candidate": "storage_core_01"
+}

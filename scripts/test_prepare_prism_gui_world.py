@@ -58,6 +58,9 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertEqual("after_world_ready_before_first_gui_action", manifest["fullscreen_gate"]["when"])
             self.assertEqual("windowed_only", manifest["fullscreen_gate"]["launch_mode"])
             self.assertIn("native_fullscreen", manifest["fullscreen_gate"]["accepted_methods"])
+            self.assertIn("User confirms the entire Minecraft frame is visible", manifest["fullscreen_gate"]["verify"])
+            self.assertFalse(any("Computer Use" in check for check in manifest["fullscreen_gate"]["verify"]))
+            self.assertIn("-o MagicStorageBot", manifest["launch_command"])
 
             datapack = world_dir / "datapacks/magic_storage_gui_test"
             self.assertTrue((datapack / "data/minecraft/tags/function/load.json").exists())
@@ -67,6 +70,21 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertIn("setblock -1 64 0 magic_storage:storage_unit_t6", setup)
             self.assertIn("setblock 0 64 1 magic_storage:storage_terminal", setup)
             self.assertIn("setblock 1 64 0 magic_storage:crafting_terminal", setup)
+            player_ready = (datapack / "data/magic_storage_gui_test/function/player_ready.mcfunction").read_text()
+            self.assertIn("give @s minecraft:coal 3", player_ready)
+            self.assertIn("give @s minecraft:blaze_rod 2", player_ready)
+            self.assertIn("give @s minecraft:furnace 3", player_ready)
+            self.assertIn("give @s minecraft:blast_furnace 1", player_ready)
+            self.assertIn("give @s minecraft:smoker 1", player_ready)
+            self.assertIn("give @s minecraft:campfire 1", player_ready)
+            self.assertIn("give @s minecraft:brewing_stand 1", player_ready)
+            self.assertIn("give @s minecraft:crafting_table 1", player_ready)
+            self.assertIn("give @s minecraft:stonecutter 1", player_ready)
+            self.assertIn("give @s minecraft:smithing_table 1", player_ready)
+            self.assertIn("give @s minecraft:iron_axe 1", player_ready)
+            self.assertIn("give @s minecraft:netherite_upgrade_smithing_template 1", player_ready)
+            self.assertIn("give @s minecraft:diamond_sword 1", player_ready)
+            self.assertIn("give @s minecraft:netherite_ingot 1", player_ready)
 
             view = (datapack / "data/magic_storage_gui_test/function/view_storage_terminal.mcfunction").read_text()
             self.assertIn("tp @s 0.5 65.0 4.5 facing 0.5 64.5 1.5", view)
@@ -107,6 +125,29 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertEqual("720", lines["overrideHeight"])
             self.assertEqual("none", lines["tutorialStep"])
             self.assertEqual("kept", lines["unrelated"])
+
+    def test_patch_options_preserves_original_when_atomic_replace_fails(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            options = Path(tmp) / "options.txt"
+            original = "fullscreen:true\nunrelated:kept\n"
+            options.write_text(original)
+            original_replace = Path.replace
+
+            def failing_replace(path, target):
+                if Path(target) == options:
+                    raise OSError("replace failed")
+                return original_replace(path, target)
+
+            Path.replace = failing_replace
+            try:
+                with self.assertRaisesRegex(OSError, "replace failed"):
+                    mod.patch_options(options)
+            finally:
+                Path.replace = original_replace
+
+            self.assertEqual(original, options.read_text())
+            self.assertEqual([options.name], sorted(path.name for path in options.parent.iterdir()))
 
     def test_prepare_world_recreates_only_marked_target_from_template(self):
         mod = self.load_script()
@@ -164,6 +205,106 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             finally:
                 mod.world_has_open_files = original_checker
             self.assertEqual("keep", stale.read_text())
+
+    def test_copy_template_rejects_same_source_and_target_before_mutation(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp) / "World"
+            world.mkdir()
+            (world / mod.MARKER_FILE).write_text("generated")
+            sentinel = world / "sentinel.txt"
+            sentinel.write_text("keep")
+
+            with self.assertRaisesRegex(RuntimeError, "different directories"):
+                mod._copy_template_world(world, world)
+
+            self.assertEqual("keep", sentinel.read_text())
+
+    def test_copy_failure_preserves_previous_generated_target(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "Source"
+            target = root / "Target"
+            source.mkdir()
+            target.mkdir()
+            (source / "level.dat").write_bytes(minimal_level_dat())
+            (target / mod.MARKER_FILE).write_text("generated")
+            sentinel = target / "sentinel.txt"
+            sentinel.write_text("keep")
+            original_copytree = mod.shutil.copytree
+            original_checker = mod.world_has_open_files
+            mod.shutil.copytree = lambda source_path, target_path: (_ for _ in ()).throw(OSError("copy failed"))
+            mod.world_has_open_files = lambda path: False
+            try:
+                with self.assertRaisesRegex(OSError, "copy failed"):
+                    mod._copy_template_world(source, target)
+            finally:
+                mod.shutil.copytree = original_copytree
+                mod.world_has_open_files = original_checker
+
+            self.assertEqual("keep", sentinel.read_text())
+            self.assertTrue((target / mod.MARKER_FILE).exists())
+
+    def test_prepare_world_preserves_existing_target_when_source_level_dat_is_invalid(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            minecraft_dir = Path(tmp) / "minecraft"
+            source = minecraft_dir / "saves" / "New World"
+            target = minecraft_dir / "saves" / "MagicStorageGuiTest"
+            source.mkdir(parents=True)
+            target.mkdir()
+            (source / "level.dat").write_bytes(b"not gzip nbt")
+            (target / mod.MARKER_FILE).write_text("generated")
+            (target / "level.dat").write_bytes(minimal_level_dat("MagicStorageGuiTest", 1))
+            sentinel = target / "sentinel.txt"
+            sentinel.write_text("keep")
+            options = minecraft_dir / "options.txt"
+            options.write_text("fullscreen:true\n")
+            original_checker = mod.world_has_open_files
+            mod.world_has_open_files = lambda path: False
+            try:
+                with self.assertRaises(gzip.BadGzipFile):
+                    mod.prepare_world(minecraft_dir)
+            finally:
+                mod.world_has_open_files = original_checker
+
+            self.assertTrue(sentinel.exists())
+            self.assertEqual("keep", sentinel.read_text())
+            self.assertEqual(
+                {"LevelName": "MagicStorageGuiTest", "allowCommands": 1},
+                mod.read_level_dat_summary(target / "level.dat"),
+            )
+            self.assertEqual("fullscreen:true\n", options.read_text())
+
+    def test_prepare_world_preserves_existing_target_when_manifest_install_fails(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            minecraft_dir = Path(tmp) / "minecraft"
+            source = minecraft_dir / "saves" / "New World"
+            target = minecraft_dir / "saves" / "MagicStorageGuiTest"
+            source.mkdir(parents=True)
+            target.mkdir()
+            (source / "level.dat").write_bytes(minimal_level_dat())
+            (target / mod.MARKER_FILE).write_text("generated")
+            sentinel = target / "sentinel.txt"
+            sentinel.write_text("keep")
+            options = minecraft_dir / "options.txt"
+            options.write_text("fullscreen:true\n")
+            original_checker = mod.world_has_open_files
+            original_installer = mod.install_datapack
+            mod.world_has_open_files = lambda path: False
+            mod.install_datapack = lambda world_dir: (_ for _ in ()).throw(OSError("manifest failed"))
+            try:
+                with self.assertRaisesRegex(OSError, "manifest failed"):
+                    mod.prepare_world(minecraft_dir)
+            finally:
+                mod.install_datapack = original_installer
+                mod.world_has_open_files = original_checker
+
+            self.assertTrue(sentinel.exists())
+            self.assertEqual("keep", sentinel.read_text())
+            self.assertEqual("fullscreen:true\n", options.read_text())
 
     def test_gui_docs_require_fullscreen_before_gui_actions(self):
         notes = (ROOT / "docs" / "notes.md").read_text()

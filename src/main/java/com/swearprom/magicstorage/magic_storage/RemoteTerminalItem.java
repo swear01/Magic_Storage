@@ -21,12 +21,15 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 public class RemoteTerminalItem extends Item {
     private static final String TAG_CORE_X = "coreX";
     private static final String TAG_CORE_Y = "coreY";
     private static final String TAG_CORE_Z = "coreZ";
     private static final String TAG_DIMENSION = "dimension";
+    private static final String TAG_CORE_ID = "coreId";
 
     public RemoteTerminalItem(Properties properties) {
         super(properties);
@@ -41,7 +44,12 @@ public class RemoteTerminalItem extends Item {
                 return InteractionResultHolder.fail(stack);
             }
             BlockPos corePos = getBoundCorePos(stack);
-            ResourceKey<Level> dimension = getBoundDimension(stack);
+            Optional<ResourceKey<Level>> boundDimension = getBoundDimension(stack);
+            if (boundDimension.isEmpty()) {
+                player.displayClientMessage(Component.translatable("msg.magic_storage.remote_unbound"), true);
+                return InteractionResultHolder.fail(stack);
+            }
+            ResourceKey<Level> dimension = boundDimension.get();
 
             if (!player.level().dimension().equals(dimension)) {
                 player.displayClientMessage(Component.translatable("msg.magic_storage.remote_wrong_dimension"), true);
@@ -53,8 +61,8 @@ public class RemoteTerminalItem extends Item {
             }
 
             StorageCoreBlockEntity core = level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity c ? c : null;
-            if (core == null) {
-                player.displayClientMessage(Component.translatable("msg.magic_storage.remote_unbound"), true);
+            if (core == null || !core.getNetworkId().equals(getBoundCoreId(stack))) {
+                player.displayClientMessage(Component.translatable("msg.magic_storage.remote_stale"), true);
                 return InteractionResultHolder.fail(stack);
             }
 
@@ -81,7 +89,10 @@ public class RemoteTerminalItem extends Item {
             BlockState state = level.getBlockState(pos);
             if (state.getBlock() instanceof IStorageNetworkBlock netBlock && netBlock.isStorageCore()) {
                 if (!level.isClientSide()) {
-                    bindToCore(stack, pos, level.dimension());
+                    if (!(level.getBlockEntity(pos) instanceof StorageCoreBlockEntity core)) {
+                        return InteractionResult.FAIL;
+                    }
+                    bindToCore(stack, pos, level.dimension(), core.getNetworkId());
                     player.displayClientMessage(Component.translatable("msg.magic_storage.remote_bound"), true);
                 }
                 return InteractionResult.sidedSuccess(level.isClientSide());
@@ -94,7 +105,9 @@ public class RemoteTerminalItem extends Item {
         CustomData customData = stack.get(DataComponents.CUSTOM_DATA);
         if (customData == null) return false;
         CompoundTag tag = customData.copyTag();
-        return tag.contains(TAG_CORE_X) && tag.contains(TAG_DIMENSION);
+        return tag.contains(TAG_CORE_X) && tag.contains(TAG_CORE_Y) && tag.contains(TAG_CORE_Z)
+                && tag.contains(TAG_DIMENSION) && tag.hasUUID(TAG_CORE_ID)
+                && ResourceLocation.tryParse(tag.getString(TAG_DIMENSION)) != null;
     }
 
     private static BlockPos getBoundCorePos(ItemStack stack) {
@@ -103,20 +116,26 @@ public class RemoteTerminalItem extends Item {
         return new BlockPos(tag.getInt(TAG_CORE_X), tag.getInt(TAG_CORE_Y), tag.getInt(TAG_CORE_Z));
     }
 
-    private static ResourceKey<Level> getBoundDimension(ItemStack stack) {
+    private static Optional<ResourceKey<Level>> getBoundDimension(ItemStack stack) {
         CustomData customData = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
         CompoundTag tag = customData.copyTag();
-        ResourceLocation id = ResourceLocation.parse(tag.getString(TAG_DIMENSION));
-        return ResourceKey.create(Registries.DIMENSION, id);
+        ResourceLocation id = ResourceLocation.tryParse(tag.getString(TAG_DIMENSION));
+        return id == null ? Optional.empty() : Optional.of(ResourceKey.create(Registries.DIMENSION, id));
     }
 
-    private static void bindToCore(ItemStack stack, BlockPos pos, ResourceKey<Level> dimension) {
-        CompoundTag tag = new CompoundTag();
-        tag.putInt(TAG_CORE_X, pos.getX());
-        tag.putInt(TAG_CORE_Y, pos.getY());
-        tag.putInt(TAG_CORE_Z, pos.getZ());
-        tag.putString(TAG_DIMENSION, dimension.location().toString());
-        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    private static UUID getBoundCoreId(ItemStack stack) {
+        CustomData customData = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
+        return customData.copyTag().getUUID(TAG_CORE_ID);
+    }
+
+    private static void bindToCore(ItemStack stack, BlockPos pos, ResourceKey<Level> dimension, UUID coreId) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> {
+            tag.putInt(TAG_CORE_X, pos.getX());
+            tag.putInt(TAG_CORE_Y, pos.getY());
+            tag.putInt(TAG_CORE_Z, pos.getZ());
+            tag.putString(TAG_DIMENSION, dimension.location().toString());
+            tag.putUUID(TAG_CORE_ID, coreId);
+        });
     }
 
     @Override
