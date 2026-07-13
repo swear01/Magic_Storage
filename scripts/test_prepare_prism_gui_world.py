@@ -12,19 +12,66 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "scripts" / "prepare_prism_gui_world.py"
 
 
-def minimal_level_dat(level_name="New World", allow_commands=0):
-    def name(value):
-        data = value.encode("utf-8")
-        return struct.pack(">H", len(data)) + data
+TAG_BYTE = 1
+TAG_INT = 3
+TAG_STRING = 8
+TAG_LIST = 9
+TAG_COMPOUND = 10
 
-    payload = bytearray()
-    payload.extend(b"\x0a" + name("Data"))
-    payload.extend(b"\x08" + name("LevelName") + name(level_name))
-    payload.extend(b"\x01" + name("allowCommands") + struct.pack(">b", allow_commands))
-    payload.extend(b"\x00")
-    payload.extend(b"\x00")
-    root = b"\x0a" + name("") + bytes(payload)
-    return gzip.compress(root)
+
+def nbt_name(value):
+    data = value.encode("utf-8")
+    return struct.pack(">H", len(data)) + data
+
+
+def nbt_payload(tag_type, payload):
+    if tag_type == TAG_BYTE:
+        return struct.pack(">b", payload)
+    if tag_type == TAG_INT:
+        return struct.pack(">i", payload)
+    if tag_type == TAG_STRING:
+        return nbt_name(payload)
+    if tag_type == TAG_LIST:
+        child_type, items = payload
+        return struct.pack(">Bi", child_type, len(items)) + b"".join(
+            nbt_payload(child_type, item) for item in items
+        )
+    if tag_type == TAG_COMPOUND:
+        return b"".join(nbt_named_tag(*item) for item in payload) + b"\x00"
+    raise AssertionError(f"unsupported fixture tag type {tag_type}")
+
+
+def nbt_named_tag(tag_type, name, payload):
+    return struct.pack(">B", tag_type) + nbt_name(name) + nbt_payload(tag_type, payload)
+
+
+def minimal_level_dat(level_name="New World", allow_commands=0, include_worldgen=True, include_player=True):
+    data = [
+        (TAG_STRING, "LevelName", level_name),
+        (TAG_BYTE, "allowCommands", allow_commands),
+    ]
+    if include_worldgen:
+        data.append((TAG_COMPOUND, "WorldGenSettings", [
+            (TAG_COMPOUND, "dimensions", [
+                (TAG_COMPOUND, "minecraft:overworld", [
+                    (TAG_STRING, "type", "minecraft:overworld"),
+                    (TAG_COMPOUND, "generator", [
+                        (TAG_STRING, "type", "minecraft:noise"),
+                        (TAG_STRING, "settings", "minecraft:overworld"),
+                        (TAG_COMPOUND, "biome_source", [
+                            (TAG_STRING, "type", "minecraft:multi_noise"),
+                            (TAG_STRING, "preset", "minecraft:overworld"),
+                        ]),
+                    ]),
+                ]),
+            ]),
+        ]))
+    if include_player:
+        data.append((TAG_COMPOUND, "Player", [
+            (TAG_STRING, "Dimension", "minecraft:the_nether"),
+            (TAG_INT, "SelectedItemSlot", 7),
+        ]))
+    return gzip.compress(nbt_named_tag(TAG_COMPOUND, "", [(TAG_COMPOUND, "Data", data)]))
 
 
 class PreparePrismGuiWorldTests(unittest.TestCase):
@@ -36,7 +83,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def test_install_datapack_writes_known_rig_without_command_blocks(self):
+    def test_install_datapack_writes_void_lab_preload_and_fixed_navigation(self):
         mod = self.load_script()
         with tempfile.TemporaryDirectory() as tmp:
             world_dir = Path(tmp) / "MagicStorageGuiTest"
@@ -46,14 +93,26 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
 
             pack_meta = json.loads((world_dir / "datapacks/magic_storage_gui_test/pack.mcmeta").read_text())
             self.assertEqual(48, pack_meta["pack"]["pack_format"])
-            self.assertEqual([0, 64, 1], manifest["targets"]["storage_terminal"]["block"])
-            self.assertEqual([1, 64, 0], manifest["targets"]["crafting_terminal"]["block"])
+            self.assertEqual(2, manifest["schema_version"])
+            self.assertEqual([-18, 79, -12, 18, 90, 12], manifest["lab"]["reset_bounds"])
+            self.assertEqual([0, 80, 0], manifest["targets"]["storage_core"]["block"])
+            self.assertEqual([-1, 80, 0], manifest["targets"]["storage_terminal"]["block"])
+            self.assertEqual([1, 80, 0], manifest["targets"]["crafting_terminal"]["block"])
             self.assertEqual(
                 "/function magic_storage_gui_test:view_storage_terminal",
                 manifest["commands"]["view_storage_terminal"],
             )
             self.assertEqual("view_storage_terminal", manifest["hotbar_views"]["1"]["function"])
             self.assertEqual("view_crafting_terminal", manifest["hotbar_views"]["2"]["function"])
+            self.assertEqual("view_texture_gallery", manifest["hotbar_views"]["7"]["function"])
+            self.assertEqual("home", manifest["hotbar_views"]["8"]["function"])
+            self.assertEqual("reset_from_hotbar", manifest["hotbar_views"]["9"]["function"])
+            self.assertEqual(8192, manifest["baseline"]["stored_items"]["minecraft:cobblestone"])
+            self.assertEqual("minecraft:crafting_table", manifest["baseline"]["installed_stations"]["5"])
+            self.assertEqual(785, manifest["baseline"]["total_type_capacity"])
+            self.assertTrue(all(value == 0 for value in manifest["baseline"]["energy"].values()))
+            self.assertEqual("magic_storage:storage_terminal", manifest["player_kit"]["hotbar"]["1"]["item"])
+            self.assertEqual("minecraft:barrier", manifest["player_kit"]["hotbar"]["9"]["item"])
             self.assertTrue(manifest["fullscreen_gate"]["required"])
             self.assertEqual("after_world_ready_before_first_gui_action", manifest["fullscreen_gate"]["when"])
             self.assertEqual("windowed_only", manifest["fullscreen_gate"]["launch_mode"])
@@ -66,40 +125,142 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertTrue((datapack / "data/minecraft/tags/function/load.json").exists())
             self.assertTrue((datapack / "data/minecraft/tags/function/tick.json").exists())
             setup = (datapack / "data/magic_storage_gui_test/function/setup.mcfunction").read_text()
-            self.assertIn("setblock 0 64 0 magic_storage:storage_core", setup)
-            self.assertIn("setblock -1 64 0 magic_storage:storage_unit_t6", setup)
-            self.assertIn("setblock 0 64 1 magic_storage:storage_terminal", setup)
-            self.assertIn("setblock 1 64 0 magic_storage:crafting_terminal", setup)
+            self.assertIn("fill -18 79 -12 18 79 12 minecraft:polished_blackstone_bricks outline", setup)
+            self.assertIn("fill -17 79 -11 17 79 11 minecraft:smooth_stone", setup)
+            self.assertIn("setblock -1 80 0 magic_storage:storage_terminal", setup)
+            self.assertIn("setblock 1 80 0 magic_storage:crafting_terminal", setup)
+            self.assertIn("setblock -1 80 -1 magic_storage:import_bus[facing=west]", setup)
+            self.assertIn("setblock 1 80 -1 magic_storage:export_bus[facing=east]", setup)
+            for z, tier in zip(range(-1, -7, -1), range(6, 0, -1)):
+                self.assertIn(f"setblock 0 80 {z} magic_storage:storage_unit_t{tier}", setup)
+            for x, block in [
+                (-10, "storage_core"),
+                (-8, "storage_unit_t1"),
+                (-6, "storage_unit_t2"),
+                (-4, "storage_unit_t3"),
+                (-2, "storage_unit_t4"),
+                (0, "storage_unit_t5"),
+                (2, "storage_unit_t6"),
+                (4, "storage_terminal"),
+                (6, "crafting_terminal"),
+                (8, "import_bus[facing=south]"),
+                (10, "export_bus[facing=south]"),
+            ]:
+                self.assertIn(f"setblock {x} 80 -9 magic_storage:{block}", setup)
+            expected_core = (
+                'setblock 0 80 0 magic_storage:storage_core{energy:{smelting_energy:0L,'
+                'blasting_energy:0L,smoking_energy:0L,campfire_energy:0L,brew_energy:0L,'
+                'furnace_fuel:0L,blaze_fuel:0L,bottle_fuel:0L},machines:{Items:['
+                '{Slot:5b,id:"minecraft:crafting_table",count:1},'
+                '{Slot:6b,id:"minecraft:stonecutter",count:1},'
+                '{Slot:7b,id:"minecraft:smithing_table",count:1},'
+                '{Slot:8b,id:"minecraft:iron_axe",count:1}]},inventory:['
+                '{item:{id:"minecraft:cobblestone",count:1},count:8192L},'
+                '{item:{id:"minecraft:oak_log",count:1},count:192L},'
+                '{item:{id:"minecraft:iron_ingot",count:1},count:128L},'
+                '{item:{id:"minecraft:diamond",count:1},count:32L},'
+                '{item:{id:"minecraft:coal",count:1},count:64L},'
+                '{item:{id:"minecraft:blaze_rod",count:1},count:16L},'
+                '{item:{id:"minecraft:glass_bottle",count:1},count:16L},'
+                '{item:{id:"minecraft:netherite_upgrade_smithing_template",count:1},count:1L},'
+                '{item:{id:"minecraft:diamond_sword",count:1},count:1L},'
+                '{item:{id:"minecraft:netherite_ingot",count:1},count:4L}]}'
+            )
+            self.assertIn(expected_core, setup)
             player_ready = (datapack / "data/magic_storage_gui_test/function/player_ready.mcfunction").read_text()
-            self.assertIn("give @s minecraft:coal 3", player_ready)
-            self.assertIn("give @s minecraft:blaze_rod 2", player_ready)
-            self.assertIn("give @s minecraft:furnace 3", player_ready)
-            self.assertIn("give @s minecraft:blast_furnace 1", player_ready)
-            self.assertIn("give @s minecraft:smoker 1", player_ready)
-            self.assertIn("give @s minecraft:campfire 1", player_ready)
-            self.assertIn("give @s minecraft:brewing_stand 1", player_ready)
-            self.assertIn("give @s minecraft:crafting_table 1", player_ready)
-            self.assertIn("give @s minecraft:stonecutter 1", player_ready)
-            self.assertIn("give @s minecraft:smithing_table 1", player_ready)
-            self.assertIn("give @s minecraft:iron_axe 1", player_ready)
-            self.assertIn("give @s minecraft:netherite_upgrade_smithing_template 1", player_ready)
-            self.assertIn("give @s minecraft:diamond_sword 1", player_ready)
-            self.assertIn("give @s minecraft:netherite_ingot 1", player_ready)
+            self.assertIn("item replace entity @s hotbar.0 with magic_storage:storage_terminal 1", player_ready)
+            self.assertIn("item replace entity @s hotbar.6 with minecraft:spyglass 1", player_ready)
+            self.assertIn("item replace entity @s hotbar.7 with minecraft:compass 1", player_ready)
+            self.assertIn("item replace entity @s hotbar.8 with minecraft:barrier 1", player_ready)
+            self.assertIn("item replace entity @s inventory.0 with magic_storage:remote_terminal 1", player_ready)
+            self.assertIn("item replace entity @s inventory.3 with minecraft:furnace 3", player_ready)
+            self.assertIn("item replace entity @s inventory.14 with minecraft:iron_axe 1", player_ready)
+            self.assertFalse(any(line.startswith("give @s") for line in player_ready.splitlines()))
 
             view = (datapack / "data/magic_storage_gui_test/function/view_storage_terminal.mcfunction").read_text()
-            self.assertIn("tp @s 0.5 65.0 4.5 facing 0.5 64.5 1.5", view)
+            self.assertIn("tp @s -0.5 80.0 4.5 facing -0.5 80.5 0.5", view)
             self.assertNotIn("sleep", view.lower())
-            tick = (datapack / "data/magic_storage_gui_test/function/tick.mcfunction").read_text()
-            self.assertIn("function magic_storage_gui_test:hotbar_views", tick)
             hotbar = (datapack / "data/magic_storage_gui_test/function/hotbar_views.mcfunction").read_text()
             self.assertIn("SelectedItemSlot:0", hotbar)
             self.assertIn("function magic_storage_gui_test:view_storage_terminal", hotbar)
-            self.assertIn("SelectedItemSlot:1", hotbar)
-            self.assertIn("function magic_storage_gui_test:view_crafting_terminal", hotbar)
+            self.assertIn("function magic_storage_gui_test:view_texture_gallery", hotbar)
+            self.assertIn("function magic_storage_gui_test:home", hotbar)
+            self.assertIn("function magic_storage_gui_test:reset_from_hotbar", hotbar)
 
             all_function_text = "\n".join(path.read_text() for path in datapack.rglob("*.mcfunction"))
             self.assertNotIn("command_block", all_function_text)
             self.assertNotIn("sleep", all_function_text.lower())
+
+    def test_datapack_waits_three_ticks_and_reset_reuses_setup_without_looping(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            world_dir = Path(tmp) / "MagicStorageGuiTest"
+            world_dir.mkdir()
+            manifest = mod.install_datapack(world_dir)
+            datapack = world_dir / "datapacks/magic_storage_gui_test"
+            functions = datapack / "data/magic_storage_gui_test/function"
+
+            load_tag = json.loads((datapack / "data/minecraft/tags/function/load.json").read_text())
+            self.assertEqual(["magic_storage_gui_test:load"], load_tag["values"])
+            load = (functions / "load.mcfunction").read_text()
+            self.assertEqual(1, load.count("scoreboard objectives add ms_gui_timer dummy"))
+            self.assertIn("function magic_storage_gui_test:setup", load)
+            tick = (functions / "tick.mcfunction").read_text()
+            self.assertIn("scoreboard players add @a[tag=!ms_gui_ready] ms_gui_timer 1", tick)
+            self.assertIn("scores={ms_gui_timer=3..}", tick)
+            self.assertIn("function magic_storage_gui_test:player_ready", tick)
+            self.assertIn("function magic_storage_gui_test:hotbar_views", tick)
+            setup = (functions / "setup.mcfunction").read_text()
+            self.assertNotIn("player_ready", setup)
+            reset = (functions / "reset_from_hotbar.mcfunction").read_text()
+            self.assertIn("function magic_storage_gui_test:setup", reset)
+            self.assertNotIn("player_ready", reset)
+            player_ready = (functions / "player_ready.mcfunction").read_text()
+            self.assertLess(
+                player_ready.index("function magic_storage_gui_test:prime_hotbar_latch"),
+                player_ready.index("tag @s add ms_gui_ready"),
+            )
+            prime = (functions / "prime_hotbar_latch.mcfunction").read_text()
+            self.assertIn("SelectedItemSlot:8", prime)
+            self.assertIn("tag @s add ms_hotbar_8", prime)
+            self.assertEqual(3, manifest["bootstrap"]["ready_delay_ticks"])
+            self.assertEqual("setup", manifest["bootstrap"]["reset_function"])
+
+    def test_update_level_dat_rewrites_overworld_to_true_void_flat_generator(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            level_dat = Path(tmp) / "level.dat"
+            level_dat.write_bytes(minimal_level_dat())
+
+            mod.update_level_dat(level_dat, "MagicStorageGuiTest", allow_commands=True)
+
+            self.assertEqual(
+                {
+                    "type": "minecraft:flat",
+                    "biome": "minecraft:the_void",
+                    "layers": [{"height": 1, "block": "minecraft:air"}],
+                    "features": False,
+                    "lakes": False,
+                    "structure_overrides": [],
+                },
+                mod.read_void_generator_summary(level_dat),
+            )
+            self.assertEqual({"x": 0, "y": 80, "z": 7}, mod.read_spawn_summary(level_dat))
+            data = mod._data_compound(mod._read_gzip_nbt(level_dat))
+            _, embedded_player = mod._find_compound_item(data, "Player")
+            self.assertIsNone(embedded_player)
+
+    def test_update_level_dat_rejects_missing_worldgen_without_mutating_file(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            level_dat = Path(tmp) / "level.dat"
+            original = minimal_level_dat(include_worldgen=False)
+            level_dat.write_bytes(original)
+
+            with self.assertRaisesRegex(ValueError, "WorldGenSettings"):
+                mod.update_level_dat(level_dat, "MagicStorageGuiTest", allow_commands=True)
+
+            self.assertEqual(original, level_dat.read_bytes())
 
     def test_patch_options_sets_fast_reproducible_gui_values(self):
         mod = self.load_script()
@@ -169,6 +330,8 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 {"LevelName": "MagicStorageGuiTest", "allowCommands": 1},
                 mod.read_level_dat_summary(target / "level.dat"),
             )
+            self.assertEqual("minecraft:flat", first["world_generator"]["type"])
+            self.assertEqual("minecraft:the_void", first["world_generator"]["biome"])
 
             stale = target / "stale.txt"
             stale.write_text("old generated state")
@@ -181,6 +344,47 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             (target / "level.dat").write_bytes(minimal_level_dat("Personal World"))
             with self.assertRaisesRegex(RuntimeError, "not marked"):
                 mod.prepare_world(minecraft_dir)
+
+    def test_prepare_world_strips_all_copied_runtime_state_without_mutating_source(self):
+        mod = self.load_script()
+        expected_paths = (
+            "region", "entities", "poi", "data", "datapacks",
+            "DIM-1", "DIM1", "dimensions", "serverconfig",
+            "playerdata", "advancements", "stats",
+            "session.lock", "level.dat_old", "icon.png",
+        )
+        self.assertEqual(expected_paths, mod.COPIED_RUNTIME_PATHS)
+        with tempfile.TemporaryDirectory() as tmp:
+            minecraft_dir = Path(tmp) / "minecraft"
+            source = minecraft_dir / "saves" / "New World"
+            source.mkdir(parents=True)
+            source_level = minimal_level_dat()
+            (source / "level.dat").write_bytes(source_level)
+            directory_paths = expected_paths[:12]
+            file_paths = expected_paths[12:]
+            for relative in directory_paths:
+                path = source / relative
+                path.mkdir(parents=True)
+                (path / "source-sentinel.txt").write_text(relative)
+            for relative in file_paths:
+                (source / relative).write_text(relative)
+            (minecraft_dir / "options.txt").write_text("fullscreen:true\n")
+
+            manifest = mod.prepare_world(minecraft_dir)
+
+            target = minecraft_dir / "saves" / "MagicStorageGuiTest"
+            for relative in directory_paths:
+                self.assertFalse((target / relative / "source-sentinel.txt").exists(), relative)
+                self.assertEqual(relative, (source / relative / "source-sentinel.txt").read_text())
+            for relative in file_paths:
+                self.assertFalse((target / relative).exists(), relative)
+                self.assertEqual(relative, (source / relative).read_text())
+            self.assertEqual(source_level, (source / "level.dat").read_bytes())
+            target_data = mod._data_compound(mod._read_gzip_nbt(target / "level.dat"))
+            _, embedded_player = mod._find_compound_item(target_data, "Player")
+            self.assertIsNone(embedded_player)
+            self.assertTrue((target / "datapacks/magic_storage_gui_test/pack.mcmeta").exists())
+            self.assertEqual(list(expected_paths), manifest["stripped_template_paths"])
 
     def test_prepare_world_refuses_to_recreate_marked_target_when_open(self):
         mod = self.load_script()

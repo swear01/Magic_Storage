@@ -27,6 +27,17 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             "hotbar_views": {
                 "1": {"slot": 0, "function": "view_storage_terminal", "target": "storage_terminal"},
                 "2": {"slot": 1, "function": "view_crafting_terminal", "target": "crafting_terminal"},
+                "7": {"slot": 6, "function": "view_texture_gallery", "target": "texture_gallery"},
+                "8": {"slot": 7, "function": "home", "target": "overview"},
+                "9": {"slot": 8, "function": "reset_from_hotbar", "target": "reset"},
+            },
+            "world_generator": {
+                "type": "minecraft:flat",
+                "biome": "minecraft:the_void",
+                "layers": [{"height": 1, "block": "minecraft:air"}],
+                "features": False,
+                "lakes": False,
+                "structure_overrides": [],
             },
             "fullscreen_gate": {"required": True, "when": "after_world_ready_before_first_gui_action"},
         }
@@ -314,7 +325,11 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             checklist = (result.run_dir / "checklist.md").read_text()
             for expected in [
                 "fullscreen gate",
+                "true-void",
                 "hotbar `2`",
+                "hotbar `7`",
+                "hotbar `8`",
+                "hotbar `9`",
                 "Fuel page",
                 "Storage tab",
                 "Craftable tab",
@@ -330,10 +345,10 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "cursor/inventory",
                 "visible outer margins",
                 "frame and left rail are centered as one group",
-                "currently registered machine",
+                "process-machine slots",
                 "currently registered reserve",
                 "scroll its panel",
-                "Installed Machines",
+                "Installed Stations",
                 "two flow rows",
                 "lower-right Fuel control panel",
                 "Crafting Table",
@@ -369,9 +384,13 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             ]:
                 self.assertIn(expected, checklist)
             self.assertNotIn("Cooking Energy", checklist)
+            self.assertNotIn("Installed Machines", checklist)
             self.assertNotIn("Compact Grid", checklist)
             self.assertNotIn("all five", checklist)
             self.assertNotIn("all eight", checklist)
+            self.assertIn("- hotbar `7` → `texture_gallery`", checklist)
+            self.assertIn("- hotbar `8` → `overview`", checklist)
+            self.assertIn("- hotbar `9` → `reset`", checklist)
 
     def test_configure_instance_for_manual_handoff_disables_wrapper_and_error_console(self):
         mod = self.load_script()

@@ -10,7 +10,7 @@ The preparer continues to use Prism's `New World/level.dat` only as a current Mi
 
 1. rewrites the overworld generator to `minecraft:flat`;
 2. uses biome `minecraft:the_void`, one `minecraft:air` layer, no features, no lakes, and an explicitly empty structure override set;
-3. removes copied chunk, entity, point-of-interest, player, scoreboard, datapack, dimension, and other runtime state;
+3. removes copied chunk, entity, point-of-interest, player, scoreboard, datapack, dimension, and other runtime state, including both the `playerdata/` directory and the singleplayer snapshot embedded at `level.dat/Data/Player`;
 4. installs only the generated `magic_storage_gui_test` datapack.
 
 This is preferred over clearing a normal world at high altitude because distant terrain would still exist, and over adding a test world preset to the mod because GUI-test infrastructure must not ship in the production jar.
@@ -118,7 +118,7 @@ Python tests must first fail, then cover:
 
 1. exact flat-void NBT rewrite and a readable summary;
 2. fail-closed behavior for missing/malformed worldgen compounds;
-3. removal of copied runtime/chunk/datapack state while preserving the source;
+3. removal of copied runtime/chunk/datapack state and `level.dat/Data/Player` while preserving the source;
 4. exact active-network and gallery coordinates;
 5. Core NBT preload, fixed machine slots, and zero energy;
 6. deterministic player inventory and all nine hotbar semantics;

@@ -10,9 +10,9 @@
 | `src/main/resources/data/magic_storage/` | 資料包(配方、loot、tags,以及 Patchouli `guide/book.json`)。 |
 | `src/main/resources/data/minecraft/` | 對 vanilla 的資料覆寫/擴充。 |
 | `src/main/templates/META-INF/` | `neoforge.mods.toml` 模板(Gradle 變數注入)。 |
-| `scripts/` | 本機維運腳本與 Python unittest:transactional 版本 patch bump/Prism dev jar 部署、選用 Prism wrapper 診斷工具、native offline GUI session runner(`-o MagicStorageBot`,清 wrapper/關 error-console pop-up、READY 後交給使用者目視)、transactional 固定 GUI test world/datapack 準備。 |
-| `docs/superpowers/plans/` | Active implementation/TDD contracts。Fuel runtime value、recipe timing、zero-storage Craftable、EMI one-level magic crafting 與 adaptive GUI 見 `2026-07-12-fuel-craftable-emi-adaptive-ui.md`；station/tool gates、Smithing/Axe recipe scope、safe output、two-row Fuel layout 與 16×16 textures 見 `2026-07-13-stations-recipes-output-textures.md`。 |
-| `docs/specs/` | 進行中的設計規格(目前空);實作完成的規格依規則 archive 至 `archive/docs/specs/`。 |
+| `scripts/` | 本機維運腳本與 Python unittest:transactional 版本 patch bump/Prism dev jar 部署、選用 Prism wrapper 診斷工具、native offline GUI session runner(`-o MagicStorageBot`,清 wrapper/關 error-console pop-up、READY 後交給使用者目視)，以及 transactionally 從 1.21.1 metadata template 重寫 true-void generator、strip runtime state、安裝固定 lab/datapack 的 GUI world preparer。 |
+| `docs/superpowers/plans/` | Active implementation/TDD contracts。Fuel runtime value、recipe timing、zero-storage Craftable、EMI one-level magic crafting 與 adaptive GUI 見 `2026-07-12-fuel-craftable-emi-adaptive-ui.md`；station/tool gates、Smithing/Axe recipe scope、safe output、two-row Fuel layout 與 16×16 textures 見 `2026-07-13-stations-recipes-output-textures.md`；true-void GUI lab 見 `2026-07-13-void-gui-test-lab.md`。 |
+| `docs/superpowers/specs/` | Active design specs；true-void lab 的 generator、座標、預載、hotbar/reset 契約見 `2026-07-13-void-gui-test-lab-design.md`。 |
 | `PLAN.md` | 完整設計計劃書(里程碑、能量系統、GUI)。 |
 
 ## Module Boundaries
