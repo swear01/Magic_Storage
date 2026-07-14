@@ -19,7 +19,8 @@ public class FuelPageTests {
     @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
     public static void fullscreen_fuel_machine_grid_uses_two_rows_for_current_descriptors(GameTestHelper helper) {
         int machineCount = MachineEnergyTable.entries().size();
-        var geometry = TerminalLayout.crafting(
+        var geometry = TerminalLayout.forProfile(
+                TerminalProfile.CRAFTING,
                 423, 291, machineCount, CraftingTerminalMenu.fuelTargets().size());
         var cells = geometry.machineGrid().cells(0);
         long visibleRows = cells.stream().map(TerminalLayout.Rect::y).distinct().count();
@@ -36,7 +37,8 @@ public class FuelPageTests {
 
     @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
     public static void fullscreen_fuel_lower_panel_aligns_with_player_inventory(GameTestHelper helper) {
-        var geometry = TerminalLayout.crafting(
+        var geometry = TerminalLayout.forProfile(
+                TerminalProfile.CRAFTING,
                 423, 291, MachineEnergyTable.entries().size(), CraftingTerminalMenu.fuelTargets().size());
         TerminalLayout.Rect playerInventory = geometry.playerInventory();
         TerminalLayout.Rect fuelPanel = geometry.fuelControlPanel();

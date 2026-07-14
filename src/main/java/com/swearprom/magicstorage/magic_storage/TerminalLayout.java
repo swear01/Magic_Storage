@@ -2,11 +2,12 @@ package com.swearprom.magicstorage.magic_storage;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 final class TerminalLayout {
     static final int SLOT_SIZE = 18;
     static final int CONTROL_SIZE = SLOT_SIZE;
-    static final int ICON_CANVAS_SIZE = 12;
+    static final int ICON_CANVAS_SIZE = 16;
     static final int TOP_HEIGHT = 19;
     static final int MIN_STORAGE_ROWS = 3;
     static final int MIN_CRAFTING_ROWS = 1;
@@ -97,6 +98,7 @@ final class TerminalLayout {
     }
 
     record Geometry(
+            TerminalProfile profile,
             boolean wide,
             int imageWidth,
             int imageHeight,
@@ -154,18 +156,37 @@ final class TerminalLayout {
     private TerminalLayout() {
     }
 
-    static Geometry storage(int screenWidth, int screenHeight, int railButtonCount) {
+    static Geometry forProfile(
+            TerminalProfile profile,
+            int screenWidth,
+            int screenHeight,
+            int machineCount,
+            int reserveCount
+    ) {
+        Objects.requireNonNull(profile, "profile");
+        if (machineCount < 0 || reserveCount < 0) {
+            throw new IllegalArgumentException("Flow item counts must be non-negative");
+        }
+        if (profile.supports(TerminalProfile.Capability.RECIPE_WORKSPACE)) {
+            return craftingGeometry(profile, screenWidth, screenHeight, machineCount, reserveCount);
+        }
+        if (machineCount != 0 || reserveCount != 0) {
+            throw new IllegalArgumentException("Reduced terminal profiles cannot contain flow items");
+        }
+        return storageGeometry(profile, screenHeight);
+    }
+
+    private static Geometry storageGeometry(TerminalProfile profile, int screenHeight) {
         int rows = fixedBandRows(screenHeight, STORAGE_BOTTOM_HEIGHT, MIN_STORAGE_ROWS);
         int imageHeight = TOP_HEIGHT + STORAGE_BOTTOM_HEIGHT + rows * SLOT_SIZE;
         Rect itemGrid = new Rect(8, TOP_HEIGHT, 9 * SLOT_SIZE, rows * SLOT_SIZE);
         Rect playerInventory = new Rect(
                 8, itemGrid.bottom() + 14, 9 * SLOT_SIZE, PLAYER_INVENTORY_HEIGHT);
-        List<Rect> railButtons = railButtons(imageHeight, List.of(railButtonCount));
-        Rect railBounds = boundsOf(railButtons);
-        Rect railPanel = inflate(railBounds, 3);
+        RailGeometry rails = profileRails(profile, imageHeight);
         Rect empty = new Rect(0, 0, 0, 0);
         FlowGrid emptyFlow = emptyFlow();
         return new Geometry(
+                profile,
                 false,
                 NARROW_WIDTH,
                 imageHeight,
@@ -193,25 +214,27 @@ final class TerminalLayout {
                 empty,
                 emptyFlow,
                 emptyFlow,
-                railButtons,
-                railButtons,
-                railBounds,
-                railPanel,
-                railPanel,
-                List.of(new Rect(0, 0, NARROW_WIDTH, imageHeight), railPanel)
+                rails.itemButtons(),
+                rails.fuelButtons(),
+                rails.bounds(),
+                rails.panel(),
+                rails.fuelPanel(),
+                List.of(new Rect(0, 0, NARROW_WIDTH, imageHeight), rails.panel())
         );
     }
 
-    static Geometry crafting(int screenWidth, int screenHeight, int machineCount, int reserveCount) {
-        if (machineCount < 0 || reserveCount < 0) {
-            throw new IllegalArgumentException("Flow item counts must be non-negative");
-        }
-
+    private static Geometry craftingGeometry(
+            TerminalProfile profile,
+            int screenWidth,
+            int screenHeight,
+            int machineCount,
+            int reserveCount
+    ) {
         int wideRows = fixedBandRows(screenHeight, STORAGE_BOTTOM_HEIGHT, MIN_STORAGE_ROWS);
         int wideItemBottom = TOP_HEIGHT + wideRows * SLOT_SIZE;
         int widePlayerY = Math.max(wideItemBottom + 14, TOP_HEIGHT + fuelGroupHeight());
         int wideHeight = widePlayerY + PLAYER_INVENTORY_HEIGHT + 8;
-        RailGeometry wideRails = craftingRails(wideHeight);
+        RailGeometry wideRails = profileRails(profile, wideHeight);
         int availableSideBySideWidth = screenWidth - 2 * OUTER_MARGIN
                 - railReservedWidth(wideRails.panel());
         boolean wide = availableSideBySideWidth >= SIDE_BY_SIDE_MIN_WIDTH;
@@ -241,23 +264,23 @@ final class TerminalLayout {
             workspace = new Rect(8, workspaceY, imageWidth - 16, NARROW_WORKSPACE_HEIGHT);
         }
 
-        RailGeometry rails = craftingRails(imageHeight);
+        RailGeometry rails = profileRails(profile, imageHeight);
         if (wide) {
             int exactAvailableWidth = screenWidth - 2 * OUTER_MARGIN
                     - railReservedWidth(rails.panel());
             if (exactAvailableWidth < SIDE_BY_SIDE_MIN_WIDTH) {
-                return craftingNarrow(screenWidth, screenHeight, machineCount, reserveCount);
+                return craftingNarrow(profile, screenHeight, machineCount, reserveCount);
             }
             imageWidth = Math.min(SIDE_BY_SIDE_MAX_WIDTH, exactAvailableWidth);
             workspace = new Rect(190, TOP_HEIGHT, imageWidth - 198, imageHeight - TOP_HEIGHT - 8);
         }
 
-        return craftingGeometry(wide, imageWidth, imageHeight, rows, itemGrid, scrollbar,
+        return assembleCraftingGeometry(profile, wide, imageWidth, imageHeight, rows, itemGrid, scrollbar,
                 playerInventory, workspace, rails, machineCount, reserveCount);
     }
 
     private static Geometry craftingNarrow(
-            int screenWidth,
+            TerminalProfile profile,
             int screenHeight,
             int machineCount,
             int reserveCount
@@ -271,12 +294,13 @@ final class TerminalLayout {
         Rect playerInventory = new Rect(8, playerY, 9 * SLOT_SIZE, PLAYER_INVENTORY_HEIGHT);
         int imageHeight = playerInventory.bottom() + 8;
         Rect workspace = new Rect(8, workspaceY, NARROW_WIDTH - 16, NARROW_WORKSPACE_HEIGHT);
-        return craftingGeometry(false, NARROW_WIDTH, imageHeight, rows, itemGrid,
+        return assembleCraftingGeometry(profile, false, NARROW_WIDTH, imageHeight, rows, itemGrid,
                 new Rect(174, TOP_HEIGHT, 12, rows * SLOT_SIZE), playerInventory, workspace,
-                craftingRails(imageHeight), machineCount, reserveCount);
+                profileRails(profile, imageHeight), machineCount, reserveCount);
     }
 
-    private static Geometry craftingGeometry(
+    private static Geometry assembleCraftingGeometry(
+            TerminalProfile profile,
             boolean wide,
             int imageWidth,
             int imageHeight,
@@ -336,6 +360,7 @@ final class TerminalLayout {
                 reserveCount, RESERVE_CELL_MIN_WIDTH, RESERVE_CELL_MIN_WIDTH);
         RecipeGeometry recipe = recipeGeometry(workspace, wide);
         return new Geometry(
+                profile,
                 wide,
                 imageWidth,
                 imageHeight,
@@ -548,9 +573,9 @@ final class TerminalLayout {
                 new Rect(0, 0, 0, 0), List.of(), 1, 1, 1, 1, 0);
     }
 
-    private static RailGeometry craftingRails(int imageHeight) {
-        List<Rect> itemButtons = railButtons(imageHeight, List.of(3, 3, 1));
-        List<Rect> fuelButtons = railButtons(imageHeight, List.of(3));
+    private static RailGeometry profileRails(TerminalProfile profile, int imageHeight) {
+        List<Rect> itemButtons = railButtons(imageHeight, profile.itemRailGroups());
+        List<Rect> fuelButtons = railButtons(imageHeight, profile.fuelRailGroups());
         List<Rect> allButtons = new ArrayList<>(itemButtons.size() + fuelButtons.size());
         allButtons.addAll(itemButtons);
         allButtons.addAll(fuelButtons);

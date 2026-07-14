@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,262 @@ class StaticRegressionTests(unittest.TestCase):
         path = ROOT / relative_path
         self.assertTrue(path.exists(), f"missing {relative_path}")
         return path.read_text()
+
+    def java_block(self, text: str, declaration: str, description: str) -> str:
+        match = re.search(declaration, text, re.MULTILINE)
+        if match is None:
+            self.fail(f"missing {description}")
+        opening = text.find("{", match.end())
+        if opening < 0:
+            self.fail(f"missing body for {description}")
+        depth = 0
+        for index in range(opening, len(text)):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[opening + 1:index]
+        self.fail(f"unterminated body for {description}")
+
+    def nested_java_classes(self, text: str) -> list[tuple[str, str]]:
+        classes = []
+        declaration = re.compile(
+            r"^[ \t]{4,}(?:(?:private|protected|public)\s+)?"
+            r"(?:static\s+)?(?:final\s+)?class\s+([A-Za-z_]\w*)\b",
+            re.MULTILINE,
+        )
+        for match in declaration.finditer(text):
+            classes.append((
+                match.group(1),
+                self.java_block(text[match.start():], declaration.pattern, match.group(1)),
+            ))
+        return classes
+
+    def java_int_constant(self, text: str, name: str) -> int:
+        seen = set()
+        current = name
+        while current not in seen:
+            seen.add(current)
+            match = re.search(
+                rf"\b{re.escape(current)}\s*=\s*(\d+|[A-Z][A-Z0-9_]*)\s*;",
+                text,
+            )
+            if match is None:
+                self.fail(f"missing integer constant {current}")
+            value = match.group(1)
+            if value.isdigit():
+                return int(value)
+            current = value
+        self.fail(f"cyclic integer constant starting at {name}")
+
+    def test_terminal_layout_has_one_profile_driven_entrypoint(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        profile = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalProfile.java"
+        )
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        crafting = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+
+        entrypoints = re.findall(
+            r"^[ \t]{4}(?:(?:public|protected)\s+)?static\s+Geometry\s+"
+            r"([A-Za-z_]\w*)\s*\(([^)]*)\)",
+            layout,
+            re.MULTILINE,
+        )
+        self.assertEqual(
+            1,
+            len(entrypoints),
+            f"TerminalLayout must expose one non-private Geometry entrypoint, found {[name for name, _ in entrypoints]}",
+        )
+        entrypoint, parameters = entrypoints[0]
+        self.assertIn("TerminalProfile", parameters)
+        self.assertIsNone(
+            re.search(r"\bstatic\s+Geometry\s+(?:storage|crafting)\s*\(", layout),
+            "TerminalLayout.storage()/crafting() split entrypoints must be removed",
+        )
+        self.assertTrue(
+            f"TerminalLayout.{entrypoint}(" in storage + crafting,
+            f"terminal screens must use TerminalLayout.{entrypoint}()",
+        )
+        self.assertIn("static final TerminalProfile STORAGE", profile)
+        self.assertIn("static final TerminalProfile CRAFTING", profile)
+        self.assertTrue(
+            "TerminalProfile.STORAGE" in storage,
+            "StorageTerminalScreen must select the reduced STORAGE profile",
+        )
+        self.assertTrue(
+            "TerminalProfile.CRAFTING" in crafting,
+            "CraftingTerminalScreen must select the CRAFTING profile",
+        )
+
+    def test_shared_shell_alone_creates_common_terminal_controls(self):
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        crafting = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+
+        self.assertFalse(
+            "setViewButtonsVisible(false)" in crafting,
+            "CraftingTerminalScreen must not hide inherited common controls after super.init()",
+        )
+        for duplicate in ["sortOrderRailBtn", "sortModeRailBtn", "searchModeRailBtn"]:
+            self.assertFalse(
+                duplicate in crafting,
+                f"CraftingTerminalScreen must not recreate inherited {duplicate}",
+            )
+        for control in ["sortOrderBtn", "sortModeBtn", "searchModeBtn"]:
+            self.assertIn(f"{control} = addCycleButton(", storage)
+        for button_id in [11, 12, 13]:
+            self.assertIsNone(
+                re.search(rf"clickMenuButton\(\s*{button_id}\s*\)", crafting),
+                f"CraftingTerminalScreen must not recreate common button id {button_id}",
+            )
+        for action in [
+            "SORT_ORDER_BUTTON",
+            "NEXT_SORT_MODE_BUTTON",
+            "PREVIOUS_SORT_MODE_BUTTON",
+            "NEXT_SEARCH_MODE_BUTTON",
+            "PREVIOUS_SEARCH_MODE_BUTTON",
+        ]:
+            self.assertNotIn(action, crafting)
+
+    def test_terminal_controls_use_18px_hitboxes_and_16px_icon_canvas(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        self.assertEqual(18, self.java_int_constant(layout, "CONTROL_SIZE"))
+        self.assertEqual(18, self.java_int_constant(layout, "RAIL_BUTTON_SIZE"))
+        self.assertEqual(16, self.java_int_constant(layout, "ICON_CANVAS_SIZE"))
+
+        rail_buttons = self.java_block(
+            layout,
+            r"\bprivate\s+static\s+List<Rect>\s+railButtons\s*\(",
+            "TerminalLayout.railButtons",
+        )
+        self.assertRegex(
+            rail_buttons,
+            r"new\s+Rect\([\s\S]*?RAIL_BUTTON_SIZE\s*,\s*RAIL_BUTTON_SIZE\s*\)",
+        )
+
+    def test_terminal_rail_icons_are_not_text_glyphs_or_procedural_shapes(self):
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        crafting = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+
+        screens = storage + crafting
+        for old_glyph in ["⌕", "#", "@", "≡", "MOD", "ID", "↓", "↑"]:
+            self.assertFalse(
+                f'Component.literal("{old_glyph}")' in screens,
+                f"shared rail must not use the {old_glyph!r} text glyph as an icon",
+            )
+        self.assertFalse(
+            "drawRailIcon(" in screens,
+            "rail icons must use shared texture/item rendering, not procedural drawRailIcon shapes",
+        )
+        self.assertIsNone(
+            re.search(r"\bclass\s+TerminalIconButton\b", crafting),
+            "CraftingTerminalScreen must use the shared shell icon control",
+        )
+        self.assertIn("TERMINAL_CONTROLS_TEXTURE", storage)
+        self.assertRegex(
+            storage,
+            r"graphics\.blit\(\s*TERMINAL_CONTROLS_TEXTURE",
+        )
+
+        icon_controls = [
+            body
+            for _, body in self.nested_java_classes(storage)
+            if "renderWidget(" in body
+            and re.search(r"graphics\.(?:blit|blitSprite|renderItem)\(", body)
+        ]
+        self.assertTrue(icon_controls, "shared shell must own a texture/item-backed icon control")
+        for control in icon_controls:
+            self.assertNotIn("graphics.fill(", control)
+
+    def test_network_amount_renderer_uses_one_screen_wide_scale(self):
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        renderer = self.java_block(
+            storage,
+            r"\b(?:private|protected)\s+void\s+renderNetworkAmount\s*\(",
+            "StorageTerminalScreen.renderNetworkAmount",
+        )
+
+        self.assertNotRegex(renderer, r"\b(?:large|small)\b")
+        self.assertNotRegex(renderer, r"font\.width\(\s*text\s*\)\s*(?:<=|>=|<|>)")
+        scale = re.search(
+            r"graphics\.pose\(\)\.scale\(\s*([A-Za-z_][\w.]*)\s*,\s*\1\s*,\s*1(?:\.0)?F\s*\)",
+            renderer,
+        )
+        self.assertIsNotNone(
+            scale,
+            "network amounts must always use one named screen-wide scale",
+        )
+        scale_name = scale.group(1).rsplit(".", 1)[-1]
+        self.assertIsNone(
+            re.search(rf"\b(?:float|double)\s+{re.escape(scale_name)}\b", renderer),
+            f"{scale_name} must not be recomputed inside the per-value renderer",
+        )
+        self.assertGreaterEqual(
+            (storage + layout).count(scale_name),
+            2,
+            f"{scale_name} must be declared outside the per-value renderer",
+        )
+
+    def test_shared_cycle_input_maps_click_and_wheel_directions(self):
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        crafting = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        direction = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalCycleDirection.java"
+        )
+
+        self.assertRegex(direction, r"case\s+0\s*->\s*NEXT\s*;")
+        self.assertRegex(direction, r"case\s+1\s*->\s*PREVIOUS\s*;")
+        self.assertRegex(
+            direction,
+            r"delta\s*<\s*0(?:\.0)?\s*\?\s*NEXT\s*:\s*PREVIOUS",
+        )
+        cycle_control = self.java_block(
+            storage,
+            r"\bclass\s+TerminalCycleButton\b",
+            "StorageTerminalScreen.TerminalCycleButton",
+        )
+        self.assertRegex(cycle_control, r"button\s*==\s*0\s*\|\|\s*button\s*==\s*1")
+        self.assertIn("TerminalCycleDirection.fromMouseButton(button)", cycle_control)
+        self.assertIn("TerminalCycleDirection.fromScroll(scrollY)", cycle_control)
+        self.assertRegex(
+            cycle_control,
+            r"(?:isMouseOver|clicked)\(\s*mouseX\s*,\s*mouseY\s*\)",
+        )
+        self.assertFalse(
+            "import net.minecraft.client.gui.components.CycleButton;" in crafting,
+            "CraftingTerminalScreen must use the shared cycle input instead of vanilla CycleButton",
+        )
+        self.assertFalse(
+            "CycleButton<" in crafting,
+            "CraftingTerminalScreen must not retain a vanilla CycleButton field",
+        )
+        self.assertRegex(crafting, r"\bTerminalCycleButton\s+fuelTargetSelector\b")
 
     def test_fuel_page_names_mixed_machine_station_tool_slots_as_installed_stations(self):
         lang = json.loads(
@@ -271,16 +528,10 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotIn("NEXT_FUEL_TARGET_BUTTON", crafting_screen + crafting_menu)
         self.assertNotIn("cycleFuelTarget", crafting_menu)
         self.assertIn("CraftingTerminalMenu.fuelTargetButtonId", crafting_screen)
-        self.assertNotIn("fuelTargetButtons", crafting_screen)
-        self.assertIn("CycleButton<FuelTargetOption> fuelTargetSelector", crafting_screen)
-        self.assertNotIn(".displayOnlyValue()", crafting_screen)
         self.assertNotIn("autoFuelBtn", crafting_screen)
         self.assertNotIn("previousFuelTargetBtn", crafting_screen)
         self.assertNotIn("nextFuelTargetBtn", crafting_screen)
         self.assertIn("CraftingTerminalPage.FUEL", crafting_screen)
-        self.assertIn("TerminalLayout.crafting", crafting_screen)
-        self.assertIn("railButton", crafting_screen)
-        self.assertIn("setSearchControlVisible", crafting_screen)
         self.assertIn("getEnergyAmount", crafting_screen)
 
         lang = self.read_required("src/main/resources/assets/magic_storage/lang/en_us.json")
@@ -297,19 +548,21 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotIn("gui.magic_storage.previous_fuel_target", lang)
         self.assertNotIn("gui.magic_storage.next_fuel_target", lang)
 
-    def test_crafting_terminal_redesign_uses_sidebar_without_sticky_checkbox_focus(self):
+    def test_crafting_terminal_repositions_fuel_slots_without_sticky_checkbox_focus(self):
         screen = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
         )
+        shared_shell = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
         self.assertNotIn("Checkbox", screen)
-        self.assertIn("geometry.railPanel()", screen)
         self.assertIn("MACHINE_SLOT_COUNT", screen)
         self.assertIn("repositionFuelSlots", screen)
         self.assertIn("replaceSlot", screen)
         self.assertIn("geometry.machineGrid()", screen)
-        self.assertIn("boolean handled = super.mouseClicked", screen)
-        handled = screen.index("boolean handled = super.mouseClicked")
-        self.assertGreater(screen.index("setFocused(null)", handled), handled)
+        self.assertIn("boolean handled = super.mouseClicked", shared_shell)
+        handled = shared_shell.index("boolean handled = super.mouseClicked")
+        self.assertGreater(shared_shell.index("setFocused(null)", handled), handled)
         self.assertNotIn("Preview is server-synced", screen)
 
         menu = self.read_required(
@@ -349,15 +602,10 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("craftMaximum", menu)
         self.assertIn("RAIL_GROUP_GAP", layout)
         self.assertIn("record FlowGrid", layout)
-        self.assertIn("fuelRailButtons", layout)
-        self.assertIn("fuelRailPanel", layout)
-        self.assertIn("railButtons(imageHeight, List.of(3))", layout)
         self.assertIn("MACHINE_CELL_PREFERRED_WIDTH", layout)
         self.assertIn("int minimumColumns = (visible + maxRows - 1) / maxRows;", layout)
         self.assertIn("Math.clamp(preferredColumns, minimumColumns, largestColumns)", layout)
         self.assertIn("(column + 1) * bounds.width() / columns", layout)
-        self.assertIn("CycleButton<FuelTargetOption> fuelTargetSelector", screen)
-        self.assertIn("fuelTargetSelector.isMouseOver(mouseX, mouseY)", screen)
         self.assertIn("entries()", machine_table)
         for stale in ["MACHINE_ENERGY_TYPES", "MACHINE_LABEL_KEYS", "STORED_FUEL_TYPES", "FUEL_LABEL_KEYS"]:
             self.assertNotIn(stale, screen)
@@ -382,9 +630,6 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertIn("protected void renderSlotContents", storage)
         self.assertIn("TerminalAmountFormatter.formatCompact", storage)
-        self.assertIn("font.width(text) <= 16", storage)
-        self.assertIn("graphics.pose().scale(0.5F, 0.5F, 1.0F)", storage)
-        self.assertIn("30 - font.width(text)", storage)
         self.assertIn("copyWithCount(1)", storage)
         self.assertIn("TerminalDisplayStack.amount(stack)", storage)
         self.assertIn("if (amount <= 0) return;", storage)
@@ -403,11 +648,7 @@ class StaticRegressionTests(unittest.TestCase):
         ]
         self.assertIn("type.representativeStack()", fuel_panel)
         self.assertNotIn("drawEnergyIcon", fuel_panel)
-        self.assertIn("CycleButton<FuelTargetOption> fuelTargetSelector", crafting)
         self.assertNotIn("nextFuelTargetBtn", crafting)
-        self.assertNotIn("target.representativeStack()", crafting)
-        self.assertNotIn("private void setItemIcon", crafting)
-        self.assertNotIn("railIconForEnergy", crafting)
         self.assertIn("menu.getPage() == CraftingTerminalPage.FUEL", crafting)
         self.assertIn("drawTypeCapacity(graphics)", crafting)
 
@@ -450,7 +691,7 @@ class StaticRegressionTests(unittest.TestCase):
         ]:
             self.assertNotIn(stale, menu + screen + lang)
 
-    def test_recipe_resources_are_server_synced_and_rail_icons_use_one_canvas(self):
+    def test_recipe_resources_are_server_synced_and_layout_owned(self):
         menu = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
         )
@@ -465,11 +706,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("getIngredientPreview()", screen)
         self.assertIn("getEnergyPreview()", screen)
         self.assertIn("geometry.recipeResourceCells()", screen)
-        self.assertIn("class TerminalIconButton", screen)
-        self.assertIn("static final int ICON_CANVAS_SIZE = 12", layout)
-        self.assertIn("TerminalLayout.ICON_CANVAS_SIZE", screen)
         self.assertIn("recipeResourceCells", layout)
-        self.assertIn("geometry.railPanel()", screen)
         self.assertNotIn("RecipeManager", screen)
         self.assertNotIn("StorageCoreBlockEntity", screen)
 
@@ -519,7 +756,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotRegex(screen, r"\.bounds\([^\n]*,\s*16\)\.build\(\)")
         self.assertNotIn("RecipeManager", screen)
 
-    def test_terminal_screens_use_one_adaptive_geometry_and_original_slot_delegates(self):
+    def test_terminal_screens_use_shared_adaptive_geometry_and_original_slot_delegates(self):
         layout = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
         )
@@ -531,10 +768,6 @@ class StaticRegressionTests(unittest.TestCase):
         )
 
         self.assertIn("record Geometry", layout)
-        self.assertIn("static Geometry storage", layout)
-        self.assertIn("static Geometry crafting", layout)
-        self.assertIn("TerminalLayout.storage", storage)
-        self.assertIn("TerminalLayout.crafting", crafting)
         for stale_constant in ["SB_X", "SEARCH_X", "GRID_TOP", "SIDE_RAIL_X", "CRAFTING_BOTTOM_HEIGHT"]:
             self.assertNotIn(stale_constant, storage + crafting)
 

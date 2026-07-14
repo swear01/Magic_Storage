@@ -519,15 +519,27 @@ public class TerminalFlowTests {
             if (menu.getSortMode() != SortMode.NAME) helper.fail("default sortMode should be NAME, got " + menu.getSortMode());
             if (menu.getSortOrder() != SortOrder.ASCENDING) helper.fail("default sortOrder should be ASCENDING, got " + menu.getSortOrder());
             if (menu.getSearchMode() != SearchMode.NORMAL) helper.fail("default searchMode should be NORMAL, got " + menu.getSearchMode());
-            menu.clickMenuButton(player, 12);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_SORT_MODE_BUTTON);
             if (menu.getSortMode() != SortMode.QUANTITY)
                 helper.fail("clickMenuButton(12) should sync sortMode=QUANTITY, got " + menu.getSortMode());
-            menu.clickMenuButton(player, 11);
+            menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SORT_MODE_BUTTON);
+            if (menu.getSortMode() != SortMode.NAME)
+                helper.fail("previous sort button should sync sortMode=NAME, got " + menu.getSortMode());
+            menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SORT_MODE_BUTTON);
+            if (menu.getSortMode() != SortMode.ID)
+                helper.fail("previous sort button should wrap NAME to ID, got " + menu.getSortMode());
+            menu.clickMenuButton(player, StorageTerminalMenu.SORT_ORDER_BUTTON);
             if (menu.getSortOrder() != SortOrder.DESCENDING)
                 helper.fail("clickMenuButton(11) should sync sortOrder=DESCENDING, got " + menu.getSortOrder());
-            menu.clickMenuButton(player, 13);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_SEARCH_MODE_BUTTON);
             if (menu.getSearchMode() != SearchMode.TAG)
                 helper.fail("clickMenuButton(13) should sync searchMode=TAG, got " + menu.getSearchMode());
+            menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON);
+            if (menu.getSearchMode() != SearchMode.NORMAL)
+                helper.fail("previous search button should sync searchMode=NORMAL, got " + menu.getSearchMode());
+            menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON);
+            if (menu.getSearchMode() != SearchMode.MOD)
+                helper.fail("previous search button should wrap NORMAL to MOD, got " + menu.getSearchMode());
             helper.succeed();
         });
     }

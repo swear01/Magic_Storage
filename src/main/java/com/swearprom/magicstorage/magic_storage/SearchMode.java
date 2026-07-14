@@ -9,6 +9,10 @@ public enum SearchMode {
         return values()[(ordinal() + 1) % values().length];
     }
 
+    public SearchMode previous() {
+        return values()[(ordinal() - 1 + values().length) % values().length];
+    }
+
     public String apply(String rawText) {
         if (rawText.isEmpty()) return rawText;
         return switch (this) {

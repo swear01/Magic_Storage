@@ -1,16 +1,14 @@
 package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,11 +26,8 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     private TerminalIconButton storagePageBtn;
     private TerminalIconButton craftablePageBtn;
     private TerminalIconButton fuelPageBtn;
-    private TerminalIconButton sortOrderRailBtn;
-    private TerminalIconButton sortModeRailBtn;
-    private TerminalIconButton searchModeRailBtn;
-    private TerminalIconButton playerInventoryRailBtn;
-    private CycleButton<FuelTargetOption> fuelTargetSelector;
+    private TerminalCycleButton playerInventoryRailBtn;
+    private TerminalCycleButton fuelTargetSelector;
     private CraftingTerminalPage lastPage;
     private EnergyType lastFuelTarget;
     private int machinePage;
@@ -43,14 +38,42 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     }
 
     @Override
-    protected TerminalLayout.Geometry createGeometry() {
-        return TerminalLayout.crafting(this.width, this.height,
-                MachineEnergyTable.entries().size(), CraftingTerminalMenu.fuelTargets().size());
+    protected TerminalProfile terminalProfile() {
+        return TerminalProfile.CRAFTING;
     }
 
     @Override
-    protected int railButtonCount() {
-        return 7;
+    protected int layoutMachineCount() {
+        return MachineEnergyTable.entries().size();
+    }
+
+    @Override
+    protected int layoutReserveCount() {
+        return CraftingTerminalMenu.fuelTargets().size();
+    }
+
+    @Override
+    protected void addTerminalProfileControls() {
+        storagePageBtn = addItemButton(
+                MagicStorage.STORAGE_TERMINAL_ITEM.get().getDefaultInstance(),
+                Component.translatable("gui.magic_storage.page_storage"),
+                geometry.railButtons().get(0),
+                button -> clickMenuButton(CraftingTerminalMenu.STORAGE_PAGE_BUTTON));
+        craftablePageBtn = addItemButton(
+                Items.CRAFTING_TABLE.getDefaultInstance(),
+                Component.translatable("gui.magic_storage.page_craftable"),
+                geometry.railButtons().get(1),
+                button -> clickMenuButton(CraftingTerminalMenu.CRAFTABLE_PAGE_BUTTON));
+        fuelPageBtn = addItemButton(
+                Items.COAL.getDefaultInstance(),
+                Component.translatable("gui.magic_storage.page_fuel"),
+                geometry.railButtons().get(2),
+                button -> clickMenuButton(CraftingTerminalMenu.FUEL_PAGE_BUTTON));
+        playerInventoryRailBtn = addItemCycleButton(
+                Items.CHEST.getDefaultInstance(),
+                Component.translatable("gui.magic_storage.use_player_inv"),
+                geometry.railButtons().get(terminalProfile().playerInventorySourceIndex()),
+                direction -> clickMenuButton(7));
     }
 
     @Override
@@ -64,12 +87,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         repositionFuelSlots();
         List<TerminalLayout.Rect> navigationButtons = geometry.recipeNavigationButtons();
         prevRecipeBtn = addRecipeNavigationButton(
-                NavigationIcon.PREVIOUS,
+                TerminalControlIcon.PREVIOUS,
                 Component.literal("Previous recipe"),
                 navigationButtons.get(0),
                 button -> clickMenuButton(8));
         nextRecipeBtn = addRecipeNavigationButton(
-                NavigationIcon.NEXT,
+                TerminalControlIcon.NEXT,
                 Component.literal("Next recipe"),
                 navigationButtons.get(1),
                 button -> clickMenuButton(9));
@@ -85,46 +108,10 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 Component.translatable("gui.magic_storage.craft_max"), craftButtons.get(3),
                 button -> clickMenuButton(CraftingTerminalMenu.MAX_CRAFT_BUTTON));
 
-        storagePageBtn = addSideButton(RailIcon.STORAGE,
-                Component.translatable("gui.magic_storage.page_storage"), geometry.railButtons().get(0),
-                button -> clickMenuButton(CraftingTerminalMenu.STORAGE_PAGE_BUTTON));
-        craftablePageBtn = addSideButton(RailIcon.CRAFTABLE,
-                Component.translatable("gui.magic_storage.page_craftable"), geometry.railButtons().get(1),
-                button -> clickMenuButton(CraftingTerminalMenu.CRAFTABLE_PAGE_BUTTON));
-        fuelPageBtn = addSideButton(RailIcon.FUEL,
-                Component.translatable("gui.magic_storage.page_fuel"), geometry.railButtons().get(2),
-                button -> clickMenuButton(CraftingTerminalMenu.FUEL_PAGE_BUTTON));
-
-        sortOrderRailBtn = addSideButton(RailIcon.SORT_ASCENDING,
-                Component.translatable("tooltip.magic_storage.sort_order"), geometry.railButtons().get(3),
-                button -> clickMenuButton(11));
-        sortModeRailBtn = addSideButton(RailIcon.SORT_NAME,
-                Component.translatable("tooltip.magic_storage.sort_mode"), geometry.railButtons().get(4),
-                button -> clickMenuButton(12));
-        searchModeRailBtn = addSideButton(RailIcon.SEARCH,
-                Component.translatable("tooltip.magic_storage.search_mode"), geometry.railButtons().get(5),
-                button -> clickMenuButton(13));
-        playerInventoryRailBtn = addSideButton(RailIcon.PLAYER_INVENTORY,
-                Component.translatable("gui.magic_storage.use_player_inv"), geometry.railButtons().get(6),
-                button -> clickMenuButton(7));
-
         TerminalLayout.Rect targetBounds = geometry.fuelTargetSelector();
-        fuelTargetSelector = CycleButton.builder(FuelTargetOption::label)
-                .withValues(fuelTargetOptions())
-                .withInitialValue(new FuelTargetOption(menu.getSelectedFuelTarget()))
-                .withTooltip(option -> Tooltip.create(
-                        Component.translatable("gui.magic_storage.fuel_target")
-                                .append(": ").append(option.label())))
-                .create(
-                        leftPos + targetBounds.x(),
-                        topPos + targetBounds.y(),
-                        targetBounds.width(),
-                        targetBounds.height(),
-                        Component.translatable("gui.magic_storage.fuel_target"),
-                        (button, option) -> clickMenuButton(option.target() == null
-                                ? CraftingTerminalMenu.AUTO_FUEL_TARGET_BUTTON
-                                : CraftingTerminalMenu.fuelTargetButtonId(option.target())));
-        addRenderableWidget(fuelTargetSelector);
+        FuelTargetOption initialTarget = new FuelTargetOption(menu.getSelectedFuelTarget());
+        fuelTargetSelector = addTextCycleButton(
+                initialTarget.label(), targetBounds, this::selectAdjacentFuelTarget);
 
         updatePageWidgets();
         updateSidebarState();
@@ -143,29 +130,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     }
 
     private Button addRecipeNavigationButton(
-            NavigationIcon icon,
+            TerminalControlIcon icon,
             Component narration,
             TerminalLayout.Rect bounds,
             Button.OnPress action
     ) {
-        Button button = new RecipeNavigationButton(
-                leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
-                narration, action, icon);
-        addRenderableWidget(button);
-        return button;
-    }
-
-    private TerminalIconButton addSideButton(
-            RailIcon icon,
-            Component narration,
-            TerminalLayout.Rect bounds,
-            Button.OnPress action
-    ) {
-        TerminalIconButton button = new TerminalIconButton(
-                leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
-                narration, action, icon);
-        addRenderableWidget(button);
-        return button;
+        return addIconButton(icon, narration, bounds, action);
     }
 
     private void repositionFuelSlots() {
@@ -193,12 +163,22 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         }
     }
 
+    private void selectAdjacentFuelTarget(TerminalCycleDirection direction) {
+        List<FuelTargetOption> options = fuelTargetOptions();
+        int current = options.indexOf(new FuelTargetOption(menu.getSelectedFuelTarget()));
+        if (current < 0) throw new IllegalStateException("Current Fuel target is not server-approved");
+        int offset = direction == TerminalCycleDirection.NEXT ? 1 : -1;
+        FuelTargetOption option = options.get(Math.floorMod(current + offset, options.size()));
+        clickMenuButton(option.target() == null
+                ? CraftingTerminalMenu.AUTO_FUEL_TARGET_BUTTON
+                : CraftingTerminalMenu.fuelTargetButtonId(option.target()));
+    }
+
     private void updatePageWidgets() {
         CraftingTerminalPage page = menu.getPage();
         EnergyType target = menu.getSelectedFuelTarget();
         boolean itemPage = page.isItemPage();
-        setSearchControlVisible(itemPage);
-        setViewButtonsVisible(false);
+        setItemViewControlsVisible(itemPage);
 
         setWidgetVisible(prevRecipeBtn, itemPage);
         setWidgetVisible(nextRecipeBtn, itemPage);
@@ -206,9 +186,6 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         setWidgetVisible(craft8Btn, itemPage);
         setWidgetVisible(craft64Btn, itemPage);
         setWidgetVisible(craftMaxBtn, itemPage);
-        setWidgetVisible(sortOrderRailBtn, itemPage);
-        setWidgetVisible(sortModeRailBtn, itemPage);
-        setWidgetVisible(searchModeRailBtn, itemPage);
         setWidgetVisible(playerInventoryRailBtn, itemPage);
 
         storagePageBtn.active = page != CraftingTerminalPage.STORAGE;
@@ -219,7 +196,10 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         setWidgetVisible(fuelTargetSelector, fuel);
         if (fuel) {
             fuelTargetSelector.active = fuelTargetOptions().size() > 1;
-            fuelTargetSelector.setValue(new FuelTargetOption(target));
+            FuelTargetOption option = new FuelTargetOption(target);
+            fuelTargetSelector.setMessage(option.label());
+            fuelTargetSelector.setTooltip(createCycleTooltip(
+                    "gui.magic_storage.fuel_target", option.label()));
         }
         updateCraftButtonState();
         lastPage = page;
@@ -231,36 +211,8 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         craftablePageBtn.setTooltip(Tooltip.create(Component.translatable("gui.magic_storage.page_craftable")));
         fuelPageBtn.setTooltip(Tooltip.create(Component.translatable("gui.magic_storage.page_fuel")));
 
-        sortOrderRailBtn.setIcon(menu.getSortOrder() == SortOrder.ASCENDING
-                ? RailIcon.SORT_ASCENDING : RailIcon.SORT_DESCENDING);
-        sortModeRailBtn.setIcon(switch (menu.getSortMode()) {
-            case NAME -> RailIcon.SORT_NAME;
-            case QUANTITY -> RailIcon.SORT_QUANTITY;
-            case MOD -> RailIcon.SORT_MOD;
-            case ID -> RailIcon.SORT_ID;
-        });
-        searchModeRailBtn.setIcon(switch (menu.getSearchMode()) {
-            case NORMAL -> RailIcon.SEARCH;
-            case TAG -> RailIcon.SEARCH_TAG;
-            case MOD -> RailIcon.SEARCH_MOD;
-        });
-        sortOrderRailBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_order")
-                .append(": ").append(menu.getSortOrder().name())));
-        sortModeRailBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_mode")
-                .append(": ").append(menu.getSortMode().name())));
-        searchModeRailBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.search_mode")
-                .append(": ").append(searchModeLabel(menu.getSearchMode()))));
-
         updateToggleButton(playerInventoryRailBtn, "gui.magic_storage.use_player_inv",
                 menu.isUsePlayerInventory());
-    }
-
-    private static Component searchModeLabel(SearchMode mode) {
-        return Component.translatable(switch (mode) {
-            case NORMAL -> "gui.magic_storage.search_mode.name";
-            case TAG -> "gui.magic_storage.search_mode.tag";
-            case MOD -> "gui.magic_storage.search_mode.mod";
-        });
     }
 
     private void updateCraftButtonState() {
@@ -274,13 +226,10 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         nextRecipeBtn.active = menu.getRecipeCount() > 1;
     }
 
-    private void updateToggleButton(TerminalIconButton button, String key, boolean enabled) {
-        Component message = Component.translatable(key).append(": ")
-                .append(Component.translatable(enabled
-                        ? "gui.magic_storage.state_on"
-                        : "gui.magic_storage.state_off"));
-        button.setMessage(message);
-        button.setTooltip(Tooltip.create(message));
+    private void updateToggleButton(TerminalCycleButton button, String key, boolean enabled) {
+        updateCycleTooltip(button, key, Component.translatable(enabled
+                ? "gui.magic_storage.state_on"
+                : "gui.magic_storage.state_off"));
     }
 
     private void setWidgetVisible(AbstractWidget widget, boolean visible) {
@@ -313,8 +262,9 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     private void renderSideRail(GuiGraphics graphics) {
         boolean itemPage = menu.getPage().isItemPage();
         boolean fuelPage = menu.getPage() == CraftingTerminalPage.FUEL;
-        drawRaisedPanel(graphics, leftPos, topPos,
-                fuelPage ? geometry.fuelRailPanel() : geometry.railPanel());
+        if (fuelPage) {
+            drawRaisedPanel(graphics, leftPos, topPos, geometry.fuelRailPanel());
+        }
         drawRailMarker(graphics, menu.getPage().ordinal(), fuelPage, 0xFF7A5B18);
         if (itemPage) {
             if (menu.isUsePlayerInventory()) drawRailMarker(graphics, 6, false, 0xFF2E7D32);
@@ -535,7 +485,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 + (bounds.width() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
         int iconY = topPos + bounds.y()
                 + (bounds.height() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
-        drawArrowIcon(graphics, iconX, iconY, true, color);
+        blitControlIcon(graphics, iconX, iconY, TerminalControlIcon.NEXT, color);
     }
 
     private List<ResourceRow> recipeResources() {
@@ -680,122 +630,6 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         return -1;
     }
 
-    private static void drawArrowIcon(
-            GuiGraphics graphics,
-            int x,
-            int y,
-            boolean right,
-            int color
-    ) {
-        int centerY = y + TerminalLayout.ICON_CANVAS_SIZE / 2;
-        if (right) {
-            graphics.fill(x, centerY - 1, x + 8, centerY + 1, color);
-        } else {
-            graphics.fill(x + 4, centerY - 1,
-                    x + TerminalLayout.ICON_CANVAS_SIZE, centerY + 1, color);
-        }
-        int tipX = right ? x + TerminalLayout.ICON_CANVAS_SIZE - 1 : x;
-        for (int offset = -5; offset <= 5; offset++) {
-            int width = 5 - Math.abs(offset);
-            int left = right ? tipX - width : tipX;
-            int rightEdge = right ? tipX + 1 : tipX + width + 1;
-            graphics.fill(left, centerY + offset, rightEdge, centerY + offset + 1, color);
-        }
-    }
-
-    private static void drawRailIcon(
-            GuiGraphics graphics,
-            int x,
-            int y,
-            RailIcon icon,
-            int color
-    ) {
-        switch (icon) {
-            case STORAGE -> {
-                for (int row = 0; row < 3; row++) {
-                    for (int column = 0; column < 3; column++) {
-                        graphics.fill(x + column * 4, y + row * 4,
-                                x + column * 4 + 3, y + row * 4 + 3, color);
-                    }
-                }
-            }
-            case FUEL -> {
-                graphics.fill(x + 5, y, x + 7, y + 3, color);
-                graphics.fill(x + 3, y + 2, x + 9, y + 7, color);
-                graphics.fill(x + 1, y + 5, x + 11, y + 10, color);
-                graphics.fill(x + 3, y + 9, x + 9, y + 12, color);
-                graphics.fill(x + 5, y + 6, x + 7, y + 10, 0xFF555555);
-            }
-            case SORT_ASCENDING, SORT_DESCENDING -> {
-                boolean ascending = icon == RailIcon.SORT_ASCENDING;
-                int tipY = ascending ? y : y + 11;
-                int baseY = ascending ? y + 11 : y;
-                graphics.fill(x + 2, Math.min(tipY, baseY), x + 4, Math.max(tipY, baseY) + 1, color);
-                graphics.fill(x, ascending ? y + 2 : y + 8,
-                        x + 6, ascending ? y + 4 : y + 10, color);
-                graphics.fill(x + 7, y + 1, x + 12, y + 3, color);
-                graphics.fill(x + 7, y + 5, x + 11, y + 7, color);
-                graphics.fill(x + 7, y + 9, x + 10, y + 11, color);
-            }
-            case SORT_NAME -> {
-                graphics.fill(x, y, x + 12, y + 2, color);
-                graphics.fill(x, y + 5, x + 9, y + 7, color);
-                graphics.fill(x, y + 10, x + 6, y + 12, color);
-            }
-            case SORT_QUANTITY -> {
-                graphics.fill(x, y + 8, x + 3, y + 12, color);
-                graphics.fill(x + 4, y + 5, x + 7, y + 12, color);
-                graphics.fill(x + 8, y, x + 12, y + 12, color);
-            }
-            case SORT_MOD -> {
-                graphics.fill(x, y, x + 5, y + 5, color);
-                graphics.fill(x + 7, y, x + 12, y + 5, color);
-                graphics.fill(x, y + 7, x + 5, y + 12, color);
-                graphics.fill(x + 7, y + 7, x + 12, y + 12, color);
-            }
-            case SORT_ID -> {
-                graphics.fill(x, y, x + 2, y + 12, color);
-                graphics.fill(x + 4, y, x + 10, y + 2, color);
-                graphics.fill(x + 4, y + 10, x + 10, y + 12, color);
-                graphics.fill(x + 9, y + 2, x + 12, y + 10, color);
-            }
-            case SEARCH -> {
-                graphics.fill(x + 1, y + 1, x + 8, y + 3, color);
-                graphics.fill(x + 1, y + 3, x + 3, y + 8, color);
-                graphics.fill(x + 6, y + 3, x + 8, y + 8, color);
-                graphics.fill(x + 3, y + 7, x + 8, y + 9, color);
-                graphics.fill(x + 7, y + 8, x + 12, y + 12, color);
-            }
-            case SEARCH_TAG -> {
-                graphics.fill(x + 3, y + 1, x + 5, y + 12, color);
-                graphics.fill(x + 8, y + 1, x + 10, y + 12, color);
-                graphics.fill(x + 1, y + 4, x + 12, y + 6, color);
-                graphics.fill(x + 1, y + 8, x + 12, y + 10, color);
-            }
-            case SEARCH_MOD -> {
-                graphics.fill(x + 2, y + 1, x + 10, y + 3, color);
-                graphics.fill(x + 1, y + 2, x + 3, y + 10, color);
-                graphics.fill(x + 2, y + 9, x + 10, y + 11, color);
-                graphics.fill(x + 9, y + 2, x + 11, y + 9, color);
-                graphics.fill(x + 4, y + 4, x + 9, y + 6, color);
-                graphics.fill(x + 4, y + 5, x + 6, y + 9, color);
-                graphics.fill(x + 7, y + 5, x + 9, y + 10, color);
-            }
-            case CRAFTABLE -> {
-                graphics.fill(x, y + 5, x + 3, y + 8, color);
-                graphics.fill(x + 2, y + 7, x + 6, y + 11, color);
-                graphics.fill(x + 5, y + 5, x + 8, y + 9, color);
-                graphics.fill(x + 7, y + 2, x + 12, y + 6, color);
-            }
-            case PLAYER_INVENTORY -> {
-                graphics.fill(x + 2, y, x + 10, y + 2, color);
-                graphics.fill(x, y + 2, x + 12, y + 12, color);
-                graphics.fill(x + 2, y + 4, x + 10, y + 10, 0xFF555555);
-                graphics.fill(x + 5, y + 6, x + 7, y + 9, color);
-            }
-        }
-    }
-
     private static List<FuelTargetOption> buildFuelTargetOptions() {
         List<FuelTargetOption> options = new ArrayList<>();
         options.add(new FuelTargetOption(null));
@@ -833,90 +667,6 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         }
     }
 
-    private enum RailIcon {
-        STORAGE,
-        FUEL,
-        SORT_ASCENDING,
-        SORT_DESCENDING,
-        SORT_NAME,
-        SORT_QUANTITY,
-        SORT_MOD,
-        SORT_ID,
-        SEARCH,
-        SEARCH_TAG,
-        SEARCH_MOD,
-        CRAFTABLE,
-        PLAYER_INVENTORY
-    }
-
-    private enum NavigationIcon {
-        PREVIOUS,
-        NEXT
-    }
-
-    private static final class RecipeNavigationButton extends Button {
-        private final NavigationIcon icon;
-
-        private RecipeNavigationButton(
-                int x,
-                int y,
-                int width,
-                int height,
-                Component narration,
-                OnPress onPress,
-                NavigationIcon icon
-        ) {
-            super(x, y, width, height, narration, onPress, DEFAULT_NARRATION);
-            this.icon = icon;
-        }
-
-        @Override
-        public void renderString(GuiGraphics graphics, Font font, int color) {
-        }
-
-        @Override
-        protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            super.renderWidget(graphics, mouseX, mouseY, partialTick);
-            int iconX = getX() + (getWidth() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
-            int iconY = getY() + (getHeight() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
-            drawArrowIcon(graphics, iconX, iconY, icon == NavigationIcon.NEXT,
-                    active ? 0xFFFFFFFF : 0xFF777777);
-        }
-    }
-
-    private static final class TerminalIconButton extends Button {
-        private RailIcon icon;
-
-        private TerminalIconButton(
-                int x,
-                int y,
-                int width,
-                int height,
-                Component narration,
-                OnPress onPress,
-                RailIcon icon
-        ) {
-            super(x, y, width, height, narration, onPress, DEFAULT_NARRATION);
-            this.icon = icon;
-        }
-
-        private void setIcon(RailIcon icon) {
-            this.icon = icon;
-        }
-
-        @Override
-        public void renderString(GuiGraphics graphics, Font font, int color) {
-        }
-
-        @Override
-        protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            super.renderWidget(graphics, mouseX, mouseY, partialTick);
-            int iconX = getX() + (getWidth() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
-            int iconY = getY() + (getHeight() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
-            drawRailIcon(graphics, iconX, iconY, icon, active ? 0xFFFFFFFF : 0xFF777777);
-        }
-    }
-
     public List<Rect2i> getEmiExclusionAreas() {
         return terminalExclusionAreas();
     }
@@ -948,15 +698,5 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        boolean handled = super.mouseClicked(mouseX, mouseY, button);
-        if (handled && getFocused() instanceof AbstractButton) {
-            setFocused(null);
-            setDragging(false);
-        }
-        return handled;
     }
 }

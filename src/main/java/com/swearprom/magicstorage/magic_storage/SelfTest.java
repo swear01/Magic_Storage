@@ -44,6 +44,7 @@ class SelfTest {
         testSearchMode();
         testTerminalSettingsPacketCodec();
         testSearchModeApply();
+        testTerminalProfilesAndCycleDirection();
         testTerminalAmountFormatter();
         testTerminalDisplayStack();
         testTerminalEntryComparator();
@@ -279,6 +280,9 @@ class SelfTest {
                 TerminalAmountFormatter.formatCompact(1_500_000).equals("1.5M"));
         assertTrue("slot amount supports exa scale",
                 TerminalAmountFormatter.formatCompact(Long.MAX_VALUE).equals("9.2E"));
+        float fixedScale = TerminalAmountFormatter.scaleForSlot(String::length, 4);
+        assertTrue("one slot scale is derived from the widest permitted compact shape",
+                Math.abs(fixedScale - 0.8F) < 0.0001F);
     }
 
     private static void testTerminalDisplayStack() {
@@ -364,6 +368,10 @@ class SelfTest {
         assertTrue("QUANTITY.next() -> MOD", SortMode.QUANTITY.next().name().equals("MOD"));
         assertTrue("MOD.next() -> ID", SortMode.values()[2].next() == SortMode.ID);
         assertTrue("ID.next() -> NAME", SortMode.ID.next() == SortMode.NAME);
+        assertTrue("NAME.previous() -> ID", SortMode.NAME.previous() == SortMode.ID);
+        assertTrue("QUANTITY.previous() -> NAME", SortMode.QUANTITY.previous() == SortMode.NAME);
+        assertTrue("MOD.previous() -> QUANTITY", SortMode.MOD.previous() == SortMode.QUANTITY);
+        assertTrue("ID.previous() -> MOD", SortMode.ID.previous() == SortMode.MOD);
     }
 
     private static void testSortOrder() {
@@ -384,6 +392,33 @@ class SelfTest {
         assertTrue("NORMAL.next() -> TAG", SearchMode.NORMAL.next() == SearchMode.TAG);
         assertTrue("TAG.next() -> MOD", SearchMode.TAG.next() == SearchMode.MOD);
         assertTrue("MOD.next() -> NORMAL", SearchMode.MOD.next() == SearchMode.NORMAL);
+        assertTrue("NORMAL.previous() -> MOD", SearchMode.NORMAL.previous() == SearchMode.MOD);
+        assertTrue("TAG.previous() -> NORMAL", SearchMode.TAG.previous() == SearchMode.NORMAL);
+        assertTrue("MOD.previous() -> TAG", SearchMode.MOD.previous() == SearchMode.TAG);
+    }
+
+    private static void testTerminalProfilesAndCycleDirection() {
+        assertTrue("Storage profile is the reduced terminal",
+                !TerminalProfile.STORAGE.supports(TerminalProfile.Capability.PAGES)
+                        && !TerminalProfile.STORAGE.supports(TerminalProfile.Capability.RECIPE_WORKSPACE)
+                        && TerminalProfile.STORAGE.itemRailGroups().equals(List.of(3)));
+        assertTrue("Crafting profile composes page, recipe, Fuel, and source capabilities",
+                TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.PAGES)
+                        && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.RECIPE_WORKSPACE)
+                        && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.FUEL)
+                        && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.PLAYER_INVENTORY_SOURCE)
+                        && TerminalProfile.CRAFTING.itemRailGroups().equals(List.of(3, 3, 1))
+                        && TerminalProfile.CRAFTING.fuelRailGroups().equals(List.of(3)));
+        assertTrue("terminal controls use an 18px hit box and 16px icon canvas",
+                TerminalLayout.CONTROL_SIZE == 18 && TerminalLayout.ICON_CANVAS_SIZE == 16);
+        assertTrue("left click selects next",
+                TerminalCycleDirection.fromMouseButton(0) == TerminalCycleDirection.NEXT);
+        assertTrue("right click selects previous",
+                TerminalCycleDirection.fromMouseButton(1) == TerminalCycleDirection.PREVIOUS);
+        assertTrue("wheel down selects next",
+                TerminalCycleDirection.fromScroll(-1.0) == TerminalCycleDirection.NEXT);
+        assertTrue("wheel up selects previous",
+                TerminalCycleDirection.fromScroll(1.0) == TerminalCycleDirection.PREVIOUS);
     }
 
     private static void testTerminalSettingsPacketCodec() {
@@ -425,7 +460,9 @@ class SelfTest {
     }
 
     private static void testAdaptiveTerminalLayout() {
-        var narrow = TerminalLayout.crafting(320, 240, 5, 3);
+        var narrow = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 3);
+        assertTrue("crafting geometry retains its terminal profile",
+                narrow.profile() == TerminalProfile.CRAFTING);
         assertTrue("320x240 crafting uses narrow fallback", !narrow.wide());
         assertTrue("narrow fallback leaves vertical breathing room", narrow.imageHeight() <= 232);
         assertTrue("narrow grid follows nine-column slot rhythm",
@@ -451,7 +488,7 @@ class SelfTest {
                 narrow.recipeResourceCells().size() == 9
                         && rectanglesDoNotOverlap(narrow.recipeResourceCells()));
 
-        var sideBySide = TerminalLayout.crafting(423, 291, 5, 3);
+        var sideBySide = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 423, 291, 5, 3);
         assertTrue("guiScale-4 fullscreen width uses side-by-side layout", sideBySide.wide());
         assertTrue("side-by-side frame shrinks within its supported range",
                 sideBySide.imageWidth() == 367);
@@ -463,8 +500,8 @@ class SelfTest {
                 sideBySide.recipeResourceCells().size() == 9
                         && rectanglesDoNotOverlap(sideBySide.recipeResourceCells()));
         assertTrue("side-by-side boundary is based on complete usable width",
-                !TerminalLayout.crafting(415, 291, 5, 3).wide()
-                        && TerminalLayout.crafting(416, 291, 5, 3).wide());
+                !TerminalLayout.forProfile(TerminalProfile.CRAFTING, 415, 291, 5, 3).wide()
+                        && TerminalLayout.forProfile(TerminalProfile.CRAFTING, 416, 291, 5, 3).wide());
         assertTrue("Fuel content uses the full inner frame width",
                 sideBySide.machinePanel().x() == 8
                         && sideBySide.machinePanel().width() == sideBySide.imageWidth() - 16
@@ -490,7 +527,7 @@ class SelfTest {
                         && sideBySide.reserveGrid().cells().getLast().right()
                         == sideBySide.reserveGrid().bounds().right());
 
-        var manyFuelDescriptors = TerminalLayout.crafting(320, 240, 5, 60);
+        var manyFuelDescriptors = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 60);
         int manyFuelLeft = manyFuelDescriptors.centeredFrameLeft(320);
         assertTrue("Fuel target rail stays fixed-size when reserve descriptors grow",
                 manyFuelDescriptors.fuelRailButtons().size() == 3);
@@ -498,8 +535,8 @@ class SelfTest {
                 manyFuelLeft + manyFuelDescriptors.railPanel().x() >= 0
                         && manyFuelLeft + manyFuelDescriptors.imageWidth() <= 320);
 
-        var pageCapacity = TerminalLayout.crafting(320, 240, 5, 3);
-        var partialLastPage = TerminalLayout.crafting(
+        var pageCapacity = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 3);
+        var partialLastPage = TerminalLayout.forProfile(TerminalProfile.CRAFTING,
                 320, 240,
                 pageCapacity.machineGrid().capacity() + 1,
                 pageCapacity.reserveGrid().capacity() + 1);
@@ -516,7 +553,7 @@ class SelfTest {
 
         for (int machineCount : new int[]{0, 1, 5, 6, 9, 10, 40}) {
             for (int reserveCount : new int[]{0, 1, 3, 4, 8, 30}) {
-                var flow = TerminalLayout.crafting(320, 240, machineCount, reserveCount);
+                var flow = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, machineCount, reserveCount);
                 assertTrue("machine descriptor count is preserved", flow.machineGrid().itemCount() == machineCount);
                 assertTrue("reserve descriptor count is preserved", flow.reserveGrid().itemCount() == reserveCount);
                 assertTrue("machine visible cells are bounded by capacity",
@@ -562,7 +599,7 @@ class SelfTest {
 
         for (int height = 240; height <= 600; height++) {
             for (int width : new int[]{320, 415, 416, 423, 480, 854}) {
-                var geometry = TerminalLayout.crafting(width, height, 5, 3);
+                var geometry = TerminalLayout.forProfile(TerminalProfile.CRAFTING, width, height, 5, 3);
                 int left = geometry.centeredFrameLeft(width);
                 int top = (height - geometry.imageHeight()) / 2;
                 assertTrue("crafting frame stays onscreen at " + width + "x" + height,
@@ -606,7 +643,9 @@ class SelfTest {
         }
 
         for (int height = 240; height <= 600; height++) {
-            var geometry = TerminalLayout.storage(320, height, 3);
+            var geometry = TerminalLayout.forProfile(TerminalProfile.STORAGE, 320, height, 0, 0);
+            assertTrue("storage geometry retains its terminal profile",
+                    geometry.profile() == TerminalProfile.STORAGE);
             assertTrue("storage frame stays onscreen at height " + height,
                     geometry.imageHeight() <= height);
             assertTrue("storage rows stay 3..9 at height " + height,

@@ -1896,7 +1896,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (page == CraftingTerminalPage.FUEL) return false;
             StorageCoreBlockEntity core = getCore(player.level());
             switch (buttonId) {
-                case 0, 1, 11, 12, 13 -> {
+                case 0, 1,
+                     SORT_ORDER_BUTTON,
+                     NEXT_SORT_MODE_BUTTON,
+                     NEXT_SEARCH_MODE_BUTTON,
+                     PREVIOUS_SORT_MODE_BUTTON,
+                     PREVIOUS_SEARCH_MODE_BUTTON -> {
                     if (core != null) {
                         return super.clickMenuButton(player, buttonId);
                     }

@@ -17,6 +17,11 @@ import java.util.UUID;
 import java.util.List;
 
 public class StorageTerminalMenu extends AbstractContainerMenu {
+    static final int SORT_ORDER_BUTTON = 11;
+    static final int NEXT_SORT_MODE_BUTTON = 12;
+    static final int NEXT_SEARCH_MODE_BUTTON = 13;
+    static final int PREVIOUS_SORT_MODE_BUTTON = 17;
+    static final int PREVIOUS_SEARCH_MODE_BUTTON = 18;
 
     public static final int MAX_DISPLAY_ROWS = 9;
     public static final int DISPLAY_COLS = 9;
@@ -342,7 +347,12 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
 
     @Override
     public boolean clickMenuButton(Player player, int buttonId) {
-        if (buttonId != 0 && buttonId != 1 && buttonId != 11 && buttonId != 12 && buttonId != 13) {
+        if (buttonId != 0 && buttonId != 1
+                && buttonId != SORT_ORDER_BUTTON
+                && buttonId != NEXT_SORT_MODE_BUTTON
+                && buttonId != NEXT_SEARCH_MODE_BUTTON
+                && buttonId != PREVIOUS_SORT_MODE_BUTTON
+                && buttonId != PREVIOUS_SEARCH_MODE_BUTTON) {
             return false;
         }
         if (!player.level().isClientSide()) {
@@ -351,9 +361,11 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                 switch (buttonId) {
                     case 0 -> scrollBy(-DISPLAY_COLS);
                     case 1 -> scrollBy(DISPLAY_COLS);
-                    case 11 -> sortOrder = SortOrder.toggle(sortOrder);
-                    case 12 -> sortMode = sortMode.next();
-                    case 13 -> searchMode = searchMode.next();
+                    case SORT_ORDER_BUTTON -> sortOrder = SortOrder.toggle(sortOrder);
+                    case NEXT_SORT_MODE_BUTTON -> sortMode = sortMode.next();
+                    case NEXT_SEARCH_MODE_BUTTON -> searchMode = searchMode.next();
+                    case PREVIOUS_SORT_MODE_BUTTON -> sortMode = sortMode.previous();
+                    case PREVIOUS_SEARCH_MODE_BUTTON -> searchMode = searchMode.previous();
                 }
                 refreshDisplayItems(core);
             }

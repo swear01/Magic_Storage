@@ -45,7 +45,7 @@
 
 ## Task 2: Shared terminal profile, adaptive shell, and rail controls
 
-> Status: next.
+> Status: complete. RED produced 41 missing-profile/direction/previous/scale compile errors and a focused static failure for the remaining vanilla Fuel `CycleButton`; GREEN is compileJava, SelfTest 40999/40999, GameTest 223/223, focused Python 37/37, and full Python 84/84. Storage and Crafting now use one profile-driven layout/shared shell, one 18px/16px item-or-atlas control system, one click/wheel cycle contract, and one screen-wide amount scale.
 
 **Files:**
 
@@ -54,7 +54,6 @@
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java`
 - Modify: `src/main/resources/assets/magic_storage/lang/en_us.json`
-- Modify: `src/main/resources/assets/magic_storage/lang/zh_tw.json`
 - Modify: `scripts/test_static_regressions.py`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/SelfTest.java`
 - Modify: `docs/overview.md`
@@ -68,6 +67,8 @@
 **Commit:** `feat: share adaptive terminal shell and controls`
 
 ## Task 3: Exact server-synced recipe presentation
+
+> Status: next.
 
 **Files:**
 

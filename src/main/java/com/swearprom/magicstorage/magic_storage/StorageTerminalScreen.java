@@ -1,7 +1,9 @@
 package com.swearprom.magicstorage.magic_storage;
 
 import com.mojang.datafixers.util.Pair;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
@@ -16,11 +18,15 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class StorageTerminalScreen<T extends StorageTerminalMenu> extends AbstractContainerScreen<T> {
 
     protected static final ResourceLocation ICONS_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "textures/gui/icons.png");
+    protected static final ResourceLocation TERMINAL_CONTROLS_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "textures/gui/terminal_controls.png");
 
     private static final int SCROLLER_HEIGHT = 15;
     private static final int SB_TEXTURE_HEIGHT = 16;
@@ -33,15 +39,16 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     private int lastRequestedScroll = Integer.MIN_VALUE;
     private int searchTimer;
     private String lastSentSearch = "";
+    private float networkAmountScale = 1.0F;
     protected int visibleRows;
     protected TerminalLayout.Geometry geometry;
     private SearchMode lastSeenSearchMode = SearchMode.NORMAL;
     private SortMode lastSeenSortMode = SortMode.NAME;
     private SortOrder lastSeenSortOrder = SortOrder.ASCENDING;
 
-    private Button sortOrderBtn;
-    private Button sortModeBtn;
-    private Button searchModeBtn;
+    private TerminalCycleButton sortOrderBtn;
+    private TerminalCycleButton sortModeBtn;
+    private TerminalCycleButton searchModeBtn;
 
     public StorageTerminalScreen(T menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
@@ -49,11 +56,23 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     protected TerminalLayout.Geometry createGeometry() {
-        return TerminalLayout.storage(this.width, this.height, railButtonCount());
+        return TerminalLayout.forProfile(
+                terminalProfile(), this.width, this.height, layoutMachineCount(), layoutReserveCount());
     }
 
-    protected int railButtonCount() {
-        return 3;
+    protected TerminalProfile terminalProfile() {
+        return TerminalProfile.STORAGE;
+    }
+
+    protected int layoutMachineCount() {
+        return 0;
+    }
+
+    protected int layoutReserveCount() {
+        return 0;
+    }
+
+    protected void addTerminalProfileControls() {
     }
 
     protected boolean isItemViewActive() {
@@ -84,6 +103,8 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         this.inventoryLabelY = geometry.playerInventory().y() - 12;
         super.init();
         this.leftPos = geometry.centeredFrameLeft(this.width);
+        this.networkAmountScale = TerminalAmountFormatter.scaleForSlot(
+                font::width, TerminalLayout.ICON_CANVAS_SIZE);
 
         TerminalLayout.Rect search = geometry.searchBox();
         this.searchBox = new EditBox(font, leftPos + search.x(), topPos + search.y(),
@@ -97,29 +118,27 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         this.addRenderableWidget(searchBox);
         if (previousSearchFocused) setFocused(searchBox);
 
-        TerminalLayout.Rect orderBounds = railButton(0);
-        sortOrderBtn = Button.builder(sortOrderLabel(), button -> {
-                    sendButton(11);
-                    setFocused(null);
-                }).bounds(leftPos + orderBounds.x(), topPos + orderBounds.y(),
-                        orderBounds.width(), orderBounds.height()).build();
-        addRenderableWidget(sortOrderBtn);
-
-        TerminalLayout.Rect modeBounds = railButton(1);
-        sortModeBtn = Button.builder(sortModeLabel(), button -> {
-                    sendButton(12);
-                    setFocused(null);
-                }).bounds(leftPos + modeBounds.x(), topPos + modeBounds.y(),
-                        modeBounds.width(), modeBounds.height()).build();
-        addRenderableWidget(sortModeBtn);
-
-        TerminalLayout.Rect searchBounds = railButton(2);
-        searchModeBtn = Button.builder(searchModeLabel(), button -> {
-                    sendButton(13);
-                    setFocused(null);
-                }).bounds(leftPos + searchBounds.x(), topPos + searchBounds.y(),
-                        searchBounds.width(), searchBounds.height()).build();
-        addRenderableWidget(searchModeBtn);
+        addTerminalProfileControls();
+        int viewStart = terminalProfile().viewControlStartIndex();
+        sortOrderBtn = addCycleButton(
+                TerminalControlIcon.SORT_ASCENDING,
+                Component.translatable("tooltip.magic_storage.sort_order"),
+                railButton(viewStart),
+                direction -> sendButton(StorageTerminalMenu.SORT_ORDER_BUTTON));
+        sortModeBtn = addCycleButton(
+                TerminalControlIcon.SORT_NAME,
+                Component.translatable("tooltip.magic_storage.sort_mode"),
+                railButton(viewStart + 1),
+                direction -> sendButton(direction == TerminalCycleDirection.NEXT
+                        ? StorageTerminalMenu.NEXT_SORT_MODE_BUTTON
+                        : StorageTerminalMenu.PREVIOUS_SORT_MODE_BUTTON));
+        searchModeBtn = addCycleButton(
+                TerminalControlIcon.SEARCH,
+                Component.translatable("tooltip.magic_storage.search_mode"),
+                railButton(viewStart + 2),
+                direction -> sendButton(direction == TerminalCycleDirection.NEXT
+                        ? StorageTerminalMenu.NEXT_SEARCH_MODE_BUTTON
+                        : StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON));
 
         updateViewSettingButtons();
         setItemViewControlsVisible(isItemViewActive());
@@ -247,26 +266,91 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         menu.slots.set(menuIndex, moved);
     }
 
+    protected TerminalIconButton addIconButton(
+            TerminalControlIcon icon,
+            Component narration,
+            TerminalLayout.Rect bounds,
+            Button.OnPress action
+    ) {
+        TerminalIconButton button = new TerminalIconButton(
+                leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
+                narration, action, icon, ItemStack.EMPTY);
+        addRenderableWidget(button);
+        return button;
+    }
+
+    protected TerminalIconButton addItemButton(
+            ItemStack icon,
+            Component narration,
+            TerminalLayout.Rect bounds,
+            Button.OnPress action
+    ) {
+        TerminalIconButton button = new TerminalIconButton(
+                leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
+                narration, action, null, icon.copyWithCount(1));
+        addRenderableWidget(button);
+        return button;
+    }
+
+    protected TerminalCycleButton addCycleButton(
+            TerminalControlIcon icon,
+            Component narration,
+            TerminalLayout.Rect bounds,
+            Consumer<TerminalCycleDirection> action
+    ) {
+        TerminalCycleButton button = new TerminalCycleButton(
+                leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
+                narration, action, icon, ItemStack.EMPTY);
+        addRenderableWidget(button);
+        return button;
+    }
+
+    protected TerminalCycleButton addItemCycleButton(
+            ItemStack icon,
+            Component narration,
+            TerminalLayout.Rect bounds,
+            Consumer<TerminalCycleDirection> action
+    ) {
+        TerminalCycleButton button = new TerminalCycleButton(
+                leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
+                narration, action, null, icon.copyWithCount(1));
+        addRenderableWidget(button);
+        return button;
+    }
+
+    protected TerminalCycleButton addTextCycleButton(
+            Component message,
+            TerminalLayout.Rect bounds,
+            Consumer<TerminalCycleDirection> action
+    ) {
+        TerminalCycleButton button = new TerminalCycleButton(
+                leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
+                message, action, null, ItemStack.EMPTY);
+        addRenderableWidget(button);
+        return button;
+    }
+
     private Component searchModeLabel() {
         return switch (menu.getSearchMode()) {
-            case NORMAL -> Component.literal("⌕");
-            case TAG -> Component.literal("#");
-            case MOD -> Component.literal("@");
+            case NORMAL -> Component.translatable("gui.magic_storage.search_mode.name");
+            case TAG -> Component.translatable("gui.magic_storage.search_mode.tag");
+            case MOD -> Component.translatable("gui.magic_storage.search_mode.mod");
         };
     }
 
     private Component sortModeLabel() {
         return switch (menu.getSortMode()) {
-            case NAME -> Component.literal("≡");
-            case QUANTITY -> Component.literal("#");
-            case MOD -> Component.literal("MOD");
-            case ID -> Component.literal("ID");
+            case NAME -> Component.translatable("gui.magic_storage.sort_mode.name");
+            case QUANTITY -> Component.translatable("gui.magic_storage.sort_mode.quantity");
+            case MOD -> Component.translatable("gui.magic_storage.sort_mode.mod");
+            case ID -> Component.translatable("gui.magic_storage.sort_mode.id");
         };
     }
 
     private Component sortOrderLabel() {
         return menu.getSortOrder() == SortOrder.ASCENDING
-                ? Component.literal("↓") : Component.literal("↑");
+                ? Component.translatable("gui.magic_storage.sort_order.ascending")
+                : Component.translatable("gui.magic_storage.sort_order.descending");
     }
 
     private void updateViewSettingButtons() {
@@ -274,15 +358,38 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         lastSeenSortOrder = menu.getSortOrder();
         lastSeenSortMode = menu.getSortMode();
         lastSeenSearchMode = menu.getSearchMode();
-        sortOrderBtn.setMessage(sortOrderLabel());
-        sortModeBtn.setMessage(sortModeLabel());
-        searchModeBtn.setMessage(searchModeLabel());
-        sortOrderBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_order")
-                .append(": ").append(menu.getSortOrder().name())));
-        sortModeBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.sort_mode")
-                .append(": ").append(menu.getSortMode().name())));
-        searchModeBtn.setTooltip(Tooltip.create(Component.translatable("tooltip.magic_storage.search_mode")
-                .append(": ").append(menu.getSearchMode().name())));
+        sortOrderBtn.setIcon(menu.getSortOrder() == SortOrder.ASCENDING
+                ? TerminalControlIcon.SORT_ASCENDING : TerminalControlIcon.SORT_DESCENDING);
+        sortModeBtn.setIcon(switch (menu.getSortMode()) {
+            case NAME -> TerminalControlIcon.SORT_NAME;
+            case QUANTITY -> TerminalControlIcon.SORT_QUANTITY;
+            case MOD -> TerminalControlIcon.SORT_MOD;
+            case ID -> TerminalControlIcon.SORT_ID;
+        });
+        searchModeBtn.setIcon(switch (menu.getSearchMode()) {
+            case NORMAL -> TerminalControlIcon.SEARCH;
+            case TAG -> TerminalControlIcon.SEARCH_TAG;
+            case MOD -> TerminalControlIcon.SEARCH_MOD;
+        });
+        updateCycleTooltip(sortOrderBtn, "tooltip.magic_storage.sort_order", sortOrderLabel());
+        updateCycleTooltip(sortModeBtn, "tooltip.magic_storage.sort_mode", sortModeLabel());
+        updateCycleTooltip(searchModeBtn, "tooltip.magic_storage.search_mode", searchModeLabel());
+    }
+
+    protected static void updateCycleTooltip(
+            Button button,
+            String controlKey,
+            Component currentValue
+    ) {
+        Component message = Component.translatable(controlKey).append(": ").append(currentValue);
+        button.setMessage(message);
+        button.setTooltip(createCycleTooltip(controlKey, currentValue));
+    }
+
+    protected static Tooltip createCycleTooltip(String controlKey, Component currentValue) {
+        Component message = Component.translatable(controlKey).append(": ").append(currentValue);
+        return Tooltip.create(message.copy().append("\n")
+                .append(Component.translatable("tooltip.magic_storage.cycle_hint")));
     }
 
     private void sendSettings() {
@@ -330,6 +437,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     protected void drawPanels(GuiGraphics graphics, int x, int y) {
         drawRaisedPanel(graphics, x, y, new TerminalLayout.Rect(0, 0, imageWidth, imageHeight));
+        drawRaisedPanel(graphics, x, y, geometry.railPanel());
         drawInsetPanel(graphics, x, y, geometry.itemGrid());
         drawInsetPanel(graphics, x, y, geometry.playerInventory());
         drawInsetPanel(graphics, x, y, geometry.searchBackground());
@@ -433,12 +541,15 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     private void renderNetworkAmount(GuiGraphics graphics, int x, int y, long amount) {
         if (amount <= 0) return;
         String text = TerminalAmountFormatter.formatCompact(amount);
-        boolean large = font.width(text) <= 16;
-        int textX = large ? 16 - font.width(text) : 30 - font.width(text);
+        float scaledWidth = font.width(text) * networkAmountScale;
+        float scaledHeight = font.lineHeight * networkAmountScale;
         graphics.pose().pushPose();
-        graphics.pose().translate(x + (large ? 1.0F : 0.0F), y + (large ? 1.0F : 0.0F), 200.0F);
-        if (!large) graphics.pose().scale(0.5F, 0.5F, 1.0F);
-        graphics.drawString(font, text, textX, large ? 8 : 22, 0xFFFFFFFF, true);
+        graphics.pose().translate(
+                x + TerminalLayout.ICON_CANVAS_SIZE - scaledWidth,
+                y + TerminalLayout.ICON_CANVAS_SIZE - scaledHeight,
+                200.0F);
+        graphics.pose().scale(networkAmountScale, networkAmountScale, 1.0F);
+        graphics.drawString(font, text, 0, 0, 0xFFFFFFFF, false);
         graphics.pose().popPose();
     }
 
@@ -461,7 +572,12 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
                 && hoveredSlot.index < StorageTerminalMenu.DISPLAY_SLOTS) {
             return false;
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        boolean handled = super.mouseClicked(mouseX, mouseY, button);
+        if (handled && getFocused() instanceof AbstractButton) {
+            setFocused(null);
+            setDragging(false);
+        }
+        return handled;
     }
 
     @Override
@@ -569,6 +685,147 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         if (target == lastRequestedScroll) return;
         lastRequestedScroll = target;
         minecraft.getConnection().send(new TerminalScrollPacket(menu.containerId, target));
+    }
+
+    protected static void blitControlIcon(
+            GuiGraphics graphics,
+            int x,
+            int y,
+            TerminalControlIcon icon,
+            int color
+    ) {
+        float red = (color >> 16 & 0xFF) / 255.0F;
+        float green = (color >> 8 & 0xFF) / 255.0F;
+        float blue = (color & 0xFF) / 255.0F;
+        float alpha = (color >>> 24) / 255.0F;
+        graphics.setColor(red, green, blue, alpha);
+        graphics.blit(
+                TERMINAL_CONTROLS_TEXTURE,
+                x,
+                y,
+                icon.atlasIndex() * TerminalLayout.ICON_CANVAS_SIZE,
+                0,
+                TerminalLayout.ICON_CANVAS_SIZE,
+                TerminalLayout.ICON_CANVAS_SIZE,
+                256,
+                TerminalLayout.ICON_CANVAS_SIZE);
+        graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    protected enum TerminalControlIcon {
+        SORT_ASCENDING(0),
+        SORT_DESCENDING(1),
+        SORT_NAME(2),
+        SORT_QUANTITY(3),
+        SORT_MOD(4),
+        SORT_ID(5),
+        SEARCH(6),
+        SEARCH_TAG(7),
+        SEARCH_MOD(8),
+        PREVIOUS(9),
+        NEXT(10);
+
+        private final int atlasIndex;
+
+        TerminalControlIcon(int atlasIndex) {
+            this.atlasIndex = atlasIndex;
+        }
+
+        int atlasIndex() {
+            return atlasIndex;
+        }
+    }
+
+    protected static class TerminalIconButton extends Button {
+        private TerminalControlIcon icon;
+        private final ItemStack itemIcon;
+
+        protected TerminalIconButton(
+                int x,
+                int y,
+                int width,
+                int height,
+                Component narration,
+                OnPress onPress,
+                TerminalControlIcon icon,
+                ItemStack itemIcon
+        ) {
+            super(x, y, width, height, narration, onPress, DEFAULT_NARRATION);
+            this.icon = icon;
+            this.itemIcon = itemIcon;
+            if (icon != null && !itemIcon.isEmpty()) {
+                throw new IllegalArgumentException("Terminal control cannot have two icons");
+            }
+        }
+
+        protected void setIcon(TerminalControlIcon icon) {
+            if (!itemIcon.isEmpty()) {
+                throw new IllegalStateException("Cannot replace an item control with an atlas icon");
+            }
+            this.icon = icon;
+        }
+
+        @Override
+        public void renderString(GuiGraphics graphics, Font font, int color) {
+            if (icon == null && itemIcon.isEmpty()) {
+                super.renderString(graphics, font, color);
+            }
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+            super.renderWidget(graphics, mouseX, mouseY, partialTick);
+            int iconX = getX() + (getWidth() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
+            int iconY = getY() + (getHeight() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
+            if (!itemIcon.isEmpty()) {
+                graphics.renderItem(itemIcon, iconX, iconY);
+                return;
+            }
+            if (icon == null) return;
+            blitControlIcon(graphics, iconX, iconY, icon,
+                    active ? 0xFFFFFFFF : 0xFF777777);
+        }
+    }
+
+    protected static final class TerminalCycleButton extends TerminalIconButton {
+        private final Consumer<TerminalCycleDirection> action;
+
+        private TerminalCycleButton(
+                int x,
+                int y,
+                int width,
+                int height,
+                Component narration,
+                Consumer<TerminalCycleDirection> action,
+                TerminalControlIcon icon,
+                ItemStack itemIcon
+        ) {
+            super(x, y, width, height, narration,
+                    button -> action.accept(TerminalCycleDirection.NEXT), icon, itemIcon);
+            this.action = action;
+        }
+
+        @Override
+        protected boolean isValidClickButton(int button) {
+            return button == 0 || button == 1;
+        }
+
+        @Override
+        public void onClick(double mouseX, double mouseY, int button) {
+            action.accept(TerminalCycleDirection.fromMouseButton(button));
+        }
+
+        @Override
+        public boolean mouseScrolled(
+                double mouseX,
+                double mouseY,
+                double scrollX,
+                double scrollY
+        ) {
+            if (!active || !visible || !isMouseOver(mouseX, mouseY) || scrollY == 0.0) return false;
+            action.accept(TerminalCycleDirection.fromScroll(scrollY));
+            return true;
+        }
     }
 
     protected List<Rect2i> terminalExclusionAreas() {
