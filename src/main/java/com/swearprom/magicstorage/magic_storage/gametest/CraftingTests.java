@@ -20,9 +20,12 @@ import net.minecraft.world.item.crafting.CookingBookCategory;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.ShapedRecipe;
+import net.minecraft.world.item.crafting.ShapedRecipePattern;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.item.crafting.SmeltingRecipe;
 import net.minecraft.world.item.crafting.SmithingTransformRecipe;
+import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.common.crafting.DataComponentIngredient;
@@ -3260,6 +3263,455 @@ public class CraftingTests {
                 return;
             }
             helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void shaped_recipe_presentation_preserves_positions_identity_output_and_ledger(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.OAK_PLANKS, 10));
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(160, player.getInventory(), core);
+            ResourceLocation recipeId = ResourceLocation.withDefaultNamespace("stick");
+            if (!menu.handleRecipeRequest(
+                    level, recipeId, 1, CraftingDestination.NONE, player)) {
+                helper.fail("Could not select vanilla stick recipe");
+                return;
+            }
+
+            RecipePresentation presentation = menu.getRecipePresentation();
+            if (!presentation.recipeId().equals(recipeId)
+                    || presentation.kind() != RecipePresentationKind.CRAFTING
+                    || presentation.width() != 1
+                    || presentation.height() != 2
+                    || presentation.shapeless()) {
+                helper.fail("Shaped metadata mismatch: " + presentation);
+                return;
+            }
+            if (presentation.inputs().size() != 9
+                    || !presentation.inputs().get(0).is(Items.OAK_PLANKS)
+                    || !presentation.inputs().get(1).is(Items.OAK_PLANKS)
+                    || presentation.inputs().subList(2, 9).stream().anyMatch(stack -> !stack.isEmpty())) {
+                helper.fail("Stick pattern must retain its exact 1x2 positions: " + presentation.inputs());
+                return;
+            }
+            if (!presentation.output().is(Items.STICK)
+                    || presentation.output().getCount() != 4
+                    || !presentation.station().is(Items.CRAFTING_TABLE)) {
+                helper.fail("Exact output/station mismatch: " + presentation);
+                return;
+            }
+            RecipePresentation.Resource resource = presentation.resources().stream()
+                    .filter(row -> row.kind() == RecipePresentation.ResourceKind.ITEM)
+                    .filter(row -> row.stack().is(Items.OAK_PLANKS))
+                    .findFirst().orElse(null);
+            if (resource == null || resource.available() != 10 || resource.required() != 2) {
+                helper.fail("Shaped ledger must aggregate 10 available / 2 required planks: "
+                        + presentation.resources());
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void shapeless_recipe_presentation_marks_layout_and_exact_output_count(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.DIRT, 5));
+            core.insertItem(new ItemStack(Items.STONE, 7));
+            var recipeId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_shapeless");
+            var holder = new RecipeHolder<>(recipeId, new ShapelessRecipe(
+                    "",
+                    CraftingBookCategory.MISC,
+                    new ItemStack(Items.EMERALD, 2),
+                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT), Ingredient.of(Items.STONE))));
+
+            withTemporaryRegisteredRecipe(level, holder, () -> {
+                var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+                var menu = new CraftingTerminalMenu(161, player.getInventory(), core);
+                if (!menu.handleRecipeRequest(
+                        level, recipeId, 1, CraftingDestination.NONE, player)) {
+                    helper.fail("Could not select test shapeless recipe");
+                    return;
+                }
+                RecipePresentation presentation = menu.getRecipePresentation();
+                if (presentation.kind() != RecipePresentationKind.CRAFTING
+                        || !presentation.shapeless()
+                        || presentation.width() != 3
+                        || presentation.height() != 3
+                        || presentation.inputs().size() != 9
+                        || !presentation.inputs().get(0).is(Items.DIRT)
+                        || !presentation.inputs().get(1).is(Items.STONE)
+                        || !presentation.output().is(Items.EMERALD)
+                        || presentation.output().getCount() != 2) {
+                    helper.fail("Shapeless presentation mismatch: " + presentation);
+                    return;
+                }
+                long itemRows = presentation.resources().stream()
+                        .filter(row -> row.kind() == RecipePresentation.ResourceKind.ITEM)
+                        .count();
+                if (itemRows != 2) {
+                    helper.fail("Shapeless ledger must retain two item resources: "
+                            + presentation.resources());
+                    return;
+                }
+                helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void cooking_and_stonecutting_present_real_roles_station_and_costs(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.DIRT, 9));
+            core.insertItem(new ItemStack(Items.STONE, 4));
+            var cookingId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_cooking");
+            var cooking = new RecipeHolder<>(cookingId, new SmeltingRecipe(
+                    "", CookingBookCategory.MISC, Ingredient.of(Items.DIRT),
+                    new ItemStack(Items.DIAMOND, 3), 0, 37));
+            var stonecuttingId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_stonecutting");
+            var stonecutting = new RecipeHolder<>(stonecuttingId, new StonecutterRecipe(
+                    "", Ingredient.of(Items.STONE), new ItemStack(Items.STONE_BRICKS, 2)));
+
+            var manager = level.getRecipeManager();
+            var original = java.util.List.copyOf(manager.getRecipes());
+            var registered = new java.util.ArrayList<>(original);
+            registered.add(cooking);
+            registered.add(stonecutting);
+            manager.replaceRecipes(registered);
+            try {
+                var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+                var menu = new CraftingTerminalMenu(162, player.getInventory(), core);
+                if (!menu.handleRecipeRequest(
+                        level, cookingId, 1, CraftingDestination.NONE, player)) {
+                    helper.fail("Could not select test cooking recipe");
+                    return;
+                }
+                RecipePresentation cookingPresentation = menu.getRecipePresentation();
+                long energyRows = cookingPresentation.resources().stream()
+                        .filter(row -> row.kind() == RecipePresentation.ResourceKind.ENERGY)
+                        .filter(row -> row.required() == 37)
+                        .count();
+                if (cookingPresentation.kind() != RecipePresentationKind.COOKING
+                        || cookingPresentation.inputs().stream().noneMatch(stack -> stack.is(Items.DIRT))
+                        || !cookingPresentation.output().is(Items.DIAMOND)
+                        || cookingPresentation.output().getCount() != 3
+                        || !cookingPresentation.station().is(Items.FURNACE)
+                        || energyRows != 2) {
+                    helper.fail("Cooking presentation mismatch: " + cookingPresentation);
+                    return;
+                }
+
+                if (!menu.handleRecipeRequest(
+                        level, stonecuttingId, 1, CraftingDestination.NONE, player)) {
+                    helper.fail("Could not select test stonecutting recipe");
+                    return;
+                }
+                RecipePresentation stonecuttingPresentation = menu.getRecipePresentation();
+                if (stonecuttingPresentation.kind() != RecipePresentationKind.STONECUTTING
+                        || stonecuttingPresentation.inputs().stream()
+                        .filter(stack -> !stack.isEmpty()).count() != 1
+                        || stonecuttingPresentation.inputs().stream().noneMatch(stack -> stack.is(Items.STONE))
+                        || !stonecuttingPresentation.output().is(Items.STONE_BRICKS)
+                        || stonecuttingPresentation.output().getCount() != 2
+                        || !stonecuttingPresentation.station().is(Items.STONECUTTER)) {
+                    helper.fail("Stonecutting presentation mismatch: " + stonecuttingPresentation);
+                    return;
+                }
+                helper.succeed();
+            } finally {
+                manager.replaceRecipes(original);
+            }
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void smithing_and_axe_present_role_order_and_distinct_tool_resource(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE));
+            core.insertItem(new ItemStack(Items.DIAMOND_SWORD));
+            core.insertItem(new ItemStack(Items.NETHERITE_INGOT));
+            core.insertItem(new ItemStack(Items.OAK_LOG, 2));
+            var smithingId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_smithing");
+            var smithing = new RecipeHolder<>(smithingId, new SmithingTransformRecipe(
+                    Ingredient.of(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE),
+                    Ingredient.of(Items.DIAMOND_SWORD),
+                    Ingredient.of(Items.NETHERITE_INGOT),
+                    new ItemStack(Items.NETHERITE_SWORD)));
+
+            withTemporaryRegisteredRecipe(level, smithing, () -> {
+                var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+                var menu = new CraftingTerminalMenu(163, player.getInventory(), core);
+                if (!menu.handleRecipeRequest(
+                        level, smithingId, 1, CraftingDestination.NONE, player)) {
+                    helper.fail("Could not select test smithing recipe");
+                    return;
+                }
+                RecipePresentation smithingPresentation = menu.getRecipePresentation();
+                if (smithingPresentation.kind() != RecipePresentationKind.SMITHING
+                        || smithingPresentation.width() != 3
+                        || smithingPresentation.height() != 1
+                        || !smithingPresentation.inputs().get(0)
+                        .is(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE)
+                        || !smithingPresentation.inputs().get(1).is(Items.DIAMOND_SWORD)
+                        || !smithingPresentation.inputs().get(2).is(Items.NETHERITE_INGOT)
+                        || !smithingPresentation.station().is(Items.SMITHING_TABLE)) {
+                    helper.fail("Smithing role order mismatch: " + smithingPresentation);
+                    return;
+                }
+
+                ItemStack axe = new ItemStack(Items.IRON_AXE);
+                axe.setDamageValue(axe.getMaxDamage() - 5);
+                core.getMachineContainer().setItem(MachineEnergyTable.AXE_SLOT, axe);
+                menu.lookUpRecipes(level, new ItemStack(Items.STRIPPED_OAK_LOG));
+                RecipeHolder<?> axeRecipe = menu.getCurrentRecipes().stream()
+                        .filter(holder -> holder.value() instanceof AxeTransformationRecipe)
+                        .findFirst().orElse(null);
+                if (axeRecipe == null || !menu.handleRecipeRequest(
+                        level, axeRecipe.id(), 1, CraftingDestination.NONE, player)) {
+                    helper.fail("Could not select synthetic axe recipe");
+                    return;
+                }
+                RecipePresentation axePresentation = menu.getRecipePresentation();
+                RecipePresentation.Resource tool = axePresentation.resources().stream()
+                        .filter(row -> row.kind() == RecipePresentation.ResourceKind.TOOL)
+                        .findFirst().orElse(null);
+                if (axePresentation.kind() != RecipePresentationKind.AXE
+                        || !axePresentation.recipeId().equals(axeRecipe.id())
+                        || axePresentation.inputs().stream().noneMatch(stack -> stack.is(Items.OAK_LOG))
+                        || !axePresentation.output().is(Items.STRIPPED_OAK_LOG)
+                        || tool == null
+                        || !tool.stack().is(Items.IRON_AXE)
+                        || tool.available() != 5
+                        || tool.required() != 1) {
+                    helper.fail("Axe tool-resource presentation mismatch: " + axePresentation);
+                    return;
+                }
+                helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void recipe_navigation_updates_exact_presentation_identity(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(164, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.IRON_INGOT));
+            if (menu.getRecipeCount() < 2) {
+                helper.fail("Iron ingot fixture requires multiple recipes");
+                return;
+            }
+            ResourceLocation first = menu.getCurrentRecipes().getFirst().id();
+            if (!menu.getRecipePresentation().recipeId().equals(first)) {
+                helper.fail("Initial presentation must use the active holder id");
+                return;
+            }
+            menu.clickMenuButton(player, 9);
+            ResourceLocation second = menu.getCurrentRecipes()
+                    .get(menu.getCurrentRecipeIndex()).id();
+            if (second.equals(first)
+                    || !menu.getRecipePresentation().recipeId().equals(second)) {
+                helper.fail("Next recipe must update exact presentation id");
+                return;
+            }
+            menu.clickMenuButton(player, 8);
+            if (!menu.getRecipePresentation().recipeId().equals(first)) {
+                helper.fail("Previous recipe must restore exact presentation id");
+                return;
+            }
+            menu.lookUpRecipes(level, new ItemStack(Items.BARRIER));
+            if (!menu.getRecipePresentation().isEmpty()) {
+                helper.fail("Empty recipe lookup must clear the presentation");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void oversized_shaped_recipe_is_rejected_before_presentation(GameTestHelper helper) {
+        NonNullList<Ingredient> ingredients = NonNullList.withSize(4, Ingredient.of(Items.DIRT));
+        var recipe = new ShapedRecipe(
+                "",
+                CraftingBookCategory.MISC,
+                new ShapedRecipePattern(4, 1, ingredients, java.util.Optional.empty()),
+                new ItemStack(Items.BARRIER));
+        if (CraftingTerminalMenu.supportsRecipeContract(recipe)) {
+            helper.fail("Recipes wider than the bounded 3x3 presentation must fail closed");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void same_type_recipe_navigation_is_sorted_by_exact_id(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            ResourceLocation firstId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_order_a");
+            ResourceLocation secondId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_order_b");
+            var first = new RecipeHolder<>(firstId, new ShapelessRecipe(
+                    "", CraftingBookCategory.MISC, new ItemStack(Items.BARRIER),
+                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT))));
+            var second = new RecipeHolder<>(secondId, new ShapelessRecipe(
+                    "", CraftingBookCategory.MISC, new ItemStack(Items.BARRIER),
+                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.STONE))));
+            var manager = level.getRecipeManager();
+            var original = java.util.List.copyOf(manager.getRecipes());
+            var registered = new java.util.ArrayList<>(original);
+            registered.add(second);
+            registered.add(first);
+            manager.replaceRecipes(registered);
+            try {
+                var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+                var menu = new CraftingTerminalMenu(165, player.getInventory(), core);
+                menu.lookUpRecipes(level, new ItemStack(Items.BARRIER));
+                if (menu.getCurrentRecipes().size() != 2
+                        || !menu.getCurrentRecipes().get(0).id().equals(firstId)
+                        || !menu.getCurrentRecipes().get(1).id().equals(secondId)) {
+                    helper.fail("Same-type recipes must use exact ID as their deterministic tie-breaker: "
+                            + menu.getCurrentRecipes().stream().map(RecipeHolder::id).toList());
+                    return;
+                }
+                helper.succeed();
+            } finally {
+                manager.replaceRecipes(original);
+            }
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void recipe_navigation_rebinds_exact_identity_before_reload_validation(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.DIRT, 2));
+            core.insertItem(new ItemStack(Items.STONE, 2));
+            ResourceLocation firstId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_reload_a");
+            ResourceLocation secondId = ResourceLocation.fromNamespaceAndPath(
+                    MagicStorage.MODID, "presentation_reload_b");
+            var first = new RecipeHolder<>(firstId, new ShapelessRecipe(
+                    "", CraftingBookCategory.MISC, new ItemStack(Items.COMMAND_BLOCK),
+                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT))));
+            var second = new RecipeHolder<>(secondId, new ShapelessRecipe(
+                    "", CraftingBookCategory.MISC, new ItemStack(Items.COMMAND_BLOCK),
+                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.STONE))));
+            var manager = level.getRecipeManager();
+            var original = java.util.List.copyOf(manager.getRecipes());
+            var registered = new java.util.ArrayList<>(original);
+            registered.add(first);
+            registered.add(second);
+            manager.replaceRecipes(registered);
+            try {
+                var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+                var menu = new CraftingTerminalMenu(166, player.getInventory(), core);
+                if (!menu.handleRecipeRequest(
+                        level, firstId, 1, CraftingDestination.NONE, player)) {
+                    helper.fail("Could not select first exact reload recipe");
+                    return;
+                }
+                menu.clickMenuButton(player, 9);
+                if (!menu.getRecipePresentation().recipeId().equals(secondId)) {
+                    helper.fail("Navigation did not select the second exact recipe");
+                    return;
+                }
+                var reloaded = new java.util.ArrayList<>(original);
+                reloaded.add(second);
+                manager.replaceRecipes(reloaded);
+                menu.refreshDisplayItems(core);
+                RecipePresentation presentation = menu.getRecipePresentation();
+                if (presentation.isEmpty() || !presentation.recipeId().equals(secondId)) {
+                    helper.fail("Reload validation used stale pre-navigation recipe identity");
+                    return;
+                }
+                helper.succeed();
+            } finally {
+                manager.replaceRecipes(original);
+            }
         });
     }
 

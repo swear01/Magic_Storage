@@ -16,6 +16,12 @@ import java.util.List;
 public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTerminalMenu> {
 
     private static final List<FuelTargetOption> FUEL_TARGET_OPTIONS = buildFuelTargetOptions();
+    private static final int ITEM_ROW_BACKGROUND = 0xFFB8B8B8;
+    private static final int ITEM_ROW_BORDER = 0xFF707070;
+    private static final int ENERGY_ROW_BACKGROUND = 0xFF411B1B;
+    private static final int ENERGY_ROW_BORDER = 0xFF9A4545;
+    private static final int TOOL_ROW_BACKGROUND = 0xFF381515;
+    private static final int TOOL_ROW_BORDER = 0xFF873737;
 
     private Button prevRecipeBtn;
     private Button nextRecipeBtn;
@@ -398,86 +404,129 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     private void renderRecipePanel(GuiGraphics graphics) {
         TerminalLayout.Rect panel = geometry.workspace();
         drawInsetPanel(graphics, leftPos, topPos, panel);
-        drawInsetPanel(graphics, leftPos, topPos, geometry.recipeInputRegion());
-        TerminalLayout.Rect footer = geometry.recipeQuantityFooter();
+        TerminalLayout.Rect diagram = geometry.recipeDiagram();
+        TerminalLayout.Rect ledger = geometry.recipeLedger();
+        TerminalLayout.Rect footer = geometry.recipeFooter();
+        graphics.fill(
+                leftPos + diagram.x(), topPos + diagram.y(),
+                leftPos + diagram.right(), topPos + diagram.bottom(), 0xFFE2E2E2);
+        graphics.fill(
+                leftPos + ledger.x(), topPos + ledger.y(),
+                leftPos + ledger.right(), topPos + ledger.bottom(), 0xFFCACACA);
         graphics.fill(
                 leftPos + footer.x(), topPos + footer.y() - 1,
                 leftPos + footer.right(), topPos + footer.y(), 0xFF555555);
 
-        ItemStack selected = menu.getSelectedStack();
-        if (selected.isEmpty()) {
-            TerminalLayout.Rect inputRegion = geometry.recipeInputRegion();
+        RecipePresentation presentation = menu.getRecipePresentation();
+        if (presentation.isEmpty()) {
             Component prompt = Component.translatable("gui.magic_storage.select_recipe_item");
             String visiblePrompt = font.plainSubstrByWidth(
-                    prompt.getString(), Math.max(0, inputRegion.width() - 8));
+                    prompt.getString(), Math.max(0, diagram.width() - 8));
             graphics.drawString(font, visiblePrompt,
-                    leftPos + inputRegion.x() + Math.max(0,
-                            (inputRegion.width() - font.width(visiblePrompt)) / 2),
-                    topPos + inputRegion.y() + Math.max(0,
-                            (inputRegion.height() - font.lineHeight) / 2),
+                    leftPos + diagram.x() + Math.max(0,
+                            (diagram.width() - font.width(visiblePrompt)) / 2),
+                    topPos + diagram.y() + Math.max(0,
+                            (diagram.height() - font.lineHeight) / 2),
                     0xFF606060, false);
             return;
         }
 
+        renderRecipeInputs(graphics, presentation);
+        drawRecipeArrow(graphics, geometry.recipeArrow(), 0xFF5A5A5A);
+        renderRecipeStation(graphics, presentation.station());
+        if (presentation.shapeless()) {
+            renderShapelessMarker(graphics, geometry.recipeShapelessMarker());
+        }
+
+        TerminalLayout.Rect outputBounds = geometry.recipeOutput();
+        drawLargeSlotFrame(graphics, outputBounds);
+        ItemStack output = presentation.output();
+        int outputX = leftPos + outputBounds.x() + (outputBounds.width() - 16) / 2;
+        int outputY = topPos + outputBounds.y() + (outputBounds.height() - 16) / 2;
+        graphics.renderItem(output, outputX, outputY);
+        graphics.renderItemDecorations(font, output, outputX, outputY);
+
         int recipeCount = menu.getRecipeCount();
-        TerminalLayout.Rect header = geometry.recipeHeader();
-        TerminalLayout.Rect arrow = geometry.recipeArrow();
-        TerminalLayout.Rect output = geometry.recipeOutput();
-        int textRight = arrow.x() - 2;
-        String recipePosition = recipeCount > 0
-                ? (Math.clamp(menu.getCurrentRecipeIndex(), 0, recipeCount - 1) + 1) + " / " + recipeCount
-                : "";
-        int positionX = textRight - font.width(recipePosition);
-        String stationType = "Station · " + menu.getCurrentRecipeTypeLabel();
-        String visibleStation = font.plainSubstrByWidth(
-                stationType, Math.max(0, positionX - header.x() - 2));
-        graphics.drawString(font, visibleStation,
-                leftPos + header.x(), topPos + header.y(), 0xFF505050, false);
+        String recipePosition = recipeCount <= 0 ? "" :
+                (Math.clamp(menu.getCurrentRecipeIndex(), 0, recipeCount - 1) + 1) + "/" + recipeCount;
         if (!recipePosition.isEmpty()) {
             graphics.drawString(font, recipePosition,
-                    leftPos + positionX, topPos + header.y(), 0xFF505050, false);
-        }
-        String outputName = font.plainSubstrByWidth(
-                selected.getHoverName().getString(), Math.max(0, textRight - header.x()));
-        graphics.drawString(font, outputName,
-                leftPos + header.x(), topPos + header.y() + font.lineHeight,
-                0xFF202020, false);
-        drawRecipeArrow(graphics, arrow, recipeCount > 0 ? 0xFF5A5A5A : 0xFF8A8A8A);
-        drawSlotFrame(graphics, leftPos + output.x(), topPos + output.y());
-        graphics.renderItem(selected.copyWithCount(1), leftPos + output.x(), topPos + output.y());
-
-        if (recipeCount <= 0) {
-            drawClippedString(graphics, Component.translatable("gui.magic_storage.no_recipe"),
-                    geometry.recipeStatus(), 0xFF9A2020);
-            return;
+                    leftPos + diagram.right() - font.width(recipePosition),
+                    topPos + diagram.y() + 1, 0xFF505050, false);
         }
 
-        int craftable = menu.getCraftableCount();
-        Component status = craftable > 0
-                ? Component.translatable("gui.magic_storage.ready_to_craft")
-                        .append(": ×").append(Integer.toString(craftable))
-                : Component.translatable("gui.magic_storage.missing_energy_or_materials");
-        int statusColor = craftable > 0 ? 0xFF2E7D32 : 0xFF9A2020;
-        drawClippedString(graphics, status, geometry.recipeStatus(), statusColor);
-        drawClippedString(graphics, Component.translatable("gui.magic_storage.available_required"),
-                geometry.recipeAvailableHeader(), 0xFF505050);
-
-        List<ResourceRow> resources = recipeResources();
-        List<TerminalLayout.Rect> cells = geometry.recipeResourceCells();
+        List<RecipePresentation.Resource> resources = presentation.resources();
+        List<TerminalLayout.Rect> cells = geometry.recipeLedgerCells(resources.size());
         for (int index = 0; index < resources.size(); index++) {
             renderResourceRow(graphics, cells.get(index), resources.get(index));
         }
     }
 
-    private void drawClippedString(
-            GuiGraphics graphics,
-            Component text,
-            TerminalLayout.Rect bounds,
-            int color
+    private void renderRecipeInputs(GuiGraphics graphics, RecipePresentation presentation) {
+        List<ItemStack> inputs = presentation.inputs();
+        if (presentation.kind() == RecipePresentationKind.CRAFTING) {
+            for (TerminalLayout.Rect slot : geometry.recipeInputSlots()) {
+                drawRecipeInputSlot(graphics, slot, ItemStack.EMPTY);
+            }
+        }
+        int positions = presentation.width() * presentation.height();
+        for (int input = 0; input < positions; input++) {
+            drawRecipeInputSlot(
+                    graphics,
+                    presentationInputSlot(presentation, input),
+                    inputs.get(input));
+        }
+    }
+
+    private TerminalLayout.Rect presentationInputSlot(
+            RecipePresentation presentation,
+            int input
     ) {
-        String visible = font.plainSubstrByWidth(text.getString(), bounds.width());
-        graphics.drawString(font, visible,
-                leftPos + bounds.x(), topPos + bounds.y(), color, false);
+        int column = input % presentation.width();
+        int row = input / presentation.width();
+        int columnOffset = (3 - presentation.width()) / 2;
+        int rowOffset = (3 - presentation.height()) / 2;
+        return geometry.recipeInputSlots().get((row + rowOffset) * 3 + column + columnOffset);
+    }
+
+    private void drawRecipeInputSlot(
+            GuiGraphics graphics,
+            TerminalLayout.Rect slot,
+            ItemStack stack
+    ) {
+        int itemX = leftPos + slot.x() + 1;
+        int itemY = topPos + slot.y() + 1;
+        drawSlotFrame(graphics, itemX, itemY);
+        if (!stack.isEmpty()) graphics.renderItem(stack, itemX, itemY);
+    }
+
+    private void renderRecipeStation(GuiGraphics graphics, ItemStack station) {
+        TerminalLayout.Rect bounds = geometry.recipeStation();
+        int itemX = leftPos + bounds.x() + 1;
+        int itemY = topPos + bounds.y() + 1;
+        drawSlotFrame(graphics, itemX, itemY);
+        graphics.renderItem(station, itemX, itemY);
+    }
+
+    private void drawLargeSlotFrame(GuiGraphics graphics, TerminalLayout.Rect bounds) {
+        int x = leftPos + bounds.x();
+        int y = topPos + bounds.y();
+        graphics.fill(x, y, x + bounds.width(), y + bounds.height(), 0xFF373737);
+        graphics.fill(x + 1, y + 1, x + bounds.width() - 1, y + bounds.height() - 1, 0xFF8B8B8B);
+        graphics.fill(x + bounds.width() - 2, y + 1,
+                x + bounds.width() - 1, y + bounds.height() - 1, 0xFFFFFFFF);
+        graphics.fill(x + 1, y + bounds.height() - 2,
+                x + bounds.width() - 1, y + bounds.height() - 1, 0xFFFFFFFF);
+    }
+
+    private void renderShapelessMarker(GuiGraphics graphics, TerminalLayout.Rect bounds) {
+        int x = leftPos + bounds.x();
+        int y = topPos + bounds.y();
+        int color = 0xFF5A5A5A;
+        graphics.fill(x, y + 2, x + 7, y + 3, color);
+        graphics.fill(x + 6, y + 1, x + 8, y + 4, color);
+        graphics.fill(x + 2, y + 7, x + 9, y + 8, color);
+        graphics.fill(x + 1, y + 6, x + 3, y + 9, color);
     }
 
     private void drawRecipeArrow(GuiGraphics graphics, TerminalLayout.Rect bounds, int color) {
@@ -488,34 +537,30 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         blitControlIcon(graphics, iconX, iconY, TerminalControlIcon.NEXT, color);
     }
 
-    private List<ResourceRow> recipeResources() {
-        List<ResourceRow> resources = new java.util.ArrayList<>();
-        for (CraftingTerminalMenu.IngredientPreview ingredient : menu.getIngredientPreview()) {
-            resources.add(new ResourceRow(
-                    ingredient.stack(), null, ingredient.available(), ingredient.required()));
-        }
-        for (CraftingTerminalMenu.EnergyPreview energy : menu.getEnergyPreview()) {
-            resources.add(new ResourceRow(
-                    ItemStack.EMPTY, energy.type(), energy.available(), energy.required()));
-        }
-        return resources;
-    }
-
     private void renderResourceRow(
             GuiGraphics graphics,
             TerminalLayout.Rect cell,
-            ResourceRow resource
+            RecipePresentation.Resource resource
     ) {
         int x = leftPos + cell.x();
         int y = topPos + cell.y();
         int bottom = y + cell.height();
-        graphics.fill(x, y, x + cell.width(), bottom, 0x55373737);
+        int background = switch (resource.kind()) {
+            case ITEM -> ITEM_ROW_BACKGROUND;
+            case ENERGY -> ENERGY_ROW_BACKGROUND;
+            case TOOL -> TOOL_ROW_BACKGROUND;
+        };
+        int border = switch (resource.kind()) {
+            case ITEM -> ITEM_ROW_BORDER;
+            case ENERGY -> ENERGY_ROW_BORDER;
+            case TOOL -> TOOL_ROW_BORDER;
+        };
+        graphics.fill(x, y, x + cell.width(), bottom, border);
+        graphics.fill(x + 1, y + 1, x + cell.width() - 1, bottom - 1, background);
         int iconY = y + Math.max(0, (cell.height() - 16) / 2);
-        if (!resource.stack().isEmpty()) {
-            graphics.renderItem(resource.stack(), x, iconY);
-        } else if (resource.energyType() != null) {
-            graphics.renderItem(resource.energyType().representativeStack(), x, iconY);
-        }
+        ItemStack icon = resource.kind() == RecipePresentation.ResourceKind.ENERGY
+                ? resource.energyType().representativeStack() : resource.stack();
+        graphics.renderItem(icon, x + 1, iconY);
         String amount = formatAmount(resource.available()) + "/" + formatAmount(resource.required());
         int textX = x + 18;
         String visible = font.plainSubstrByWidth(amount, Math.max(0, cell.width() - 20));
@@ -536,17 +581,28 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     protected void renderTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
         super.renderTooltip(graphics, mouseX, mouseY);
         if (menu.getPage().isItemPage()) {
-            ItemStack selected = menu.getSelectedStack();
-            if (!selected.isEmpty()
+            RecipePresentation presentation = menu.getRecipePresentation();
+            if (presentation.isEmpty()) return;
+            ItemStack output = presentation.output();
+            if (!output.isEmpty()
                     && geometry.recipeOutput().contains(mouseX - leftPos, mouseY - topPos)) {
-                graphics.renderTooltip(font, selected, mouseX, mouseY);
+                graphics.renderTooltip(font, output, mouseX, mouseY);
                 return;
             }
-            ResourceRow resource = recipeResourceAt(mouseX, mouseY);
+            ItemStack input = recipeInputAt(presentation, mouseX, mouseY);
+            if (!input.isEmpty()) {
+                graphics.renderTooltip(font, input, mouseX, mouseY);
+                return;
+            }
+            if (geometry.recipeStation().contains(mouseX - leftPos, mouseY - topPos)) {
+                graphics.renderTooltip(font, presentation.station(), mouseX, mouseY);
+                return;
+            }
+            RecipePresentation.Resource resource = recipeResourceAt(
+                    presentation, mouseX, mouseY);
             if (resource != null) {
-                Component name = resource.stack().isEmpty()
-                        ? energyLabel(resource.energyType())
-                        : resource.stack().getHoverName();
+                Component name = resource.kind() == RecipePresentation.ResourceKind.ENERGY
+                        ? energyLabel(resource.energyType()) : resource.stack().getHoverName();
                 graphics.renderComponentTooltip(font, List.of(
                         name,
                         Component.translatable("gui.magic_storage.available_amount",
@@ -598,9 +654,29 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         }
     }
 
-    private ResourceRow recipeResourceAt(int mouseX, int mouseY) {
-        List<ResourceRow> resources = recipeResources();
-        List<TerminalLayout.Rect> cells = geometry.recipeResourceCells();
+    private ItemStack recipeInputAt(
+            RecipePresentation presentation,
+            int mouseX,
+            int mouseY
+    ) {
+        List<ItemStack> inputs = presentation.inputs();
+        int positions = presentation.width() * presentation.height();
+        for (int input = 0; input < positions; input++) {
+            if (presentationInputSlot(presentation, input)
+                    .contains(mouseX - leftPos, mouseY - topPos)) {
+                return inputs.get(input);
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private RecipePresentation.Resource recipeResourceAt(
+            RecipePresentation presentation,
+            int mouseX,
+            int mouseY
+    ) {
+        List<RecipePresentation.Resource> resources = presentation.resources();
+        List<TerminalLayout.Rect> cells = geometry.recipeLedgerCells(resources.size());
         for (int index = 0; index < resources.size(); index++) {
             TerminalLayout.Rect cell = cells.get(index);
             if (cell.contains(mouseX - leftPos, mouseY - topPos)) return resources.get(index);
@@ -649,14 +725,6 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     private static String formatAmount(long amount) {
         return TerminalAmountFormatter.formatCompact(amount);
-    }
-
-    private record ResourceRow(
-            ItemStack stack,
-            EnergyType energyType,
-            long available,
-            long required
-    ) {
     }
 
     private record FuelTargetOption(EnergyType target) {

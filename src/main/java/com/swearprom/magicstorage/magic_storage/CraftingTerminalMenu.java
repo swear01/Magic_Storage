@@ -147,8 +147,15 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
     }
 
-    private static final int MAX_INGREDIENTS = 9;
-    private static final int SELECTION_SLOTS = 1 + MAX_INGREDIENTS;
+    private static final int MAX_INGREDIENTS = RecipePresentation.MAX_ITEM_RESOURCES;
+    private static final int PRESENTATION_OUTPUT_SLOT = 0;
+    private static final int ITEM_RESOURCE_SLOT_START = PRESENTATION_OUTPUT_SLOT + 1;
+    private static final int PRESENTATION_STATION_SLOT = ITEM_RESOURCE_SLOT_START + MAX_INGREDIENTS;
+    private static final int PRESENTATION_INPUT_SLOT_START = PRESENTATION_STATION_SLOT + 1;
+    private static final int PRESENTATION_TOOL_SLOT =
+            PRESENTATION_INPUT_SLOT_START + RecipePresentation.MAX_INPUTS;
+    private static final int PRESENTATION_METADATA_SLOT = PRESENTATION_TOOL_SLOT + 1;
+    private static final int SELECTION_SLOTS = PRESENTATION_METADATA_SLOT + 1;
     private static final int PREVIEW_CAP = 9999;
     private static final int MAX_RECIPE_REQUEST = 64;
     public static final int FUEL_INPUT_SLOT = DISPLAY_SLOTS + PLAYER_INVENTORY_SLOTS;
@@ -427,7 +434,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     public ItemStack getSelectedStack() {
-        return selectionContainer != null ? selectionContainer.getItem(0) : ItemStack.EMPTY;
+        return selectionContainer != null
+                ? selectionContainer.getItem(PRESENTATION_OUTPUT_SLOT)
+                : ItemStack.EMPTY;
     }
 
     public List<ItemStack> getMissingPreview() {
@@ -444,13 +453,52 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         List<IngredientPreview> result = new ArrayList<>();
         if (selectionContainer == null) return result;
         for (int ingredient = 0; ingredient < MAX_INGREDIENTS; ingredient++) {
-            ItemStack stack = selectionContainer.getItem(ingredient + 1);
+            ItemStack stack = selectionContainer.getItem(ITEM_RESOURCE_SLOT_START + ingredient);
             if (stack.isEmpty()) continue;
             int required = stack.getCount();
             result.add(new IngredientPreview(
                     stack.copyWithCount(1), ingredientAvailable[ingredient], required));
         }
         return result;
+    }
+
+    public RecipePresentation getRecipePresentation() {
+        if (selectionContainer == null) return RecipePresentation.empty();
+        RecipePresentation.Metadata metadata = RecipePresentation.metadataFromCarrier(
+                selectionContainer.getItem(PRESENTATION_METADATA_SLOT));
+        if (metadata == null) return RecipePresentation.empty();
+
+        List<ItemStack> inputs = new ArrayList<>(RecipePresentation.MAX_INPUTS);
+        for (int input = 0; input < RecipePresentation.MAX_INPUTS; input++) {
+            inputs.add(selectionContainer.getItem(PRESENTATION_INPUT_SLOT_START + input).copy());
+        }
+        List<RecipePresentation.Resource> resources = new ArrayList<>();
+        for (int item = 0; item < metadata.itemResourceCount(); item++) {
+            ItemStack stack = selectionContainer.getItem(ITEM_RESOURCE_SLOT_START + item);
+            if (stack.isEmpty()) {
+                throw new IllegalStateException("Recipe presentation item resource is missing");
+            }
+            resources.add(RecipePresentation.Resource.item(
+                    stack.copyWithCount(1), ingredientAvailable[item], stack.getCount()));
+        }
+        for (EnergyPreview energy : getEnergyPreview()) {
+            resources.add(RecipePresentation.Resource.energy(
+                    energy.type(), energy.available(), energy.required()));
+        }
+        if (metadata.toolRequired() > 0) {
+            ItemStack tool = selectionContainer.getItem(PRESENTATION_TOOL_SLOT);
+            if (tool.isEmpty()) {
+                throw new IllegalStateException("Recipe presentation tool resource is missing");
+            }
+            resources.add(RecipePresentation.Resource.tool(
+                    tool, metadata.toolAvailable(), metadata.toolRequired()));
+        }
+        return new RecipePresentation(
+                metadata,
+                inputs,
+                selectionContainer.getItem(PRESENTATION_OUTPUT_SLOT),
+                selectionContainer.getItem(PRESENTATION_STATION_SLOT),
+                resources);
     }
 
     public List<EnergyPreview> getEnergyPreview() {
@@ -692,7 +740,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         ItemStack identity = TerminalDisplayStack.strip(stack);
         selectedRecipeId = null;
         selectedKey = ItemKey.of(identity);
-        selectionContainer.setItem(0, selectedKey.toStack(1));
+        selectionContainer.setItem(PRESENTATION_OUTPUT_SLOT, selectedKey.toStack(1));
         lookUpRecipes(level, identity);
     }
 
@@ -836,7 +884,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (ItemStack.isSameItemSameComponents(result, output)) currentRecipes.add(holder);
         }
 
-        currentRecipes.sort(Comparator.comparingInt(h -> getRecipeSortOrder(h.value())));
+        currentRecipes.sort(Comparator
+                .comparingInt((RecipeHolder<?> holder) -> getRecipeSortOrder(holder.value()))
+                .thenComparing(holder -> holder.id().toString()));
         syncRecipeMetadata();
     }
 
@@ -880,8 +930,25 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         recipeCount = currentRecipes.size();
         if (currentRecipes.isEmpty() || currentRecipeIndex >= currentRecipes.size()) {
             currentRecipeTypeOrder = -1;
+            clearRecipePresentation();
         } else {
-            currentRecipeTypeOrder = getRecipeSortOrder(currentRecipes.get(currentRecipeIndex).value());
+            RecipeHolder<?> holder = currentRecipes.get(currentRecipeIndex);
+            if (selectedRecipeId != null) selectedRecipeId = holder.id();
+            currentRecipeTypeOrder = getRecipeSortOrder(holder.value());
+            if (!playerInventory.player.level().isClientSide()) {
+                StorageCoreBlockEntity core = getCore(playerInventory.player.level());
+                if (core == null) {
+                    clearRecipePresentation();
+                } else {
+                    applyPreviewData(emptyCraftPreview());
+                    syncRecipePresentation(
+                            holder,
+                            emptyCraftPreview(),
+                            snapshotIngredientSources(core, playerInventory.player),
+                            core,
+                            false);
+                }
+            }
         }
     }
 
@@ -1204,6 +1271,190 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         List<ItemStack> displayItems = ingredient.items();
         if (!displayItems.isEmpty()) return displayItems.getFirst().copyWithCount(1);
         return ItemStack.EMPTY;
+    }
+
+    private void syncRecipePresentation(
+            RecipeHolder<?> holder,
+            CraftPreview preview,
+            List<IngredientSource> sources,
+            StorageCoreBlockEntity core,
+            boolean includeResources
+    ) {
+        Recipe<?> recipe = holder.value();
+        RecipePresentationKind kind = presentationKind(recipe);
+        int width = presentationWidth(recipe);
+        int height = presentationHeight(recipe);
+        List<ItemStack> inputs = presentationInputs(recipe, sources);
+        ItemStack output = presentationOutput(holder, sources, core.getLevel());
+        ItemStack station = presentationStation(recipe, core);
+        if (output.isEmpty()) throw new IllegalStateException("Selected recipe has no presentation output");
+
+        selectionContainer.clearContent();
+        selectionContainer.setItem(PRESENTATION_OUTPUT_SLOT, output.copy());
+        selectionContainer.setItem(PRESENTATION_STATION_SLOT, station.copyWithCount(1));
+        for (int input = 0; input < RecipePresentation.MAX_INPUTS; input++) {
+            selectionContainer.setItem(
+                    PRESENTATION_INPUT_SLOT_START + input, inputs.get(input).copy());
+        }
+
+        int itemResourceCount = 0;
+        if (includeResources) {
+            List<IngredientNeed> needs = summarizeIngredients(recipeIngredients(recipe));
+            itemResourceCount = needs.size();
+            for (int item = 0; item < itemResourceCount; item++) {
+                IngredientPreview resource;
+                if (item < preview.ingredients().size()) {
+                    resource = preview.ingredients().get(item);
+                } else {
+                    IngredientNeed need = needs.get(item);
+                    long available = 0;
+                    for (IngredientSource source : sources) {
+                        if (need.ingredient().test(source.stack())) {
+                            available = saturatingAdd(available, source.amount());
+                        }
+                    }
+                    resource = new IngredientPreview(
+                            ingredientRepresentative(need.ingredient(), sources),
+                            available,
+                            Math.toIntExact(need.count()));
+                }
+                if (resource.stack().isEmpty()) {
+                    throw new IllegalStateException("Recipe presentation item resource has no representative");
+                }
+                selectionContainer.setItem(
+                        ITEM_RESOURCE_SLOT_START + item,
+                        resource.stack().copyWithCount(resource.required()));
+                ingredientAvailable[item] = resource.available();
+            }
+        }
+
+        long toolAvailable = 0;
+        long toolRequired = 0;
+        if (recipe instanceof AxeTransformationRecipe axeRecipe) {
+            ItemStack tool = AxeTransformationCatalog.installedTool(core);
+            if (tool.isEmpty() || !tool.canPerformAction(axeRecipe.ability())) {
+                throw new IllegalStateException("Selected axe recipe has no compatible tool");
+            }
+            toolAvailable = AxeTransformationCatalog.remainingDurability(tool);
+            toolRequired = 1;
+            selectionContainer.setItem(PRESENTATION_TOOL_SLOT, tool.copyWithCount(1));
+        }
+
+        RecipePresentation.Metadata metadata = new RecipePresentation.Metadata(
+                holder.id(),
+                kind,
+                width,
+                height,
+                recipe instanceof ShapelessRecipe,
+                itemResourceCount,
+                toolAvailable,
+                toolRequired);
+        selectionContainer.setItem(
+                PRESENTATION_METADATA_SLOT, RecipePresentation.metadataCarrier(metadata));
+    }
+
+    private void clearRecipePresentation() {
+        if (selectionContainer != null) selectionContainer.clearContent();
+        Arrays.fill(ingredientAvailable, 0);
+        processRequired = 0;
+        fuelRequired = 0;
+        craftableCount = 0;
+    }
+
+    private static RecipePresentationKind presentationKind(Recipe<?> recipe) {
+        if (recipe instanceof ShapedRecipe || recipe instanceof ShapelessRecipe) {
+            return RecipePresentationKind.CRAFTING;
+        }
+        if (recipe instanceof AbstractCookingRecipe) return RecipePresentationKind.COOKING;
+        if (recipe instanceof StonecutterRecipe) return RecipePresentationKind.STONECUTTING;
+        if (recipe instanceof SmithingTransformRecipe) return RecipePresentationKind.SMITHING;
+        if (recipe instanceof AxeTransformationRecipe) return RecipePresentationKind.AXE;
+        throw new IllegalArgumentException("Unsupported recipe presentation: " + recipe.getClass().getName());
+    }
+
+    private static int presentationWidth(Recipe<?> recipe) {
+        if (recipe instanceof ShapedRecipe shaped) return shaped.getWidth();
+        if (recipe instanceof ShapelessRecipe) return 3;
+        if (recipe instanceof SmithingTransformRecipe) return 3;
+        return 1;
+    }
+
+    private static int presentationHeight(Recipe<?> recipe) {
+        if (recipe instanceof ShapedRecipe shaped) return shaped.getHeight();
+        if (recipe instanceof ShapelessRecipe) return 3;
+        return 1;
+    }
+
+    private static List<ItemStack> presentationInputs(
+            Recipe<?> recipe,
+            List<IngredientSource> sources
+    ) {
+        List<RecipeIngredient> ingredients = recipe instanceof SmithingTransformRecipe
+                ? recipeIngredients(recipe)
+                : recipe.getIngredients().stream().map(RecipeIngredient::of).toList();
+        if (ingredients.size() > RecipePresentation.MAX_INPUTS) {
+            throw new IllegalArgumentException("Recipe presentation has more than nine inputs");
+        }
+        List<ItemStack> inputs = new ArrayList<>(
+                Collections.nCopies(RecipePresentation.MAX_INPUTS, ItemStack.EMPTY));
+        for (int input = 0; input < ingredients.size(); input++) {
+            RecipeIngredient ingredient = ingredients.get(input);
+            if (!ingredient.isEmpty()) {
+                inputs.set(input, ingredientRepresentative(ingredient, sources));
+            }
+        }
+        return List.copyOf(inputs);
+    }
+
+    private ItemStack presentationOutput(
+            RecipeHolder<?> holder,
+            List<IngredientSource> sources,
+            Level level
+    ) {
+        if (level == null) throw new IllegalStateException("Selected recipe has no level");
+        Recipe<?> recipe = holder.value();
+        if (recipe instanceof SmithingTransformRecipe smithing) {
+            List<RecipeIngredient> roles = recipeIngredients(recipe);
+            if (roles.size() != 3) {
+                throw new IllegalStateException("Smithing presentation requires three input roles");
+            }
+            List<ItemStack> inputs = roles.stream()
+                    .map(role -> ingredientRepresentative(role, sources))
+                    .toList();
+            if (inputs.stream().anyMatch(ItemStack::isEmpty)) {
+                RecipePresentation.Metadata previous = RecipePresentation.metadataFromCarrier(
+                        selectionContainer.getItem(PRESENTATION_METADATA_SLOT));
+                ItemStack previousOutput = selectionContainer.getItem(PRESENTATION_OUTPUT_SLOT);
+                if (previous != null
+                        && previous.recipeId().equals(holder.id())
+                        && !previousOutput.isEmpty()) {
+                    return previousOutput.copy();
+                }
+                return smithing.getResultItem(level.registryAccess()).copy();
+            }
+            return smithing.assemble(new SmithingRecipeInput(
+                    inputs.get(0), inputs.get(1), inputs.get(2)), level.registryAccess());
+        }
+        return recipe.getResultItem(level.registryAccess()).copy();
+    }
+
+    private static ItemStack presentationStation(
+            Recipe<?> recipe,
+            StorageCoreBlockEntity core
+    ) {
+        if (recipe instanceof AxeTransformationRecipe) {
+            ItemStack tool = AxeTransformationCatalog.installedTool(core);
+            if (tool.isEmpty()) throw new IllegalStateException("Axe presentation has no installed tool");
+            return tool.copyWithCount(1);
+        }
+        int stationSlot = CraftingStationTable.requiredSlot(recipe.getType());
+        MachineEnergyTable.Entry station = MachineEnergyTable.get(stationSlot);
+        if (station == null) throw new IllegalStateException("Recipe presentation has no station descriptor");
+        ItemStack installed = core.getMachineContainer().getItem(stationSlot);
+        if (!station.accepts(installed)) {
+            throw new IllegalStateException("Recipe presentation station is not installed");
+        }
+        return installed.copyWithCount(1);
     }
 
     private IngredientPlan planIngredients(
@@ -1719,6 +1970,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (recipe instanceof AbstractCookingRecipe cookingRecipe && cookingRecipe.getCookingTime() <= 0) {
             return false;
         }
+        if (recipe instanceof ShapedRecipe shapedRecipe
+                && (shapedRecipe.getWidth() > 3 || shapedRecipe.getHeight() > 3)) {
+            return false;
+        }
         RecipeType<?> type = recipe.getType();
         Class<?> recipeClass = recipe.getClass();
         boolean staticContract = recipeClass == AxeTransformationRecipe.class
@@ -1798,19 +2053,25 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     private void updatePreview(StorageCoreBlockEntity core, Player player) {
-        CraftPreview preview = computeCraftPreview(core, player);
+        if (core == null || core.getLevel() == null) {
+            clearRecipePresentation();
+            return;
+        }
+        RecipeHolder<?> holder = resolveCurrentRecipe(core.getLevel());
+        if (holder == null) {
+            clearRecipePresentation();
+            return;
+        }
+        List<IngredientSource> sources = snapshotIngredientSources(core, player);
+        CraftPreview preview = computeCraftPreviewFor(holder.value(), core, sources);
+        applyPreviewData(preview);
+        syncRecipePresentation(holder, preview, sources, core, true);
+        refreshEnergyAmounts(core);
+    }
+
+    private void applyPreviewData(CraftPreview preview) {
         craftableCount = preview.craftable();
         Arrays.fill(ingredientAvailable, 0);
-        for (int i = 1; i < SELECTION_SLOTS; i++) {
-            int ingredient = i - 1;
-            if (ingredient < preview.ingredients().size()) {
-                IngredientPreview resource = preview.ingredients().get(ingredient);
-                selectionContainer.setItem(i, resource.stack().copyWithCount(resource.required()));
-                ingredientAvailable[ingredient] = resource.available();
-            } else {
-                selectionContainer.setItem(i, ItemStack.EMPTY);
-            }
-        }
         processRequired = 0;
         fuelRequired = 0;
         for (EnergyPreview energy : preview.energies()) {
@@ -1820,7 +2081,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 processRequired = energy.required();
             }
         }
-        refreshEnergyAmounts(core);
     }
 
     @Override

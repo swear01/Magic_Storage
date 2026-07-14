@@ -341,6 +341,10 @@ class StaticRegressionTests(unittest.TestCase):
 
     def test_crafting_screen_does_not_recompute_recipes_or_read_core_storage_client_side(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java")
+        self.assertTrue(
+            "menu.getRecipePresentation()" in text,
+            "CraftingTerminalScreen must render the menu-synchronized RecipePresentation",
+        )
         self.assertNotIn("findRecipesClient", text)
         self.assertNotIn("getCore(minecraft.level)", text)
         self.assertNotIn("RecipeManager mgr = minecraft.level.getRecipeManager()", text)
@@ -348,6 +352,11 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotIn("import net.minecraft.world.item.crafting.RecipeType", text)
         self.assertNotIn("StorageCoreBlockEntity", text)
         self.assertNotIn("level.getRecipeManager()", text)
+        self.assertNotRegex(text, r"\bnew\s+RecipePresentation\b")
+        self.assertNotRegex(
+            text,
+            r"\bRecipePresentation\.(?:build|create|fromRecipe)\s*\(",
+        )
 
     def test_emi_does_not_expose_hidden_selection_slots_as_inputs(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java")
@@ -691,26 +700,91 @@ class StaticRegressionTests(unittest.TestCase):
         ]:
             self.assertNotIn(stale, menu + screen + lang)
 
-    def test_recipe_resources_are_server_synced_and_layout_owned(self):
+    def test_recipe_presentation_kind_covers_every_supported_native_diagram(self):
+        kind = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/RecipePresentationKind.java"
+        )
+        self.assertRegex(kind, r"\bpublic\s+enum\s+RecipePresentationKind\b")
+        for family in ["CRAFTING", "COOKING", "STONECUTTING", "SMITHING", "AXE"]:
+            self.assertRegex(
+                kind,
+                rf"\b[A-Z0-9_]*{family}[A-Z0-9_]*\b",
+                f"RecipePresentationKind must identify the {family.lower()} diagram",
+            )
+
+    def test_recipe_presentation_model_is_exact_immutable_and_bounded(self):
+        presentation = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/RecipePresentation.java"
+        )
+
+        self.assertRegex(presentation, r"\bpublic\s+final\s+class\s+RecipePresentation\b")
+        required_fields = {
+            "exact recipe id": r"\bprivate\s+final\s+ResourceLocation\s+recipeId\s*;",
+            "presentation kind": r"\bprivate\s+final\s+RecipePresentationKind\s+kind\s*;",
+            "shaped width": r"\bprivate\s+final\s+int\s+width\s*;",
+            "shaped height": r"\bprivate\s+final\s+int\s+height\s*;",
+            "shapeless state": r"\bprivate\s+final\s+boolean\s+shapeless\s*;",
+            "positioned inputs": r"\bprivate\s+final\s+List<ItemStack>\s+inputs\s*;",
+            "exact output stack": r"\bprivate\s+final\s+ItemStack\s+output\s*;",
+            "station identity": r"\bprivate\s+final\s+ItemStack\s+station\s*;",
+            "typed ledger rows": r"\bprivate\s+final\s+List<Resource>\s+resources\s*;",
+        }
+        self.assertEqual(
+            [],
+            [label for label, pattern in required_fields.items()
+             if re.search(pattern, presentation) is None],
+        )
+
+        self.assertEqual(9, self.java_int_constant(presentation, "MAX_INPUTS"))
+        self.assertGreater(self.java_int_constant(presentation, "MAX_ITEM_RESOURCES"), 0)
+        self.assertIn("inputs.size() != MAX_INPUTS", presentation)
+        self.assertIn("itemResourceCount > MAX_ITEM_RESOURCES", presentation)
+        self.assertIn("toolRows > 1", presentation)
+        for resource_kind in ["ITEM", "ENERGY", "TOOL"]:
+            self.assertRegex(presentation, rf"\b{resource_kind}\b")
+        self.assertIn("record Metadata(", presentation)
+        self.assertIn("this.inputs = inputs.stream().map(ItemStack::copy).toList()", presentation)
+        self.assertIn("this.output = output.copy()", presentation)
+        self.assertIn("this.resources = List.copyOf(resources)", presentation)
+        self.assertIn("return output.copy()", presentation)
+        self.assertIn("metadataCarrier(Metadata metadata)", presentation)
+        self.assertIn("metadataFromCarrier(ItemStack carrier)", presentation)
+        self.assertNotIn("output.copyWithCount(1)", presentation)
+
+    def test_recipe_presentation_is_built_server_side_and_uses_bounded_menu_sync(self):
         menu = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
         )
-        screen = self.read_required(
-            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        self.assertRegex(
+            menu,
+            r"\bpublic\s+RecipePresentation\s+getRecipePresentation\s*\(\s*\)",
         )
-        layout = self.read_required(
-            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        presentation_getter = self.java_block(
+            menu,
+            r"\bpublic\s+RecipePresentation\s+getRecipePresentation\s*\(",
+            "CraftingTerminalMenu.getRecipePresentation",
         )
-        self.assertIn("record IngredientPreview", menu)
-        self.assertIn("record EnergyPreview", menu)
-        self.assertIn("getIngredientPreview()", screen)
-        self.assertIn("getEnergyPreview()", screen)
-        self.assertIn("geometry.recipeResourceCells()", screen)
-        self.assertIn("recipeResourceCells", layout)
-        self.assertNotIn("RecipeManager", screen)
-        self.assertNotIn("StorageCoreBlockEntity", screen)
+        presentation_sync = self.java_block(
+            menu,
+            r"\bprivate\s+void\s+syncRecipePresentation\s*\(",
+            "CraftingTerminalMenu.syncRecipePresentation",
+        )
+        self.assertIn("RecipePresentation.metadataFromCarrier(", presentation_getter)
+        self.assertIn("RecipePresentation.MAX_INPUTS", presentation_getter)
+        self.assertIn("metadata.itemResourceCount()", presentation_getter)
+        self.assertIn("getEnergyPreview()", presentation_getter)
+        self.assertIn("metadata.toolRequired() > 0", presentation_getter)
+        self.assertIn("return new RecipePresentation(", presentation_getter)
+        self.assertIn("RecipeHolder<?> holder", menu)
+        self.assertIn("Recipe<?> recipe = holder.value()", presentation_sync)
+        self.assertIn("holder.id()", presentation_sync)
+        self.assertIn("output.copy()", presentation_sync)
+        self.assertIn("RecipePresentation.metadataCarrier(metadata)", presentation_sync)
+        self.assertIn("SELECTION_SLOTS = PRESENTATION_METADATA_SLOT + 1", menu)
+        self.assertIn("new SimpleContainer(SELECTION_SLOTS)", menu)
+        self.assertIn("new ArrayList<>(2)", menu)
 
-    def test_gui_sidecar_uses_layout_owned_native_recipe_grammar_and_18px_controls(self):
+    def test_recipe_workspace_stacks_diagram_above_ledger_and_footer(self):
         layout = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
         )
@@ -719,13 +793,9 @@ class StaticRegressionTests(unittest.TestCase):
         )
 
         required_layout_regions = [
-            "Rect recipeHeader",
-            "Rect recipeInputRegion",
-            "Rect recipeArrow",
-            "Rect recipeOutput",
-            "Rect recipeAvailableHeader",
-            "Rect recipeStatus",
-            "Rect recipeQuantityFooter",
+            "Rect recipeDiagram",
+            "Rect recipeLedger",
+            "Rect recipeFooter",
             "List<Rect> recipeNavigationButtons",
             "List<Rect> recipeCraftButtons",
             "Rect fuelControlPanel",
@@ -733,28 +803,146 @@ class StaticRegressionTests(unittest.TestCase):
         ]
         self.assertEqual([], [region for region in required_layout_regions if region not in layout])
         self.assertIn("static final int CONTROL_SIZE = SLOT_SIZE", layout)
-
-        required_screen_usage = [
-            "geometry.fuelControlPanel()",
-            "geometry.recipeHeader()",
-            "geometry.recipeInputRegion()",
-            "geometry.recipeArrow()",
-            "geometry.recipeOutput()",
-            "geometry.recipeAvailableHeader()",
-            "geometry.recipeStatus()",
-            "geometry.recipeQuantityFooter()",
+        self.assertNotIn("RESOURCE_COUNT = 9", layout)
+        self.assertNotIn("recipeResourceCells", layout)
+        self.assertRegex(
+            layout,
+            r"\bdiagram\.bottom\(\)\s*>\s*ledger\.y\(\)"
+            r"[\s\S]{0,200}\bledger\.bottom\(\)\s*>\s*footer\.y\(\)",
+            "recipe geometry must reject diagram/ledger/footer overlap",
+        )
+        for usage in [
+            "geometry.recipeDiagram()",
+            "geometry.recipeLedger()",
+            "geometry.recipeFooter()",
             "geometry.recipeNavigationButtons()",
             "geometry.recipeCraftButtons()",
-            "drawRecipeArrow",
-            "menu.getCurrentRecipeTypeLabel()",
-            "menu.getIngredientPreview()",
-            "menu.getEnergyPreview()",
-            "menu.getSelectedStack()",
-        ]
-        self.assertEqual([], [usage for usage in required_screen_usage if usage not in screen])
-        self.assertNotIn("int navigationY =", screen)
-        self.assertNotRegex(screen, r"\.bounds\([^\n]*,\s*16\)\.build\(\)")
-        self.assertNotIn("RecipeManager", screen)
+        ]:
+            self.assertIn(usage, screen)
+
+    def test_recipe_navigation_uses_two_explicit_previous_next_arrow_buttons(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        init = self.java_block(
+            screen,
+            r"\bprotected\s+void\s+init\s*\(",
+            "CraftingTerminalScreen.init",
+        )
+        self.assertEqual(1, init.count("TerminalControlIcon.PREVIOUS"))
+        self.assertEqual(1, init.count("TerminalControlIcon.NEXT"))
+        self.assertIn("navigationButtons.get(0)", init)
+        self.assertIn("navigationButtons.get(1)", init)
+        self.assertIn("prevRecipeBtn = addRecipeNavigationButton(", init)
+        self.assertIn("nextRecipeBtn = addRecipeNavigationButton(", init)
+        self.assertNotIn("addTextCycleButton", init[:init.index("List<TerminalLayout.Rect> craftButtons")])
+
+    def test_recipe_output_renders_the_exact_server_synced_stack_count(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        recipe_panel = self.java_block(
+            screen,
+            r"\bprivate\s+void\s+renderRecipePanel\s*\(",
+            "CraftingTerminalScreen.renderRecipePanel",
+        )
+        presentation = re.search(
+            r"\bRecipePresentation\s+([A-Za-z_]\w*)\s*=\s*"
+            r"menu\.getRecipePresentation\(\)\s*;",
+            recipe_panel,
+        )
+        self.assertIsNotNone(
+            presentation,
+            "renderRecipePanel must read the server-synced RecipePresentation",
+        )
+        output = re.search(
+            rf"\bItemStack\s+([A-Za-z_]\w*)\s*=\s*"
+            rf"{re.escape(presentation.group(1))}\.output\(\)\s*;",
+            recipe_panel,
+        )
+        self.assertIsNotNone(output, "recipe output must come from RecipePresentation.output()")
+        output_name = output.group(1)
+        self.assertRegex(recipe_panel, rf"graphics\.renderItem\(\s*{re.escape(output_name)}\s*,")
+        self.assertRegex(
+            recipe_panel,
+            rf"graphics\.renderItemDecorations\(\s*font\s*,\s*{re.escape(output_name)}\s*,",
+        )
+        self.assertNotIn("copyWithCount(1)", recipe_panel)
+
+    def test_recipe_ledger_uses_neutral_items_and_dark_red_energy_tool_rows(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+
+        constants = {
+            name: int(value, 16) & 0xFFFFFF
+            for name, value in re.findall(
+                r"\bstatic\s+final\s+int\s+([A-Z][A-Z0-9_]*)\s*=\s*"
+                r"(0x[0-9A-Fa-f]{8})\s*;",
+                screen,
+            )
+        }
+
+        def palette_names(kind: str, role: str) -> list[str]:
+            role_tokens = [role] if role == "BORDER" else ["BACKGROUND", "FILL"]
+            return [
+                name for name in constants
+                if kind in name and any(token in name for token in role_tokens)
+            ]
+
+        item_names = palette_names("ITEM", "BACKGROUND") + palette_names("ITEM", "BORDER")
+        self.assertGreaterEqual(
+            len(set(item_names)),
+            2,
+            "item rows need explicit neutral background/fill and border palette constants",
+        )
+        for name in set(item_names):
+            red = constants[name] >> 16 & 0xFF
+            green = constants[name] >> 8 & 0xFF
+            blue = constants[name] & 0xFF
+            self.assertLessEqual(max(red, green, blue) - min(red, green, blue), 12)
+            self.assertGreaterEqual(screen.count(name), 2, f"{name} must be used by row rendering")
+
+        special_names = set()
+        for kind in ["ENERGY", "TOOL"]:
+            kind_names = palette_names(kind, "BACKGROUND") + palette_names(kind, "BORDER")
+            self.assertGreaterEqual(
+                len(set(kind_names)),
+                2,
+                f"{kind.lower()} rows need explicit dark-red background/fill and border constants",
+            )
+            special_names.update(kind_names)
+        for name in special_names:
+            red = constants[name] >> 16 & 0xFF
+            green = constants[name] >> 8 & 0xFF
+            blue = constants[name] & 0xFF
+            self.assertGreater(red, green * 4 // 3, name)
+            self.assertGreater(red, blue * 4 // 3, name)
+            self.assertGreaterEqual(screen.count(name), 2, f"{name} must be used by row rendering")
+
+        self.assertRegex(screen, r"\bITEM\b")
+        self.assertRegex(screen, r"\bENERGY\b")
+        self.assertRegex(screen, r"\bTOOL\b")
+        self.assertRegex(screen, r"\.available\(\)\s*>=\s*[A-Za-z_]\w*\.required\(\)")
+
+    def test_recipe_presentation_keeps_data_and_container_slot_parity_guarded(self):
+        tests = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/gametest/TerminalFlowTests.java"
+        )
+        parity = self.java_block(
+            tests,
+            r"\bpublic\s+static\s+void\s+"
+            r"crafting_menu_data_slot_parity_server_vs_buf_ctor\s*\(",
+            "crafting menu data/container slot parity GameTest",
+        )
+        self.assertIn("serverCount != bufCount", parity)
+        self.assertIn("serverMenu.slots.size()", parity)
+        self.assertIn("bufMenu.slots.size()", parity)
+        self.assertIn("metadataSlots", parity)
+        self.assertIn("metadata slot", parity)
+        self.assertIn("slot.isActive()", parity)
+        self.assertIn("slot.mayPlace", parity)
+        self.assertIn("slot.mayPickup", parity)
 
     def test_terminal_screens_use_shared_adaptive_geometry_and_original_slot_delegates(self):
         layout = self.read_required(

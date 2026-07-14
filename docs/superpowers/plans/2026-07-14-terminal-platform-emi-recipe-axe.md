@@ -68,7 +68,7 @@
 
 ## Task 3: Exact server-synced recipe presentation
 
-> Status: next.
+> Status: complete. RED produced 28 missing-model/getter compile errors, 31 missing-geometry compile errors, 4 focused static UI failures, and 3 focused contract GameTest failures for bounded shaped recipes, exact-ID ordering, and navigation identity. GREEN is compileJava, build, SelfTest 222946/222946, GameTest 231/231, focused Python 43/43, full Python 90/90, and runData without drift; the exact model crosses the real menu wire without client RecipeManager/Core access.
 
 **Files:**
 

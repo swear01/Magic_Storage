@@ -2313,8 +2313,8 @@ public class TerminalFlowTests {
             int bufCount = dataSlotCount(bufMenu);
             if (serverCount != bufCount) { helper.fail("crafting data-slot count mismatch: server=" + serverCount + " buf=" + bufCount); return; }
             if (serverCount != 94) { helper.fail("crafting menu should sync base 11 + crafting/fuel/resource 83 data slots, got " + serverCount); return; }
-            if (serverMenu.slots.size() != 137 || bufMenu.slots.size() != 137) {
-                helper.fail("crafting menu requires exact 137-slot parity, server="
+            if (serverMenu.slots.size() != 149 || bufMenu.slots.size() != 149) {
+                helper.fail("crafting menu requires exact 149-slot parity, server="
                         + serverMenu.slots.size() + " buf=" + bufMenu.slots.size());
                 return;
             }
@@ -2358,7 +2358,7 @@ public class TerminalFlowTests {
             }
             int metadataStart = machineStart + machines.length;
             int metadataSlots = serverMenu.slots.size() - metadataStart;
-            if (metadataSlots != 10) { helper.fail("crafting selection/missing metadata should be 10 hidden slots after machine equipment, got " + metadataSlots); return; }
+            if (metadataSlots != 22) { helper.fail("crafting presentation metadata should be 22 hidden slots after machine equipment, got " + metadataSlots); return; }
             for (int i = metadataStart; i < serverMenu.slots.size(); i++) {
                 var slot = serverMenu.getSlot(i);
                 if (slot.isActive()) { helper.fail("metadata slot " + i + " must be inactive"); return; }

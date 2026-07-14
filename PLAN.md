@@ -58,12 +58,14 @@ Crafting Terminal（含綁定後的 Remote Terminal）有獨立 **Fuel 頁**：
 - Storage 頁不轉換燃料；Shift+燃料和一般物品一樣存入網路。舊的即時 popup 不保留。
 - explicit target 不相容、non-fuel、overflow 或 stale request 全部 fail closed；container remainder 回專用槽/原玩家槽，溢出再回背包或顯式掉出。
 
-Crafting menu 兩端固定 137 slots（81 display + 36 player + 1 Fuel input + 9 equipment + 10 metadata）；Storage base data 固定 11，Crafting/Fuel 再加 83，總計 94。欄位同步七個 recipe/page/view values、八個 energy `long`、九個 ingredient/tool available `long`，以及 process/Fuel required `long`；representative/required count 走 hidden slot stack sync。目前 shared terminal/EMI/station/Axe revision 見 `docs/superpowers/specs/2026-07-14-terminal-platform-emi-recipe-axe-design.md` 與同名 implementation plan。
+Crafting menu 兩端固定 149 slots（81 display + 36 player + 1 Fuel input + 9 equipment + 22 presentation metadata）；Storage base data 固定 11，Crafting/Fuel 再加 83，總計 94 data slots。22 個 hidden slots 依序同步 exact output、9 個 item ledger representatives、station、9 個 positioned inputs、tool 與 typed metadata carrier；primitive availability/energy requirements仍以拆成 unsigned 16-bit words 的 data slots傳輸。Client 只由這些欄位重建 immutable `RecipePresentation`，不掃 `RecipeManager` 或 Core。目前 shared terminal/EMI/station/Axe revision 見 `docs/superpowers/specs/2026-07-14-terminal-platform-emi-recipe-axe-design.md` 與同名 implementation plan。
 
 ### 能量不足顯示
 
-Crafting Terminal 配方詳情區採 input → operation → output + `Available / Required`：
+Crafting Terminal 配方詳情區由上到下採 exact recipe diagram → resource ledger → actions footer：
+- diagram 依 recipe kind 顯示 positioned 3×3 crafting、單輸入 cooking/stonecutting/axe 或三 role smithing，並繪製 exact per-craft output count、station 與 shapeless marker。
 - 每個 item/process/Fuel/tool resource 顯示目前 available 與單次 required。
+- item ledger row 使用中性底色，energy/tool row 使用深紅底色；成功與否另外由 amount 文字綠/紅表示。
 - 整體狀態顯示 `Ready ×N` 或 Missing，固定數量按鈕不足時變暗。
 - `Max` 每次由 server fresh preview 算目前合法最大值，不信任 client 顯示數；若資源上限無法完整交付，會再找出當下可完整交付的最大值。binary search 與 Core extraction/output 都使用 long-safe arithmetic/chunking，不會在 `Integer.MAX_VALUE` 邊界溢位或把大額 reservation 當成單一 `ItemStack`。
 
@@ -190,11 +192,10 @@ Crafting Terminal 由左側 rail 的第一群組切換 **Storage / Craftable / F
 │  │  │  │  │  │  │  │  │  │  │                        │
 │  └──┴──┴──┴──┴──┴──┴──┴──┴──┘                        │
 ├────────────────────────────────────────────────────────┤
-│  配方詳情（Ready + Available / Required 資源表）        │
-│  🔥 鐵錠（熔煉）                                       │
-│  消耗：recipe cookingtime 的 process + Fuel           │
-│  材料：✅ 生鐵礦 × 1            配方 1/2    [◀][▶]    │
-│  [×1] [×8] [×64] [Max]                               │
+│  [輸入圖／role] → [精確輸出數] [station]  配方 1/2    │
+│  資源帳本：item neutral；energy/tool dark red          │
+│  現有/單次：生鐵礦 64/1、Smelt 400/200、Fuel 800/200  │
+│  [◀][▶]                         [×1][×8][×64][Max]    │
 ├────────────────────────────────────────────────────────┤
 │                     玩家背包                            │
 └────────────────────────────────────────────────────────┘
@@ -213,7 +214,7 @@ Crafting Terminal 由左側 rail 的第一群組切換 **Storage / Craftable / F
 
 - 每個 `ItemKey` component variant 永遠各自顯示，不會因畫面大小或使用者模式而合併。
 - 同一產物的不同配方仍用 `[<][>]` 切換，selection 綁 exact recipe/output identity。
-- 右側資源表由 server 同步每個 ingredient predicate 與 process/Fuel 的現有量、單次需求；整體 `Ready ×N` 仍以 joint reservation 為最終真值。
+- 右側 exact presentation 由 server 同步 recipe ID/kind、positioned inputs、output components/count、station，以及每個 ingredient predicate 與 process/Fuel/tool 的現有量、單次需求；整體可合成數仍以 joint reservation 為最終真值。
 
 ### 5c. 遠端存取（Tier 3 專屬）
 

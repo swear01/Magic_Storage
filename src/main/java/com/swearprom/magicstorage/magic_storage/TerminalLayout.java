@@ -35,14 +35,15 @@ final class TerminalLayout {
     private static final int RAIL_SPACING = 2;
     private static final int RAIL_TOP = 6;
     private static final int RAIL_FRAME_GAP = 1;
-    private static final int RESOURCE_COUNT = 9;
     private static final int MACHINE_CELL_MIN_WIDTH = SLOT_SIZE * 2 - 2;
     private static final int MACHINE_CELL_PREFERRED_WIDTH = SLOT_SIZE * 4;
     private static final int RESERVE_CELL_MIN_WIDTH = SLOT_SIZE * 2 + 2;
     private static final int RECIPE_INSET = 4;
-    private static final int RECIPE_SUMMARY_HEIGHT = 9;
-    private static final int RECIPE_CELL_GAP = 2;
     private static final int CONTROL_GAP = 2;
+    private static final int RECIPE_DIAGRAM_MIN_HEIGHT = SLOT_SIZE * 3;
+    private static final int RECIPE_DIAGRAM_MAX_HEIGHT = SLOT_SIZE * 4;
+    private static final int RECIPE_LEDGER_MIN_ROW_HEIGHT = 16;
+    private static final int MAX_RECIPE_LEDGER_ROWS = RecipePresentation.MAX_ITEM_RESOURCES + 3;
     private static final int FUEL_CONTROL_INPUT_OFFSET = CONTROL_SIZE * 2 + 8;
 
     record Rect(int x, int y, int width, int height) {
@@ -109,14 +110,14 @@ final class TerminalLayout {
             Rect scrollbar,
             Rect playerInventory,
             Rect workspace,
-            Rect recipeHeader,
-            Rect recipeInputRegion,
+            Rect recipeDiagram,
+            Rect recipeLedger,
+            Rect recipeFooter,
+            List<Rect> recipeInputSlots,
             Rect recipeArrow,
             Rect recipeOutput,
-            Rect recipeAvailableHeader,
-            Rect recipeStatus,
-            Rect recipeQuantityFooter,
-            List<Rect> recipeResourceCells,
+            Rect recipeStation,
+            Rect recipeShapelessMarker,
             List<Rect> recipeNavigationButtons,
             List<Rect> recipeCraftButtons,
             Rect machinePanel,
@@ -134,12 +135,16 @@ final class TerminalLayout {
             List<Rect> exclusionRects
     ) {
         Geometry {
-            recipeResourceCells = List.copyOf(recipeResourceCells);
+            recipeInputSlots = List.copyOf(recipeInputSlots);
             recipeNavigationButtons = List.copyOf(recipeNavigationButtons);
             recipeCraftButtons = List.copyOf(recipeCraftButtons);
             railButtons = List.copyOf(railButtons);
             fuelRailButtons = List.copyOf(fuelRailButtons);
             exclusionRects = List.copyOf(exclusionRects);
+        }
+
+        List<Rect> recipeLedgerCells(int resourceCount) {
+            return TerminalLayout.recipeLedgerCells(recipeLedger, resourceCount);
         }
 
         int centeredFrameLeft(int screenWidth) {
@@ -200,11 +205,11 @@ final class TerminalLayout {
                 empty,
                 empty,
                 empty,
-                empty,
-                empty,
-                empty,
-                empty,
                 List.of(),
+                empty,
+                empty,
+                empty,
+                empty,
                 List.of(),
                 List.of(),
                 empty,
@@ -358,7 +363,7 @@ final class TerminalLayout {
                 new Rect(reserveX, fuelFlowTop,
                         reserveWidth, fuelPanel.bottom() - fuelFlowTop - 2),
                 reserveCount, RESERVE_CELL_MIN_WIDTH, RESERVE_CELL_MIN_WIDTH);
-        RecipeGeometry recipe = recipeGeometry(workspace, wide);
+        RecipeGeometry recipe = recipeGeometry(workspace);
         return new Geometry(
                 profile,
                 wide,
@@ -371,14 +376,14 @@ final class TerminalLayout {
                 scrollbar,
                 playerInventory,
                 workspace,
-                recipe.header(),
-                recipe.inputRegion(),
+                recipe.diagram(),
+                recipe.ledger(),
+                recipe.footer(),
+                recipe.inputSlots(),
                 recipe.arrow(),
                 recipe.output(),
-                recipe.availableHeader(),
-                recipe.status(),
-                recipe.quantityFooter(),
-                recipe.resourceCells(),
+                recipe.station(),
+                recipe.shapelessMarker(),
                 recipe.navigationButtons(),
                 recipe.craftButtons(),
                 machinePanel,
@@ -423,45 +428,71 @@ final class TerminalLayout {
         return MACHINE_PANEL_HEIGHT + FUEL_PANEL_GAP + FUEL_PANEL_HEIGHT;
     }
 
-    private static RecipeGeometry recipeGeometry(Rect workspace, boolean wide) {
-        Rect header = new Rect(
+    private static RecipeGeometry recipeGeometry(Rect workspace) {
+        Rect footer = new Rect(
                 workspace.x() + RECIPE_INSET,
-                workspace.y() + 1,
+                workspace.bottom() - CONTROL_SIZE,
                 workspace.width() - RECIPE_INSET * 2,
                 CONTROL_SIZE);
-        Rect output = new Rect(
-                header.right() - CONTROL_SIZE,
-                header.y(),
-                CONTROL_SIZE,
-                CONTROL_SIZE);
+        int availableBeforeFooter = footer.y() - workspace.y();
+        int diagramHeight = Math.min(
+                RECIPE_DIAGRAM_MAX_HEIGHT,
+                Math.max(RECIPE_DIAGRAM_MIN_HEIGHT,
+                        availableBeforeFooter - RECIPE_LEDGER_MIN_ROW_HEIGHT * 2));
+        Rect diagram = new Rect(
+                workspace.x() + RECIPE_INSET,
+                workspace.y(),
+                workspace.width() - RECIPE_INSET * 2,
+                diagramHeight);
+        Rect ledger = new Rect(
+                diagram.x(),
+                diagram.bottom(),
+                diagram.width(),
+                footer.y() - diagram.bottom());
+        if (diagram.bottom() > ledger.y()
+                || ledger.bottom() > footer.y()) {
+            throw new IllegalArgumentException("Recipe diagram, ledger, and footer overlap");
+        }
+
+        int inputGridSize = SLOT_SIZE * 3;
+        int outputSize = SLOT_SIZE + 10;
+        int chainWidth = inputGridSize + CONTROL_GAP + CONTROL_SIZE
+                + CONTROL_GAP + outputSize + CONTROL_GAP + SLOT_SIZE;
+        int chainX = diagram.x() + Math.max(0, (diagram.width() - chainWidth) / 2);
+        int inputY = diagram.y() + Math.max(0, (diagram.height() - inputGridSize) / 2);
+        List<Rect> inputSlots = new ArrayList<>(RecipePresentation.MAX_INPUTS);
+        for (int input = 0; input < RecipePresentation.MAX_INPUTS; input++) {
+            inputSlots.add(new Rect(
+                    chainX + input % 3 * SLOT_SIZE,
+                    inputY + input / 3 * SLOT_SIZE,
+                    SLOT_SIZE,
+                    SLOT_SIZE));
+        }
         Rect arrow = new Rect(
-                output.x() - CONTROL_GAP - CONTROL_SIZE,
-                header.y(),
+                chainX + inputGridSize + CONTROL_GAP,
+                diagram.y() + (diagram.height() - CONTROL_SIZE) / 2,
                 CONTROL_SIZE,
                 CONTROL_SIZE);
-        Rect status = new Rect(
-                header.x(), header.bottom(), header.width(), RECIPE_SUMMARY_HEIGHT);
-        Rect availableHeader = new Rect(
-                header.x(),
-                status.bottom(),
-                header.width(),
-                RECIPE_SUMMARY_HEIGHT);
-        Rect quantityFooter = new Rect(
-                header.x(),
-                workspace.bottom() - 1 - CONTROL_SIZE,
-                header.width(),
-                CONTROL_SIZE);
-        Rect inputRegion = new Rect(
-                header.x(),
-                availableHeader.bottom(),
-                header.width(),
-                quantityFooter.y() - availableHeader.bottom());
-        List<Rect> resourceCells = recipeResourceCells(inputRegion, wide);
+        Rect output = new Rect(
+                arrow.right() + CONTROL_GAP,
+                diagram.y() + (diagram.height() - outputSize) / 2,
+                outputSize,
+                outputSize);
+        Rect station = new Rect(
+                output.right() + CONTROL_GAP,
+                diagram.y() + (diagram.height() - SLOT_SIZE) / 2,
+                SLOT_SIZE,
+                SLOT_SIZE);
+        Rect shapelessMarker = new Rect(
+                diagram.x(),
+                diagram.y(),
+                10,
+                10);
 
         List<Rect> navigationButtons = List.of(
-                new Rect(quantityFooter.x(), quantityFooter.y(), CONTROL_SIZE, CONTROL_SIZE),
-                new Rect(quantityFooter.x() + CONTROL_SIZE + CONTROL_GAP,
-                        quantityFooter.y(), CONTROL_SIZE, CONTROL_SIZE));
+                new Rect(footer.x(), footer.y(), CONTROL_SIZE, CONTROL_SIZE),
+                new Rect(footer.x() + CONTROL_SIZE + CONTROL_GAP,
+                        footer.y(), CONTROL_SIZE, CONTROL_SIZE));
         List<Integer> craftWidths = List.of(
                 CONTROL_SIZE,
                 CONTROL_SIZE,
@@ -469,57 +500,50 @@ final class TerminalLayout {
                 CONTROL_SIZE + 12);
         int craftWidth = craftWidths.stream().mapToInt(Integer::intValue).sum()
                 + CONTROL_GAP * (craftWidths.size() - 1);
-        int craftX = quantityFooter.right() - craftWidth;
+        int craftX = footer.right() - craftWidth;
         List<Rect> craftButtons = new ArrayList<>(craftWidths.size());
         for (int width : craftWidths) {
-            craftButtons.add(new Rect(craftX, quantityFooter.y(), width, CONTROL_SIZE));
+            craftButtons.add(new Rect(craftX, footer.y(), width, CONTROL_SIZE));
             craftX += width + CONTROL_GAP;
         }
         if (navigationButtons.getLast().right() + CONTROL_GAP > craftButtons.getFirst().x()) {
             throw new IllegalArgumentException("Recipe footer controls do not fit workspace");
         }
         return new RecipeGeometry(
-                header,
-                inputRegion,
+                diagram,
+                ledger,
+                footer,
+                inputSlots,
                 arrow,
                 output,
-                availableHeader,
-                status,
-                quantityFooter,
-                resourceCells,
+                station,
+                shapelessMarker,
                 navigationButtons,
                 craftButtons);
     }
 
-    private static List<Rect> recipeResourceCells(Rect inputRegion, boolean wide) {
-        int columns = wide ? 2 : 3;
-        int rows = (RESOURCE_COUNT + columns - 1) / columns;
-        int leftInset = 1;
-        int rowGap = wide ? RECIPE_CELL_GAP : 0;
-        Rect bounds = new Rect(
-                inputRegion.x() + leftInset,
-                inputRegion.y(),
-                inputRegion.width() - leftInset * 2,
-                inputRegion.height());
-        int availableWidth = bounds.width() - RECIPE_CELL_GAP * (columns - 1);
-        int availableHeight = bounds.height() - rowGap * (rows - 1);
-        List<Rect> result = new ArrayList<>(RESOURCE_COUNT);
-        for (int index = 0; index < RESOURCE_COUNT; index++) {
+    private static List<Rect> recipeLedgerCells(Rect bounds, int resourceCount) {
+        if (resourceCount < 0 || resourceCount > MAX_RECIPE_LEDGER_ROWS) {
+            throw new IllegalArgumentException("Recipe ledger resource count is out of bounds");
+        }
+        if (resourceCount == 0) return List.of();
+        int maximumRows = Math.max(1, bounds.height() / RECIPE_LEDGER_MIN_ROW_HEIGHT);
+        int columns = Math.max(1, (resourceCount + maximumRows - 1) / maximumRows);
+        int rows = (resourceCount + columns - 1) / columns;
+        int cellHeight = Math.min(SLOT_SIZE, bounds.height() / rows);
+        List<Rect> result = new ArrayList<>(resourceCount);
+        for (int index = 0; index < resourceCount; index++) {
             int column = index % columns;
             int row = index / columns;
-            int left = bounds.x() + column * availableWidth / columns
-                    + column * RECIPE_CELL_GAP;
-            int right = bounds.x() + (column + 1) * availableWidth / columns
-                    + column * RECIPE_CELL_GAP;
-            int top = bounds.y() + row * availableHeight / rows + row * rowGap;
-            int bottom = bounds.y() + (row + 1) * availableHeight / rows + row * rowGap;
+            int left = bounds.x() + column * bounds.width() / columns;
+            int right = bounds.x() + (column + 1) * bounds.width() / columns;
             result.add(new Rect(
                     left,
-                    top,
+                    bounds.y() + row * cellHeight,
                     right - left,
-                    bottom - top));
+                    cellHeight));
         }
-        return result;
+        return List.copyOf(result);
     }
 
     private static FlowGrid flowGrid(
@@ -642,19 +666,19 @@ final class TerminalLayout {
     }
 
     private record RecipeGeometry(
-            Rect header,
-            Rect inputRegion,
+            Rect diagram,
+            Rect ledger,
+            Rect footer,
+            List<Rect> inputSlots,
             Rect arrow,
             Rect output,
-            Rect availableHeader,
-            Rect status,
-            Rect quantityFooter,
-            List<Rect> resourceCells,
+            Rect station,
+            Rect shapelessMarker,
             List<Rect> navigationButtons,
             List<Rect> craftButtons
     ) {
         RecipeGeometry {
-            resourceCells = List.copyOf(resourceCells);
+            inputSlots = List.copyOf(inputSlots);
             navigationButtons = List.copyOf(navigationButtons);
             craftButtons = List.copyOf(craftButtons);
         }

@@ -484,9 +484,15 @@ class SelfTest {
                         && narrow.fuelTargetSelector().y() >= narrow.fuelPanel().y()
                         && narrow.fuelTargetSelector().right() <= narrow.fuelPanel().right()
                         && narrow.fuelTargetSelector().bottom() <= narrow.reserveGrid().bounds().y());
-        assertTrue("narrow recipe resource grid exposes all nine cells",
-                narrow.recipeResourceCells().size() == 9
-                        && rectanglesDoNotOverlap(narrow.recipeResourceCells()));
+        assertTrue("narrow recipe workspace stacks diagram, ledger, and footer",
+                narrow.recipeDiagram().bottom() <= narrow.recipeLedger().y()
+                        && narrow.recipeLedger().bottom() <= narrow.recipeFooter().y());
+        assertTrue("narrow recipe diagram exposes nine positioned input slots",
+                narrow.recipeInputSlots().size() == RecipePresentation.MAX_INPUTS
+                        && rectanglesDoNotOverlap(narrow.recipeInputSlots()));
+        assertTrue("narrow recipe ledger derives twelve bounded rows",
+                narrow.recipeLedgerCells(12).size() == 12
+                        && rectanglesDoNotOverlap(narrow.recipeLedgerCells(12)));
 
         var sideBySide = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 423, 291, 5, 3);
         assertTrue("guiScale-4 fullscreen width uses side-by-side layout", sideBySide.wide());
@@ -496,9 +502,13 @@ class SelfTest {
         assertTrue("side-by-side layout reserves vertical breathing room", sideBySide.imageHeight() <= 243);
         assertTrue("side-by-side workspace sits right of item grid",
                 sideBySide.workspace().x() >= sideBySide.scrollbar().right());
-        assertTrue("side-by-side recipe resource grid exposes all nine cells",
-                sideBySide.recipeResourceCells().size() == 9
-                        && rectanglesDoNotOverlap(sideBySide.recipeResourceCells()));
+        assertTrue("side-by-side recipe diagram keeps a larger output slot",
+                sideBySide.recipeOutput().width() > sideBySide.recipeInputSlots().getFirst().width()
+                        && sideBySide.recipeOutput().height()
+                        > sideBySide.recipeInputSlots().getFirst().height());
+        assertTrue("side-by-side recipe workspace stacks diagram, ledger, and footer",
+                sideBySide.recipeDiagram().bottom() <= sideBySide.recipeLedger().y()
+                        && sideBySide.recipeLedger().bottom() <= sideBySide.recipeFooter().y());
         assertTrue("side-by-side boundary is based on complete usable width",
                 !TerminalLayout.forProfile(TerminalProfile.CRAFTING, 415, 291, 5, 3).wide()
                         && TerminalLayout.forProfile(TerminalProfile.CRAFTING, 416, 291, 5, 3).wide());
@@ -625,16 +635,35 @@ class SelfTest {
                                 && geometry.exclusionRects().get(1).equals(geometry.railPanel()));
                 assertTrue("crafting rail buttons do not overlap at " + width + "x" + height,
                         rectanglesDoNotOverlap(geometry.railButtons()));
-                assertTrue("crafting resource cells do not overlap at " + width + "x" + height,
-                        geometry.recipeResourceCells().size() == 9
-                                && rectanglesDoNotOverlap(geometry.recipeResourceCells()));
-                for (TerminalLayout.Rect cell : geometry.recipeResourceCells()) {
-                    assertTrue("crafting resource cell stays inside workspace at " + width + "x" + height,
-                            cell.x() >= geometry.workspace().x()
-                                    && cell.y() >= geometry.workspace().y()
-                                    && cell.right() <= geometry.workspace().right()
-                                    && cell.bottom() <= geometry.workspace().bottom() - 18);
+                assertTrue("crafting recipe regions remain ordered at " + width + "x" + height,
+                        geometry.recipeDiagram().bottom() <= geometry.recipeLedger().y()
+                                && geometry.recipeLedger().bottom() <= geometry.recipeFooter().y());
+                assertTrue("crafting diagram slots remain bounded at " + width + "x" + height,
+                        geometry.recipeInputSlots().size() == RecipePresentation.MAX_INPUTS
+                                && rectanglesDoNotOverlap(geometry.recipeInputSlots())
+                                && geometry.recipeDiagram().contains(
+                                geometry.recipeInputSlots().getFirst().x(),
+                                geometry.recipeInputSlots().getFirst().y())
+                                && geometry.recipeDiagram().contains(
+                                geometry.recipeInputSlots().getLast().right() - 1,
+                                geometry.recipeInputSlots().getLast().bottom() - 1));
+                for (int resourceCount = 0; resourceCount <= 12; resourceCount++) {
+                    List<TerminalLayout.Rect> cells = geometry.recipeLedgerCells(resourceCount);
+                    assertTrue("crafting ledger row count follows resources at " + width + "x" + height,
+                            cells.size() == resourceCount && rectanglesDoNotOverlap(cells));
+                    for (TerminalLayout.Rect cell : cells) {
+                        assertTrue("crafting ledger cell stays in its region at " + width + "x" + height,
+                                cell.x() >= geometry.recipeLedger().x()
+                                        && cell.y() >= geometry.recipeLedger().y()
+                                        && cell.right() <= geometry.recipeLedger().right()
+                                        && cell.bottom() <= geometry.recipeLedger().bottom());
+                    }
                 }
+                List<TerminalLayout.Rect> footerControls = new ArrayList<>();
+                footerControls.addAll(geometry.recipeNavigationButtons());
+                footerControls.addAll(geometry.recipeCraftButtons());
+                assertTrue("crafting footer controls remain disjoint at " + width + "x" + height,
+                        rectanglesDoNotOverlap(footerControls));
                 assertTrue("Fuel cards do not overlap player inventory at " + width + "x" + height,
                         geometry.machinePanel().bottom() <= geometry.fuelPanel().y()
                                 && !geometry.machinePanel().overlaps(geometry.playerInventory())

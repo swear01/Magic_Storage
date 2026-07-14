@@ -635,6 +635,17 @@ public class FuelPageTests {
                 helper.fail("Energy resource wire mismatch: " + energies);
                 return;
             }
+            var presentation = clientMenu.getRecipePresentation();
+            if (!presentation.recipeId().equals(smelting.id())
+                    || presentation.kind() != RecipePresentationKind.COOKING
+                    || presentation.inputs().stream()
+                    .noneMatch(stack -> stack.is(Items.COBBLESTONE))
+                    || !presentation.output().is(Items.STONE)
+                    || !presentation.station().is(Items.FURNACE)
+                    || presentation.resources().size() != 3) {
+                helper.fail("Exact recipe presentation did not survive menu wire sync: " + presentation);
+                return;
+            }
             helper.succeed();
         });
     }
