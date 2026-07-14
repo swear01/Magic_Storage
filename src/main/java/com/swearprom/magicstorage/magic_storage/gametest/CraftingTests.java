@@ -257,6 +257,11 @@ public class CraftingTests {
             }
             var menu = new CraftingTerminalMenu(138, player.getInventory(), core);
             menu.getCurrentRecipes().add(stickRecipe);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            if (menu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
+                helper.fail("Long-count Max setup must select Storage output");
+                return;
+            }
 
             menu.clickMenuButton(player, CraftingTerminalMenu.MAX_CRAFT_BUTTON);
 
@@ -963,6 +968,300 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
+    public static void direct_storage_destination_routes_primary_and_container_remainders_to_core(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.MILK_BUCKET));
+            var recipe = new ShapelessRecipe(
+                    "",
+                    CraftingBookCategory.MISC,
+                    new ItemStack(Items.DIAMOND),
+                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.MILK_BUCKET))
+            );
+            var holder = new RecipeHolder<>(
+                    ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "storage_output_remainder_test"),
+                    recipe
+            );
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(167, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            withTemporaryRegisteredRecipe(level, holder, () -> {
+                menu.getCurrentRecipes().add(holder);
+                menu.craftItem(1, player);
+                if (menu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
+                    helper.fail("Direct craft destination changed during execution");
+                    return;
+                }
+                if (core.getItemCount(ItemKey.of(new ItemStack(Items.MILK_BUCKET))) != 0
+                        || core.getItemCount(ItemKey.of(new ItemStack(Items.DIAMOND))) != 1
+                        || core.getItemCount(ItemKey.of(new ItemStack(Items.BUCKET))) != 1) {
+                    helper.fail("Storage output must keep both primary output and container remainder in Core");
+                    return;
+                }
+                if (countInInventory(player, Items.DIAMOND) != 0
+                        || countInInventory(player, Items.BUCKET) != 0) {
+                    helper.fail("Storage output must not place primary output or remainder in player inventory");
+                    return;
+                }
+                helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void direct_storage_destination_accepts_exact_long_capacity(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            loadCoreItems(
+                    core,
+                    level.registryAccess(),
+                    new CoreItemCount(new ItemStack(Items.OAK_PLANKS), 2),
+                    new CoreItemCount(new ItemStack(Items.STICK), Long.MAX_VALUE - 4));
+            installAllRecipeStations(core);
+            var stickRecipe = level.getRecipeManager().byKey(
+                    ResourceLocation.withDefaultNamespace("stick")
+            ).orElse(null);
+            if (stickRecipe == null) {
+                helper.fail("Vanilla stick recipe not found");
+                return;
+            }
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(168, player.getInventory(), core);
+            menu.getCurrentRecipes().add(stickRecipe);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            menu.craftItem(1, player);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_PLANKS))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STICK))) != Long.MAX_VALUE
+                    || countInInventory(player, Items.STICK) != 0) {
+                helper.fail("Exact remaining Core count capacity must accept the complete Storage batch");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void direct_storage_destination_rejects_one_item_short_without_mutation(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            long initialSticks = Long.MAX_VALUE - 3;
+            loadCoreItems(
+                    core,
+                    level.registryAccess(),
+                    new CoreItemCount(new ItemStack(Items.OAK_PLANKS), 2),
+                    new CoreItemCount(new ItemStack(Items.STICK), initialSticks));
+            installAllRecipeStations(core);
+            var stickRecipe = level.getRecipeManager().byKey(
+                    ResourceLocation.withDefaultNamespace("stick")
+            ).orElse(null);
+            if (stickRecipe == null) {
+                helper.fail("Vanilla stick recipe not found");
+                return;
+            }
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(169, player.getInventory(), core);
+            menu.getCurrentRecipes().add(stickRecipe);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            menu.craftItem(1, player);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_PLANKS))) != 2
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STICK))) != initialSticks
+                    || countInInventory(player, Items.STICK) != 0) {
+                helper.fail("One-item-short Storage capacity must reject the whole batch before mutation");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void every_direct_amount_button_honors_storage_destination(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.OAK_PLANKS, 156));
+            var stickRecipe = level.getRecipeManager().byKey(
+                    ResourceLocation.withDefaultNamespace("stick")
+            ).orElse(null);
+            if (stickRecipe == null) {
+                helper.fail("Vanilla stick recipe not found");
+                return;
+            }
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(170, player.getInventory(), core);
+            menu.getCurrentRecipes().add(stickRecipe);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            menu.clickMenuButton(player, 2);
+            menu.clickMenuButton(player, 3);
+            menu.clickMenuButton(player, 4);
+            menu.clickMenuButton(player, CraftingTerminalMenu.MAX_CRAFT_BUTTON);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_PLANKS))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STICK))) != 312
+                    || countInInventory(player, Items.STICK) != 0) {
+                helper.fail("×1, ×8, ×64, and Max must all route direct output through Storage");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void emi_cursor_and_inventory_destinations_override_terminal_storage_toggle(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.OAK_PLANKS, 4));
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(171, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            ResourceLocation stickId = ResourceLocation.withDefaultNamespace("stick");
+            if (!menu.handleRecipeRequest(level, stickId, 1, CraftingDestination.CURSOR, player)
+                    || !menu.getCarried().is(Items.STICK) || menu.getCarried().getCount() != 4) {
+                helper.fail("EMI Cursor destination must remain authoritative over terminal Storage output");
+                return;
+            }
+            menu.setCarried(ItemStack.EMPTY);
+            if (!menu.handleRecipeRequest(level, stickId, 1, CraftingDestination.INVENTORY, player)
+                    || countInInventory(player, Items.STICK) != 4) {
+                helper.fail("EMI Inventory destination must remain authoritative over terminal Storage output");
+                return;
+            }
+            if (menu.getOutputDestination() != TerminalOutputDestination.STORAGE
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STICK))) != 0) {
+                helper.fail("EMI requests must not mutate or obey the terminal session destination");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void ingredient_source_and_output_destination_are_independent(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            var stickRecipe = level.getRecipeManager().byKey(
+                    ResourceLocation.withDefaultNamespace("stick")
+            ).orElse(null);
+            if (stickRecipe == null) {
+                helper.fail("Vanilla stick recipe not found");
+                return;
+            }
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            player.getInventory().setItem(0, new ItemStack(Items.OAK_PLANKS, 2));
+            var menu = new CraftingTerminalMenu(172, player.getInventory(), core);
+            menu.getCurrentRecipes().add(stickRecipe);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            menu.craftItem(1, player);
+            if (player.getInventory().getItem(0).getCount() != 2
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STICK))) != 0) {
+                helper.fail("Storage destination must not implicitly enable player ingredient sources");
+                return;
+            }
+            menu.toggleUsePlayerInventory();
+            menu.craftItem(1, player);
+            if (!player.getInventory().getItem(0).isEmpty()
+                    || countInInventory(player, Items.STICK) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STICK))) != 4
+                    || menu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
+                helper.fail("Enabled player source must feed a craft whose output still goes only to Storage");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void storage_output_commit_failure_rolls_back_core_ingredients(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        var rejectingCore = new RejectingCraftOutputCore(
+                corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        level.setBlockEntity(rejectingCore);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof RejectingCraftOutputCore core)) {
+                helper.fail("Rejecting Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.OAK_PLANKS, 2));
+            var stickRecipe = level.getRecipeManager().byKey(
+                    ResourceLocation.withDefaultNamespace("stick")
+            ).orElse(null);
+            if (stickRecipe == null) {
+                helper.fail("Vanilla stick recipe not found");
+                return;
+            }
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(173, player.getInventory(), core);
+            menu.getCurrentRecipes().add(stickRecipe);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            core.rejectCraftOutput = true;
+            menu.craftItem(1, player);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_PLANKS))) != 2
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STICK))) != 0
+                    || countInInventory(player, Items.STICK) != 0) {
+                helper.fail("Rejected Storage output insertion must roll back every extracted ingredient");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void inventory_recipe_request_uses_inventory_then_core_fallback(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -1306,7 +1605,7 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
-    public static void removed_compact_button_id_is_rejected_without_mutating_grid(GameTestHelper helper) {
+    public static void output_destination_toggle_is_independent_and_does_not_mutate_grid(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
         level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
@@ -1323,12 +1622,33 @@ public class CraftingTests {
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new CraftingTerminalMenu(4, player.getInventory(), core);
             int before = menu.getTotalItemTypes();
-            if (menu.clickMenuButton(player, 10)) {
-                helper.fail("Removed Compact Grid button id 10 must be rejected");
+            if (menu.getOutputDestination() != TerminalOutputDestination.PLAYER) {
+                helper.fail("Direct craft output must default to Player");
+                return;
+            }
+            menu.toggleUsePlayerInventory();
+            if (!menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON)
+                    || menu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
+                helper.fail("Output destination button must select Storage");
+                return;
+            }
+            if (!menu.isUsePlayerInventory()) {
+                helper.fail("Output destination must not change the independent ingredient source");
                 return;
             }
             if (menu.getTotalItemTypes() != before || before != 2) {
-                helper.fail("Removed Compact Grid button must not mutate the full-identity grid");
+                helper.fail("Output destination must not mutate the full-identity grid");
+                return;
+            }
+            if (!menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON)
+                    || menu.getOutputDestination() != TerminalOutputDestination.PLAYER) {
+                helper.fail("Second output destination click must return to Player");
+                return;
+            }
+            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            if (menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON)
+                    || menu.getOutputDestination() != TerminalOutputDestination.PLAYER) {
+                helper.fail("Fuel page must reject forged output-destination changes");
                 return;
             }
             helper.succeed();
@@ -2692,6 +3012,10 @@ public class CraftingTests {
             int sticksBefore = countInInventory(player, Items.STICK);
 
             var menu = new CraftingTerminalMenu(44, player.getInventory(), core);
+            if (menu.getOutputDestination() != TerminalOutputDestination.PLAYER) {
+                helper.fail("Player must be the default direct-craft output destination");
+                return;
+            }
             var recipe = new ShapelessRecipe(
                     "",
                     CraftingBookCategory.MISC,
@@ -3722,6 +4046,50 @@ public class CraftingTests {
             if (!stack.isEmpty() && stack.is(item)) count += stack.getCount();
         }
         return count;
+    }
+
+    private static void loadCoreItems(
+            StorageCoreBlockEntity core,
+            net.minecraft.core.HolderLookup.Provider registries,
+            CoreItemCount... entries
+    ) {
+        var inventory = new net.minecraft.nbt.ListTag();
+        for (CoreItemCount stored : entries) {
+            var entry = new net.minecraft.nbt.CompoundTag();
+            entry.put("item", stored.stack().save(registries));
+            entry.putLong("count", stored.count());
+            inventory.add(entry);
+        }
+        var root = new net.minecraft.nbt.CompoundTag();
+        root.put("inventory", inventory);
+        core.loadAdditional(root, registries);
+    }
+
+    private record CoreItemCount(ItemStack stack, long count) {
+        private CoreItemCount {
+            stack = stack.copyWithCount(1);
+            if (count <= 0) throw new IllegalArgumentException("Core item count must be positive");
+        }
+    }
+
+    private static final class RejectingCraftOutputCore extends StorageCoreBlockEntity {
+        private boolean rejectCraftOutput;
+
+        private RejectingCraftOutputCore(
+                BlockPos pos,
+                net.minecraft.world.level.block.state.BlockState state
+        ) {
+            super(pos, state);
+        }
+
+        @Override
+        public long insertItem(ItemStack stack, Action action, Actor actor) {
+            if (rejectCraftOutput && action == Action.EXECUTE
+                    && stack.is(Items.STICK) && actor.name().equals("magic_crafting")) {
+                return 0;
+            }
+            return super.insertItem(stack, action, actor);
+        }
     }
 
     private static final class CountingPreviewCore extends StorageCoreBlockEntity {

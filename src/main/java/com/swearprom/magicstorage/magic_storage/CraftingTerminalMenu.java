@@ -71,6 +71,26 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             ToolUsePlan toolUse
     ) {}
     private record CraftPlan(long crafts, IngredientPlan ingredients, DeliveryPlan delivery) {}
+    private enum DeliveryTarget {
+        CURSOR,
+        PLAYER,
+        STORAGE;
+
+        private static DeliveryTarget from(CraftingDestination destination) {
+            return switch (destination) {
+                case CURSOR -> CURSOR;
+                case INVENTORY -> PLAYER;
+                case NONE -> throw new IllegalArgumentException("NONE has no delivery target");
+            };
+        }
+
+        private static DeliveryTarget from(TerminalOutputDestination destination) {
+            return switch (destination) {
+                case PLAYER -> PLAYER;
+                case STORAGE -> STORAGE;
+            };
+        }
+    }
 
     static final class RecipeIngredient {
         private final Object identity;
@@ -169,6 +189,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private static final int FUEL_INPUT_Y = 126;
     static final int MAX_CRAFT_BUTTON = 5;
     static final int CRAFTABLE_PAGE_BUTTON = 6;
+    static final int OUTPUT_DESTINATION_BUTTON = 10;
     static final int STORAGE_PAGE_BUTTON = 14;
     static final int FUEL_PAGE_BUTTON = 15;
     static final int AUTO_FUEL_TARGET_BUTTON = 16;
@@ -177,7 +198,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             .filter(type -> !type.isMachineGenerated())
             .toList();
     private static final int FUEL_TARGET_BUTTON_COUNT = FUEL_TARGETS.size();
-    private static final int ENERGY_DATA_START = 7;
+    private static final int ENERGY_DATA_START = 8;
     private static final int ENERGY_DATA_SLOTS = EnergyType.values().length * 4;
     private static final int INGREDIENT_AVAILABLE_DATA_START = ENERGY_DATA_START + ENERGY_DATA_SLOTS;
     private static final int PROCESS_REQUIRED_DATA_START = INGREDIENT_AVAILABLE_DATA_START + MAX_INGREDIENTS * 4;
@@ -209,6 +230,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private int currentRecipeTypeOrder = -1;
     private int craftableCount = 0;
     private boolean usePlayerInventory = false;
+    private TerminalOutputDestination outputDestination = TerminalOutputDestination.PLAYER;
     private boolean dirtyRecipes = false;
     private int lastCheckedItem = -1;
     private final Inventory playerInventory;
@@ -257,6 +279,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                     case 4 -> currentRecipeTypeOrder;
                     case 5 -> page.ordinal();
                     case 6 -> encodeFuelTarget(selectedFuelTarget);
+                    case 7 -> outputDestination.ordinal();
                     default -> getPreviewData(index);
                 };
             }
@@ -271,6 +294,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                     case 4 -> currentRecipeTypeOrder = value;
                     case 5 -> page = CraftingTerminalPage.fromOrdinal(value);
                     case 6 -> selectedFuelTarget = decodeFuelTarget(value);
+                    case 7 -> outputDestination = TerminalOutputDestination.byId(value);
                     default -> setPreviewData(index, value);
                 }
             }
@@ -554,6 +578,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return usePlayerInventory;
     }
 
+    public TerminalOutputDestination getOutputDestination() {
+        return outputDestination;
+    }
+
     public CraftingTerminalPage getPage() {
         return page;
     }
@@ -787,6 +815,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
         CraftPreview preview = computeCraftPreviewFor(holder.value(), core, player);
         int maximumCrafts = Math.min(amount, preview.craftable());
+        DeliveryTarget deliveryTarget = DeliveryTarget.from(destination);
         int crafts = 0;
         IngredientPlan ingredientPlan = null;
         DeliveryPlan deliveryPlan = null;
@@ -794,7 +823,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             IngredientPlan candidatePlan = planIngredients(
                     core, recipeIngredients(holder.value()), candidate, player);
             DeliveryPlan candidateDelivery = candidatePlan == null ? null : planDelivery(
-                    core, candidatePlan, holder.value(), candidate, destination, player);
+                    core, candidatePlan, holder.value(), candidate, deliveryTarget, player);
             if (candidateDelivery != null) {
                 crafts = candidate;
                 ingredientPlan = candidatePlan;
@@ -974,7 +1003,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (!hasEnergyForCrafts(core, energyCost, count)) return false;
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
         CraftPlan plan = planCraft(
-                core, recipe, count, CraftingDestination.INVENTORY, player, sources);
+                core, recipe, count, DeliveryTarget.from(outputDestination), player, sources);
         if (plan == null || !commitCraft(
                 core, plan.ingredients(), plan.delivery(), player, energyCost, plan.crafts())) return false;
 
@@ -994,7 +1023,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
         long resourceMaximum = maximumResourceCrafts(recipe, core, sources);
         CraftPlan plan = largestDeliverablePlan(
-                core, recipe, resourceMaximum, CraftingDestination.INVENTORY, player, sources);
+                core, recipe, resourceMaximum, DeliveryTarget.from(outputDestination), player, sources);
         EnergyCost energyCost = RecipeEnergyTable.getCost(recipe);
         if (plan == null || !commitCraft(
                 core, plan.ingredients(), plan.delivery(), player, energyCost, plan.crafts())) return;
@@ -1007,7 +1036,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             StorageCoreBlockEntity core,
             Recipe<?> recipe,
             long maximum,
-            CraftingDestination destination,
+            DeliveryTarget destination,
             Player player,
             List<IngredientSource> sources
     ) {
@@ -1039,7 +1068,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             StorageCoreBlockEntity core,
             Recipe<?> recipe,
             long crafts,
-            CraftingDestination destination,
+            DeliveryTarget destination,
             Player player,
             List<IngredientSource> sources
     ) {
@@ -1571,7 +1600,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             IngredientPlan ingredientPlan,
             Recipe<?> recipe,
             long crafts,
-            CraftingDestination destination,
+            DeliveryTarget destination,
             Player player
     ) {
         if (crafts <= 0) return null;
@@ -1595,7 +1624,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         Map<ItemKey, Long> primaryOutputs = planPrimaryOutputs(core, ingredientPlan, recipe, crafts);
         if (primaryOutputs == null || primaryOutputs.isEmpty()) return null;
         Map<ItemKey, Long> coreOutputs = new LinkedHashMap<>();
-        if (destination == CraftingDestination.CURSOR) {
+        if (destination == DeliveryTarget.CURSOR) {
             if (primaryOutputs.size() != 1) return null;
             Map.Entry<ItemKey, Long> output = primaryOutputs.entrySet().iterator().next();
             ItemStack result = output.getKey().toStack(1);
@@ -1609,10 +1638,16 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             } else {
                 return null;
             }
-        } else if (destination == CraftingDestination.INVENTORY) {
+        } else if (destination == DeliveryTarget.PLAYER) {
             for (Map.Entry<ItemKey, Long> output : primaryOutputs.entrySet()) {
-                addOutputToInventoryThenCore(
-                        inventory, output.getKey().toStack(1), output.getValue(), coreOutputs);
+                if (!addOutputToInventoryThenCore(
+                        inventory, output.getKey().toStack(1), output.getValue(), coreOutputs)) {
+                    return null;
+                }
+            }
+        } else if (destination == DeliveryTarget.STORAGE) {
+            for (Map.Entry<ItemKey, Long> output : primaryOutputs.entrySet()) {
+                if (!addCoreOutput(coreOutputs, output.getKey(), output.getValue())) return null;
             }
         } else {
             return null;
@@ -1629,7 +1664,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             } catch (ArithmeticException e) {
                 return null;
             }
-            addOutputToInventoryThenCore(inventory, remainder, remainderCount, coreOutputs);
+            if (destination == DeliveryTarget.STORAGE) {
+                if (!addCoreOutput(coreOutputs, ItemKey.of(remainder), remainderCount)) return null;
+            } else if (!addOutputToInventoryThenCore(
+                    inventory, remainder, remainderCount, coreOutputs)) {
+                return null;
+            }
         }
         if (!coreCanAcceptAfterIngredients(core, ingredientPlan, coreOutputs)) return null;
         return new DeliveryPlan(List.copyOf(inventory), carried, Map.copyOf(coreOutputs), toolUse);
@@ -1717,12 +1757,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return ItemStack.EMPTY;
     }
 
-    private static void addOutputToInventoryThenCore(
+    private static boolean addOutputToInventoryThenCore(
             List<ItemStack> inventory,
             ItemStack template,
             long amount,
             Map<ItemKey, Long> coreOutputs
     ) {
+        if (template.isEmpty() || amount <= 0) return false;
         long remaining = amount;
         for (int slot = 0; slot < inventory.size() && remaining > 0; slot++) {
             ItemStack stack = inventory.get(slot);
@@ -1740,8 +1781,21 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             remaining -= inserted;
         }
         if (remaining > 0) {
-            coreOutputs.merge(ItemKey.of(template), remaining, Math::addExact);
+            return addCoreOutput(coreOutputs, ItemKey.of(template), remaining);
         }
+        return true;
+    }
+
+    private static boolean addCoreOutput(
+            Map<ItemKey, Long> coreOutputs,
+            ItemKey key,
+            long amount
+    ) {
+        if (amount <= 0) return false;
+        long existing = coreOutputs.getOrDefault(key, 0L);
+        if (existing > Long.MAX_VALUE - amount) return false;
+        coreOutputs.put(key, existing + amount);
+        return true;
     }
 
     private static boolean coreCanAcceptAfterIngredients(
@@ -2151,6 +2205,11 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                     && buttonId < FUEL_TARGET_BUTTON_BASE + FUEL_TARGET_BUTTON_COUNT) {
                 if (page != CraftingTerminalPage.FUEL) return false;
                 selectedFuelTarget = FUEL_TARGETS.get(buttonId - FUEL_TARGET_BUTTON_BASE);
+                return true;
+            }
+            if (buttonId == OUTPUT_DESTINATION_BUTTON) {
+                if (!page.isItemPage()) return false;
+                outputDestination = outputDestination.next();
                 return true;
             }
             if (page == CraftingTerminalPage.FUEL) return false;

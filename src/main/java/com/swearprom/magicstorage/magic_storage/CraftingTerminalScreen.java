@@ -35,6 +35,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     private TerminalIconButton craftablePageBtn;
     private TerminalIconButton fuelPageBtn;
     private TerminalCycleButton playerInventoryRailBtn;
+    private TerminalCycleButton outputDestinationRailBtn;
     private TerminalCycleButton fuelTargetSelector;
     private CraftingTerminalPage lastPage;
     private EnergyType lastFuelTarget;
@@ -87,6 +88,11 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 Component.translatable("gui.magic_storage.use_player_inv"),
                 geometry.railButtons().get(terminalProfile().playerInventorySourceIndex()),
                 direction -> clickMenuButton(7));
+        outputDestinationRailBtn = addItemCycleButton(
+                MagicStorage.STORAGE_CORE_ITEM.get().getDefaultInstance(),
+                Component.translatable("gui.magic_storage.output_destination"),
+                geometry.railButtons().get(terminalProfile().outputDestinationIndex()),
+                direction -> clickMenuButton(CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON));
     }
 
     @Override
@@ -221,6 +227,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         setWidgetVisible(craft64Btn, itemPage);
         setWidgetVisible(craftMaxBtn, itemPage);
         setWidgetVisible(playerInventoryRailBtn, itemPage);
+        setWidgetVisible(outputDestinationRailBtn, itemPage);
 
         storagePageBtn.active = page != CraftingTerminalPage.STORAGE;
         craftablePageBtn.active = page != CraftingTerminalPage.CRAFTABLE;
@@ -247,6 +254,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
         updateToggleButton(playerInventoryRailBtn, "gui.magic_storage.use_player_inv",
                 menu.isUsePlayerInventory());
+        Component outputDestination = switch (menu.getOutputDestination()) {
+            case PLAYER -> Component.translatable("gui.magic_storage.output_destination.player");
+            case STORAGE -> Component.translatable("gui.magic_storage.output_destination.storage");
+        };
+        updateCycleTooltip(outputDestinationRailBtn, "gui.magic_storage.output_destination",
+                outputDestination);
     }
 
     private void updateCraftButtonState() {
@@ -301,7 +314,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         }
         drawRailMarker(graphics, menu.getPage().ordinal(), fuelPage, 0xFF7A5B18);
         if (itemPage) {
-            if (menu.isUsePlayerInventory()) drawRailMarker(graphics, 6, false, 0xFF2E7D32);
+            if (menu.isUsePlayerInventory()) {
+                drawRailMarker(graphics, terminalProfile().playerInventorySourceIndex(), false, 0xFF2E7D32);
+            }
+            if (menu.getOutputDestination() == TerminalOutputDestination.STORAGE) {
+                drawRailMarker(graphics, terminalProfile().outputDestinationIndex(), false, 0xFF1565C0);
+            }
         }
     }
 

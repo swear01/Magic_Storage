@@ -10,7 +10,8 @@ final class TerminalProfile {
         PAGES,
         RECIPE_WORKSPACE,
         FUEL,
-        PLAYER_INVENTORY_SOURCE
+        PLAYER_INVENTORY_SOURCE,
+        OUTPUT_DESTINATION
     }
 
     static final TerminalProfile STORAGE = of();
@@ -18,7 +19,8 @@ final class TerminalProfile {
             Capability.PAGES,
             Capability.RECIPE_WORKSPACE,
             Capability.FUEL,
-            Capability.PLAYER_INVENTORY_SOURCE);
+            Capability.PLAYER_INVENTORY_SOURCE,
+            Capability.OUTPUT_DESTINATION);
 
     private static final int PAGE_CONTROL_COUNT = 3;
     private static final int VIEW_CONTROL_COUNT = 3;
@@ -58,8 +60,18 @@ final class TerminalProfile {
         return viewControlStartIndex() + VIEW_CONTROL_COUNT;
     }
 
+    int outputDestinationIndex() {
+        if (!supports(Capability.OUTPUT_DESTINATION)) {
+            throw new IllegalStateException("Profile has no output-destination control");
+        }
+        return playerInventorySourceIndex() + 1;
+    }
+
     List<Integer> itemRailGroups() {
         if (!supports(Capability.PAGES)) return List.of(VIEW_CONTROL_COUNT);
+        if (supports(Capability.OUTPUT_DESTINATION)) {
+            return List.of(PAGE_CONTROL_COUNT, VIEW_CONTROL_COUNT, 2);
+        }
         if (supports(Capability.PLAYER_INVENTORY_SOURCE)) {
             return List.of(PAGE_CONTROL_COUNT, VIEW_CONTROL_COUNT, 1);
         }

@@ -2309,10 +2309,29 @@ public class TerminalFlowTests {
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBoolean(false);
             var bufMenu = new CraftingTerminalMenu(35, player.getInventory(), byteBuf);
-            int serverCount = dataSlotCount(serverMenu);
-            int bufCount = dataSlotCount(bufMenu);
+            if (!serverMenu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON)
+                    || serverMenu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
+                helper.fail("Server menu could not select Storage output before wire sync");
+                return;
+            }
+            var serverData = dataSlots(serverMenu);
+            var clientData = dataSlots(bufMenu);
+            int serverCount = serverData.size();
+            int bufCount = clientData.size();
             if (serverCount != bufCount) { helper.fail("crafting data-slot count mismatch: server=" + serverCount + " buf=" + bufCount); return; }
-            if (serverCount != 94) { helper.fail("crafting menu should sync base 11 + crafting/fuel/resource 83 data slots, got " + serverCount); return; }
+            if (serverCount != 95) { helper.fail("crafting menu should sync base 11 + crafting/fuel/resource/output 84 data slots, got " + serverCount); return; }
+            for (int i = 0; i < serverData.size(); i++) {
+                var wire = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+                var packet = new net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket(
+                        bufMenu.containerId, i, serverData.get(i).get());
+                net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket.STREAM_CODEC.encode(wire, packet);
+                var decoded = net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket.STREAM_CODEC.decode(wire);
+                clientData.get(decoded.getId()).set(decoded.getValue());
+            }
+            if (bufMenu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
+                helper.fail("Client menu did not receive the server-owned Storage output destination");
+                return;
+            }
             if (serverMenu.slots.size() != 149 || bufMenu.slots.size() != 149) {
                 helper.fail("crafting menu requires exact 149-slot parity, server="
                         + serverMenu.slots.size() + " buf=" + bufMenu.slots.size());

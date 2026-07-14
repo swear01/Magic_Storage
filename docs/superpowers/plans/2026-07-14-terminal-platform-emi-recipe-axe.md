@@ -115,6 +115,8 @@
 
 ## Task 5: Atomic Player or Storage output destination
 
+> Status: complete. RED produced 34 expected missing-output-API compile errors plus two focused static failures for the server control/shared rail and bilingual current-value tooltip. GREEN is compileJava, build, SelfTest 222946/222946, GameTest 238/238, focused Python 3/3, full Python 98/98, runData without drift, and `runClient --dry-run`; direct Player/Storage routing is atomic and EMI Cursor/Inventory remains request-authoritative.
+
 **Files:**
 
 - Create: `src/main/java/com/swearprom/magicstorage/magic_storage/TerminalOutputDestination.java`

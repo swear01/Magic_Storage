@@ -268,6 +268,76 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertRegex(crafting, r"\bTerminalCycleButton\s+fuelTargetSelector\b")
 
+    def test_terminal_output_destination_is_distinct_from_emi_destination(self):
+        destination = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalOutputDestination.java"
+        )
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+
+        self.assertRegex(destination, r"enum\s+TerminalOutputDestination\s*\{")
+        self.assertRegex(destination, r"\bPLAYER\s*,")
+        self.assertRegex(destination, r"\bSTORAGE\b")
+        self.assertIn(
+            "private TerminalOutputDestination outputDestination = TerminalOutputDestination.PLAYER;",
+            menu,
+        )
+        self.assertIn("from(CraftingDestination destination)", menu)
+        self.assertIn("from(TerminalOutputDestination destination)", menu)
+        self.assertIn("DeliveryTarget.from(destination)", menu)
+        self.assertIn("DeliveryTarget.from(outputDestination)", menu)
+
+    def test_output_destination_is_a_server_synced_item_page_control(self):
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        profile = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalProfile.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+
+        self.assertIn("static final int OUTPUT_DESTINATION_BUTTON", menu)
+        self.assertIn("case 7 -> outputDestination.ordinal();", menu)
+        self.assertIn("case 7 -> outputDestination = TerminalOutputDestination.byId(value);", menu)
+        self.assertIn(
+            "buttonId == OUTPUT_DESTINATION_BUTTON",
+            menu,
+            "the server menu must own the output-destination transition",
+        )
+        self.assertIn("OUTPUT_DESTINATION", profile)
+        self.assertIn("int outputDestinationIndex()", profile)
+        self.assertIn("playerInventorySourceIndex() + 1", profile)
+        self.assertIn("List.of(PAGE_CONTROL_COUNT, VIEW_CONTROL_COUNT, 2)", profile)
+        self.assertRegex(screen, r"\bTerminalCycleButton\s+outputDestinationRailBtn\b")
+        self.assertIn("MagicStorage.STORAGE_CORE_ITEM.get().getDefaultInstance()", screen)
+        self.assertIn("CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON", screen)
+        self.assertIn("setWidgetVisible(outputDestinationRailBtn, itemPage);", screen)
+
+    def test_output_destination_tooltips_name_current_value_in_both_languages(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        en_us = json.loads(
+            self.read_required("src/main/resources/assets/magic_storage/lang/en_us.json")
+        )
+        zh_tw = json.loads(
+            self.read_required("src/main/resources/assets/magic_storage/lang/zh_tw.json")
+        )
+
+        self.assertIn("gui.magic_storage.output_destination", screen)
+        self.assertIn("gui.magic_storage.output_destination.player", screen)
+        self.assertIn("gui.magic_storage.output_destination.storage", screen)
+        expected = {
+            "gui.magic_storage.output_destination",
+            "gui.magic_storage.output_destination.player",
+            "gui.magic_storage.output_destination.storage",
+        }
+        self.assertTrue(expected.issubset(en_us))
+        self.assertTrue(expected.issubset(zh_tw))
+
     def test_fuel_page_names_mixed_machine_station_tool_slots_as_installed_stations(self):
         lang = json.loads(
             self.read_required("src/main/resources/assets/magic_storage/lang/en_us.json")

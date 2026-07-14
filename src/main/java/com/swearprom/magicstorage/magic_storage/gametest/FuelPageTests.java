@@ -512,8 +512,8 @@ public class FuelPageTests {
 
             var serverData = dataSlots(serverMenu);
             var clientData = dataSlots(clientMenu);
-            if (serverData.size() != 94 || clientData.size() != 94) {
-                helper.fail("Crafting fuel/resource sync requires exact 94-slot parity, server="
+            if (serverData.size() != 95 || clientData.size() != 95) {
+                helper.fail("Crafting fuel/resource/output sync requires exact 95-slot parity, server="
                         + serverData.size() + " client=" + clientData.size());
                 return;
             }

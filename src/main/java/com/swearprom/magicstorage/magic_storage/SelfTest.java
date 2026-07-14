@@ -402,12 +402,15 @@ class SelfTest {
                 !TerminalProfile.STORAGE.supports(TerminalProfile.Capability.PAGES)
                         && !TerminalProfile.STORAGE.supports(TerminalProfile.Capability.RECIPE_WORKSPACE)
                         && TerminalProfile.STORAGE.itemRailGroups().equals(List.of(3)));
-        assertTrue("Crafting profile composes page, recipe, Fuel, and source capabilities",
+        assertTrue("Crafting profile composes page, recipe, Fuel, source, and output capabilities",
                 TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.PAGES)
                         && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.RECIPE_WORKSPACE)
                         && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.FUEL)
                         && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.PLAYER_INVENTORY_SOURCE)
-                        && TerminalProfile.CRAFTING.itemRailGroups().equals(List.of(3, 3, 1))
+                        && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.OUTPUT_DESTINATION)
+                        && TerminalProfile.CRAFTING.playerInventorySourceIndex() == 6
+                        && TerminalProfile.CRAFTING.outputDestinationIndex() == 7
+                        && TerminalProfile.CRAFTING.itemRailGroups().equals(List.of(3, 3, 2))
                         && TerminalProfile.CRAFTING.fuelRailGroups().equals(List.of(3)));
         assertTrue("terminal controls use an 18px hit box and 16px icon canvas",
                 TerminalLayout.CONTROL_SIZE == 18 && TerminalLayout.ICON_CANVAS_SIZE == 16);
