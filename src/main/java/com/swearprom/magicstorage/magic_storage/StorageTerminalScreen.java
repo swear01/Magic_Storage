@@ -259,6 +259,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         return switch (menu.getSortMode()) {
             case NAME -> Component.literal("≡");
             case QUANTITY -> Component.literal("#");
+            case MOD -> Component.literal("MOD");
             case ID -> Component.literal("ID");
         };
     }
@@ -416,10 +417,21 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         ItemStack icon = stack.copyWithCount(1);
         graphics.renderItem(icon, slot.x, slot.y);
         graphics.renderItemDecorations(font, icon, slot.x, slot.y);
-        renderNetworkAmount(graphics, slot.x, slot.y, stack.getCount());
+        renderNetworkAmount(graphics, slot.x, slot.y, TerminalDisplayStack.amount(stack));
+    }
+
+    @Override
+    protected List<Component> getTooltipFromContainerItem(ItemStack stack) {
+        List<Component> tooltip = new ArrayList<>(super.getTooltipFromContainerItem(stack));
+        if (TerminalDisplayStack.isDisplay(stack)) {
+            tooltip.add(Component.translatable(
+                    "gui.magic_storage.stored_amount", TerminalDisplayStack.amount(stack)));
+        }
+        return tooltip;
     }
 
     private void renderNetworkAmount(GuiGraphics graphics, int x, int y, long amount) {
+        if (amount <= 0) return;
         String text = TerminalAmountFormatter.formatCompact(amount);
         boolean large = font.width(text) <= 16;
         int textX = large ? 16 - font.width(text) : 30 - font.width(text);

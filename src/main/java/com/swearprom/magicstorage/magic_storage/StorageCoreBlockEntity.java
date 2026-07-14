@@ -18,7 +18,6 @@ import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 
 import java.util.*;
 import java.util.function.Predicate;
-import net.minecraft.core.registries.BuiltInRegistries;
 
 public class StorageCoreBlockEntity extends BlockEntity {
 
@@ -317,8 +316,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             if (matchesFilter(key, filter, level)) {
                 ItemStack stack = key.toStack(1);
                 if (!stack.isEmpty()) {
-                    stack.setCount((int) Math.min(count, Integer.MAX_VALUE));
-                    result.add(stack);
+                    result.add(TerminalDisplayStack.create(stack, count));
                 }
             }
         }
@@ -327,28 +325,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     public List<ItemStack> getDisplayStacks(String filter, SortMode mode, SortOrder order) {
         List<ItemStack> result = getDisplayStacks(filter);
-        if (mode == SortMode.QUANTITY) {
-            record Entry(ItemStack stack, long count) {}
-            List<Entry> entries = new ArrayList<>(result.size());
-            for (ItemStack stack : result) {
-                Long count = flatCache.get(ItemKey.of(stack));
-                entries.add(new Entry(stack, count != null ? count : 0L));
-            }
-            Comparator<Entry> cmp = Comparator.comparingLong(Entry::count);
-            entries.sort(order == SortOrder.DESCENDING ? cmp.reversed() : cmp);
-            result = new ArrayList<>(entries.size());
-            for (Entry entry : entries) {
-                result.add(entry.stack());
-            }
-            return result;
-        }
-        Comparator<ItemStack> cmp = switch (mode) {
-            case NAME -> Comparator.comparing(s -> s.getHoverName().getString());
-            case QUANTITY -> throw new IllegalStateException();
-            case ID -> Comparator.comparing(s ->
-                    BuiltInRegistries.ITEM.getKey(s.getItem()).toString());
-        };
-        result.sort(order == SortOrder.DESCENDING ? cmp.reversed() : cmp);
+        result.sort(TerminalEntryComparator.forMode(mode, order));
         return result;
     }
 

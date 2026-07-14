@@ -4,9 +4,11 @@ import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.crafting.BlastingRecipe;
 import net.minecraft.world.item.crafting.CampfireCookingRecipe;
 import net.minecraft.world.item.crafting.CookingBookCategory;
@@ -18,6 +20,7 @@ import net.minecraft.world.item.crafting.SmokingRecipe;
 import net.neoforged.neoforge.common.ItemAbilities;
 
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -42,6 +45,8 @@ class SelfTest {
         testTerminalSettingsPacketCodec();
         testSearchModeApply();
         testTerminalAmountFormatter();
+        testTerminalDisplayStack();
+        testTerminalEntryComparator();
         testAdaptiveTerminalLayout();
 
         MagicStorage.LOGGER.info("SelfTest: {} passed, {} failed, {} total",
@@ -276,13 +281,88 @@ class SelfTest {
                 TerminalAmountFormatter.formatCompact(Long.MAX_VALUE).equals("9.2E"));
     }
 
+    private static void testTerminalDisplayStack() {
+        ItemStack original = new ItemStack(Items.DIAMOND_SWORD, 7);
+        original.set(DataComponents.CUSTOM_NAME, Component.literal("Original"));
+        CompoundTag originalData = new CompoundTag();
+        originalData.putString("owner", "test");
+        original.set(DataComponents.CUSTOM_DATA, CustomData.of(originalData));
+
+        ItemStack zero = TerminalDisplayStack.create(original, 0);
+        ItemStack stackSized = TerminalDisplayStack.create(original, 64);
+        ItemStack aboveInt = TerminalDisplayStack.create(original, (long) Integer.MAX_VALUE + 1);
+        ItemStack huge = TerminalDisplayStack.create(original, Long.MAX_VALUE);
+        assertTrue("zero display amount remains a visible one-count stack",
+                !zero.isEmpty() && zero.getCount() == 1 && TerminalDisplayStack.amount(zero) == 0);
+        assertTrue("display amount preserves exact long",
+                stackSized.getCount() == 1 && TerminalDisplayStack.amount(stackSized) == 64
+                        && aboveInt.getCount() == 1
+                        && TerminalDisplayStack.amount(aboveInt) == (long) Integer.MAX_VALUE + 1
+                        && huge.getCount() == 1 && TerminalDisplayStack.amount(huge) == Long.MAX_VALUE);
+        assertTrue("display metadata is detected", TerminalDisplayStack.isDisplay(huge));
+        assertTrue("plain stacks use their real count",
+                TerminalDisplayStack.amount(original) == 7 && !TerminalDisplayStack.isDisplay(original));
+
+        ItemStack stripped = TerminalDisplayStack.strip(huge);
+        assertTrue("stripping display metadata preserves item components",
+                ItemStack.isSameItemSameComponents(original, stripped));
+        assertTrue("stripping display metadata removes only the display marker",
+                !TerminalDisplayStack.isDisplay(stripped)
+                        && stripped.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY)
+                        .copyTag().getString("owner").equals("test"));
+        assertTrue("ItemKey ignores display metadata",
+                ItemKey.of(huge).equals(ItemKey.of(original)));
+        assertTrue("ItemKey never recreates display metadata",
+                !TerminalDisplayStack.isDisplay(ItemKey.of(huge).toStack(1)));
+
+        ItemStack noCustomData = new ItemStack(Items.STONE);
+        ItemStack strippedNoCustomData = TerminalDisplayStack.strip(
+                TerminalDisplayStack.create(noCustomData, 64));
+        assertTrue("stripping the only marker removes empty custom data",
+                !strippedNoCustomData.has(DataComponents.CUSTOM_DATA));
+    }
+
+    private static void testTerminalEntryComparator() {
+        ItemStack stone = TerminalDisplayStack.create(new ItemStack(Items.STONE), 5);
+        ItemStack apple = TerminalDisplayStack.create(new ItemStack(Items.APPLE), 20);
+        ItemStack diamond = TerminalDisplayStack.create(new ItemStack(Items.DIAMOND), 10);
+
+        List<ItemStack> quantity = new ArrayList<>(List.of(apple, diamond, stone));
+        quantity.sort(TerminalEntryComparator.forMode(SortMode.QUANTITY, SortOrder.ASCENDING));
+        assertTrue("quantity sorting uses exact display amounts",
+                quantity.get(0).is(Items.STONE)
+                        && quantity.get(1).is(Items.DIAMOND)
+                        && quantity.get(2).is(Items.APPLE));
+
+        List<ItemStack> descendingId = new ArrayList<>(List.of(stone, apple, diamond));
+        descendingId.sort(TerminalEntryComparator.forMode(SortMode.ID, SortOrder.DESCENDING));
+        assertTrue("ID sorting compares the complete identifier and reverses deterministically",
+                descendingId.get(0).is(Items.STONE)
+                        && descendingId.get(1).is(Items.DIAMOND)
+                        && descendingId.get(2).is(Items.APPLE));
+
+        ItemStack alpha = TerminalDisplayStack.create(new ItemStack(Items.STONE), 5);
+        alpha.set(DataComponents.CUSTOM_NAME, Component.literal("Alpha"));
+        ItemStack beta = TerminalDisplayStack.create(new ItemStack(Items.STONE), 5);
+        beta.set(DataComponents.CUSTOM_NAME, Component.literal("Beta"));
+        List<ItemStack> variantOrder = new ArrayList<>(List.of(beta, alpha));
+        List<ItemStack> reversedInput = new ArrayList<>(List.of(alpha, beta));
+        variantOrder.sort(TerminalEntryComparator.forMode(SortMode.ID, SortOrder.ASCENDING));
+        reversedInput.sort(TerminalEntryComparator.forMode(SortMode.ID, SortOrder.ASCENDING));
+        assertTrue("component variants have a deterministic final tie-breaker",
+                ItemKey.of(variantOrder.get(0)).equals(ItemKey.of(reversedInput.get(0)))
+                        && ItemKey.of(variantOrder.get(1)).equals(ItemKey.of(reversedInput.get(1))));
+    }
+
     private static void testSortMode() {
-        assertTrue("SortMode has 3 values", SortMode.values().length == 3);
+        assertTrue("SortMode has 4 values", SortMode.values().length == 4);
         assertTrue("SortMode NAME ordinal 0", SortMode.NAME.ordinal() == 0);
         assertTrue("SortMode QUANTITY ordinal 1", SortMode.QUANTITY.ordinal() == 1);
-        assertTrue("SortMode ID ordinal 2", SortMode.ID.ordinal() == 2);
+        assertTrue("SortMode MOD ordinal 2", SortMode.values()[2].name().equals("MOD"));
+        assertTrue("SortMode ID ordinal 3", SortMode.ID.ordinal() == 3);
         assertTrue("NAME.next() -> QUANTITY", SortMode.NAME.next() == SortMode.QUANTITY);
-        assertTrue("QUANTITY.next() -> ID", SortMode.QUANTITY.next() == SortMode.ID);
+        assertTrue("QUANTITY.next() -> MOD", SortMode.QUANTITY.next().name().equals("MOD"));
+        assertTrue("MOD.next() -> ID", SortMode.values()[2].next() == SortMode.ID);
         assertTrue("ID.next() -> NAME", SortMode.ID.next() == SortMode.NAME);
     }
 

@@ -22,6 +22,8 @@
 
 ## Task 1: Server-owned display amounts and shared ordering
 
+> Status: complete. RED exposed the missing Mod mode, unstable component ties, old stack-count transport, old Craftable yield quantities, duplicated comparator, zero-count overlay, and EMI marker leakage; GREEN is SelfTest 40622/40622, GameTest 223/223, and Python 78/78.
+
 **Files:**
 
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/SortMode.java`
@@ -42,6 +44,8 @@
 **Commit:** `feat: unify terminal display amounts and sorting`
 
 ## Task 2: Shared terminal profile, adaptive shell, and rail controls
+
+> Status: next.
 
 **Files:**
 

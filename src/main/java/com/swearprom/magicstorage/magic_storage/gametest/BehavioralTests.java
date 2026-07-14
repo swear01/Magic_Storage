@@ -319,8 +319,9 @@ public class BehavioralTests {
             if (extracted.getCount() != 32) helper.fail("Expected to extract 32, got " + extracted.getCount());
             
             var display = core.getDisplayStacks();
-            if (display.isEmpty() || display.get(0).getCount() != 32) {
-                helper.fail("Remaining count should be 32, got " + (display.isEmpty() ? "empty" : display.get(0).getCount()));
+            if (display.isEmpty() || TerminalDisplayStack.amount(display.get(0)) != 32) {
+                helper.fail("Remaining count should be 32, got "
+                        + (display.isEmpty() ? "empty" : TerminalDisplayStack.amount(display.get(0))));
             }
             helper.succeed();
         });
@@ -493,7 +494,7 @@ public class BehavioralTests {
             if (core.getTypeCount() != 3) helper.fail("Expected 3 types, got " + core.getTypeCount());
             var display = core.getDisplayStacks();
             long total = 0;
-            for (var s : display) total += s.getCount();
+            for (var s : display) total += TerminalDisplayStack.amount(s);
             if (total != 35) helper.fail("Expected 35 total items, got " + total);
             helper.succeed();
         });

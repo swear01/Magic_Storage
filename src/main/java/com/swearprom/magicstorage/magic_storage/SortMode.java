@@ -3,6 +3,7 @@ package com.swearprom.magicstorage.magic_storage;
 public enum SortMode {
     NAME,
     QUANTITY,
+    MOD,
     ID;
 
     public SortMode next() {

@@ -689,10 +689,11 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     private void selectItem(Level level, ItemStack stack) {
+        ItemStack identity = TerminalDisplayStack.strip(stack);
         selectedRecipeId = null;
-        selectedKey = ItemKey.of(stack);
+        selectedKey = ItemKey.of(identity);
         selectionContainer.setItem(0, selectedKey.toStack(1));
-        lookUpRecipes(level, stack);
+        lookUpRecipes(level, identity);
     }
 
     public boolean selectRecipe(Level level, int displaySlot, ResourceLocation recipeId, Player player) {
@@ -712,7 +713,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (holder == null || !supportsRecipeContract(holder.value())
                 || !CraftingStationTable.isAvailable(core, holder.value())) return false;
         ItemStack result = holder.value().getResultItem(level.registryAccess());
-        if (!ItemStack.isSameItemSameComponents(result, displayStack)) return false;
+        if (!ItemStack.isSameItemSameComponents(result, TerminalDisplayStack.strip(displayStack))) return false;
         return selectRecipeById(level, recipeId, player, core);
     }
 
@@ -804,6 +805,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     void lookUpRecipes(Level level, ItemStack output) {
+        output = TerminalDisplayStack.strip(output);
         selectedRecipeId = null;
         currentRecipes.clear();
         currentRecipeIndex = 0;
@@ -2025,8 +2027,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (output.isEmpty()) continue;
             ItemKey key = ItemKey.of(output);
             if (!StorageCoreBlockEntity.matchesFilter(key, currentFilter, level)) continue;
-            long amount = Math.min((long) preview.craftable() * output.getCount(), Integer.MAX_VALUE);
-            craftableAmounts.merge(key, amount, Math::max);
+            craftableAmounts.put(key, core.getItemCount(key));
         }
         for (RecipeHolder<?> holder : axeTransformationCatalog.recipes(level, core)) {
             CraftPreview preview = computeCraftPreviewFor(holder.value(), core, sources);
@@ -2035,27 +2036,18 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (output.isEmpty()) continue;
             ItemKey key = ItemKey.of(output);
             if (!StorageCoreBlockEntity.matchesFilter(key, currentFilter, level)) continue;
-            long amount = Math.min((long) preview.craftable() * output.getCount(), Integer.MAX_VALUE);
-            craftableAmounts.merge(key, amount, Math::max);
+            craftableAmounts.put(key, core.getItemCount(key));
         }
 
         List<ItemStack> result = new ArrayList<>(craftableAmounts.size());
         for (Map.Entry<ItemKey, Long> entry : craftableAmounts.entrySet()) {
-            result.add(entry.getKey().toStack(entry.getValue().intValue()));
+            result.add(TerminalDisplayStack.create(entry.getKey().toStack(1), entry.getValue()));
         }
         return result;
     }
 
     private void sortCraftableDisplayStacks(List<ItemStack> stacks) {
-        Comparator<ItemStack> comparator = switch (getSortMode()) {
-            case NAME -> Comparator.comparing(stack -> stack.getHoverName().getString());
-            case QUANTITY -> Comparator.comparingInt(ItemStack::getCount);
-            case ID -> Comparator.comparing(stack ->
-                    BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        };
-        comparator = comparator.thenComparing(stack ->
-                BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        stacks.sort(getSortOrder() == SortOrder.DESCENDING ? comparator.reversed() : comparator);
+        stacks.sort(TerminalEntryComparator.forMode(getSortMode(), getSortOrder()));
     }
 
     private boolean isCraftableOutput(StorageCoreBlockEntity core, ItemStack output, Player player) {
@@ -2069,6 +2061,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     private List<RecipeHolder<?>> findRecipes(Level level, ItemStack output) {
+        output = TerminalDisplayStack.strip(output);
         List<RecipeHolder<?>> recipes = new ArrayList<>();
         RecipeManager manager = level.getRecipeManager();
         StorageCoreBlockEntity core = getCore(level);

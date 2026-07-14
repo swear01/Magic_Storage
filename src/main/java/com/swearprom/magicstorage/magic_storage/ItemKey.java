@@ -7,10 +7,11 @@ import net.minecraft.world.item.ItemStack;
 public record ItemKey(Item item, DataComponentMap components) {
 
     public static ItemKey of(ItemStack stack) {
+        ItemStack identity = TerminalDisplayStack.strip(stack);
         DataComponentMap snapshot = DataComponentMap.builder()
-                .addAll(stack.getComponents())
+                .addAll(identity.getComponents())
                 .build();
-        return new ItemKey(stack.getItem(), snapshot);
+        return new ItemKey(identity.getItem(), snapshot);
     }
 
     public ItemStack toStack(int count) {

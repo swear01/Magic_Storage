@@ -434,8 +434,14 @@ public class CraftingTests {
 
             menu.clickMenuButton(player, CraftingTerminalMenu.CRAFTABLE_PAGE_BUTTON);
             menu.refreshDisplayItems(core);
-            if (findDisplaySlot(menu, Items.STICK) < 0) {
+            int stickSlot = findDisplaySlot(menu, Items.STICK);
+            if (stickSlot < 0) {
                 helper.fail("Craftable-only grid should include sticks from available planks");
+                return;
+            }
+            ItemStack displayedStick = menu.getSlot(stickSlot).getItem();
+            if (displayedStick.getCount() != 1 || TerminalDisplayStack.amount(displayedStick) != 1) {
+                helper.fail("Craftable Stick must display the exact one currently stored, not potential craft yield");
                 return;
             }
             if (findDisplaySlot(menu, Items.DIAMOND) >= 0) {
@@ -478,8 +484,14 @@ public class CraftingTests {
             var menu = new CraftingTerminalMenu(61, player.getInventory(), core);
             menu.clickMenuButton(player, CraftingTerminalMenu.CRAFTABLE_PAGE_BUTTON);
             menu.refreshDisplayItems(core);
-            if (findDisplaySlot(menu, Items.CHARCOAL) < 0) {
+            int charcoalSlot = findDisplaySlot(menu, Items.CHARCOAL);
+            if (charcoalSlot < 0) {
                 helper.fail("Craftable mode must synthesize zero-storage Charcoal from available Oak Logs");
+                return;
+            }
+            ItemStack displayedCharcoal = menu.getSlot(charcoalSlot).getItem();
+            if (displayedCharcoal.getCount() != 1 || TerminalDisplayStack.amount(displayedCharcoal) != 0) {
+                helper.fail("Zero-storage Charcoal must stay visible without displaying a fake quantity");
                 return;
             }
             helper.succeed();
@@ -1069,6 +1081,7 @@ public class CraftingTests {
             installAllRecipeStations(core);
             installMachine(core, helper, 0, new ItemStack(Items.FURNACE));
             core.insertItem(new ItemStack(Items.OAK_LOG));
+            core.insertItem(new ItemStack(Items.OAK_PLANKS, 2));
             var charcoalRecipe = findCookingRecipe(level, RecipeType.SMELTING, Items.OAK_LOG, Items.CHARCOAL);
             if (charcoalRecipe == null) {
                 helper.fail("Vanilla Oak Log to Charcoal smelting recipe not found");
@@ -1085,11 +1098,13 @@ public class CraftingTests {
             menu.clickMenuButton(player, 11);
             menu.refreshDisplayItems(core);
             if (!menu.getSlot(0).getItem().is(Items.OAK_PLANKS)
-                    || menu.getSlot(0).getItem().getCount() != 4) {
-                helper.fail("Descending quantity sort should put four craftable Oak Planks first");
+                    || menu.getSlot(0).getItem().getCount() != 1
+                    || TerminalDisplayStack.amount(menu.getSlot(0).getItem()) != 2) {
+                helper.fail("Descending quantity sort must use the two Oak Planks currently stored");
                 return;
             }
-            if (findDisplaySlot(menu, Items.CHARCOAL) < 0) {
+            int charcoalSlot = findDisplaySlot(menu, Items.CHARCOAL);
+            if (charcoalSlot < 0 || TerminalDisplayStack.amount(menu.getSlot(charcoalSlot).getItem()) != 0) {
                 helper.fail("Quantity sorting must retain zero-storage Charcoal");
                 return;
             }

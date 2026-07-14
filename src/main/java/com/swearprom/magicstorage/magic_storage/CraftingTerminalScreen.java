@@ -236,6 +236,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         sortModeRailBtn.setIcon(switch (menu.getSortMode()) {
             case NAME -> RailIcon.SORT_NAME;
             case QUANTITY -> RailIcon.SORT_QUANTITY;
+            case MOD -> RailIcon.SORT_MOD;
             case ID -> RailIcon.SORT_ID;
         });
         searchModeRailBtn.setIcon(switch (menu.getSearchMode()) {
@@ -746,6 +747,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 graphics.fill(x + 4, y + 5, x + 7, y + 12, color);
                 graphics.fill(x + 8, y, x + 12, y + 12, color);
             }
+            case SORT_MOD -> {
+                graphics.fill(x, y, x + 5, y + 5, color);
+                graphics.fill(x + 7, y, x + 12, y + 5, color);
+                graphics.fill(x, y + 7, x + 5, y + 12, color);
+                graphics.fill(x + 7, y + 7, x + 12, y + 12, color);
+            }
             case SORT_ID -> {
                 graphics.fill(x, y, x + 2, y + 12, color);
                 graphics.fill(x + 4, y, x + 10, y + 2, color);
@@ -833,6 +840,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         SORT_DESCENDING,
         SORT_NAME,
         SORT_QUANTITY,
+        SORT_MOD,
         SORT_ID,
         SEARCH,
         SEARCH_TAG,

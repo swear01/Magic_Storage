@@ -7,14 +7,18 @@ import com.swearprom.magicstorage.magic_storage.CraftingRecipeSelectionPacket;
 import com.swearprom.magicstorage.magic_storage.CraftingTerminalScreen;
 import com.swearprom.magicstorage.magic_storage.MagicStorage;
 import com.swearprom.magicstorage.magic_storage.StorageTerminalMenu;
+import com.swearprom.magicstorage.magic_storage.TerminalDisplayStack;
 import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
 import dev.emi.emi.api.EmiRegistry;
+import dev.emi.emi.api.recipe.EmiPlayerInventory;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.recipe.handler.EmiCraftContext;
 import dev.emi.emi.api.recipe.handler.StandardRecipeHandler;
+import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.api.widget.Bounds;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.crafting.RecipeHolder;
 
@@ -46,6 +50,16 @@ public class MagicStorageEmiPlugin implements EmiPlugin {
                     ? StorageTerminalMenu.DISPLAY_SLOTS + PLAYER_INVENTORY_SLOTS
                     : StorageTerminalMenu.DISPLAY_SLOTS;
             return handler.slots.subList(firstSlot, Math.min(handler.slots.size(), lastSlot));
+        }
+
+        @Override
+        public EmiPlayerInventory getInventory(AbstractContainerScreen<CraftingTerminalMenu> screen) {
+            return new EmiPlayerInventory(getInputSources(screen.getMenu()).stream()
+                    .map(Slot::getItem)
+                    .filter(stack -> !stack.isEmpty())
+                    .map(stack -> EmiStack.of(
+                            TerminalDisplayStack.strip(stack), TerminalDisplayStack.amount(stack)))
+                    .toList());
         }
 
         @Override

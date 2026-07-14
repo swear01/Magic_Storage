@@ -2,11 +2,11 @@
 
 > 完整里程碑與設計見 `PLAN.md`(§八 開發里程碑 M1–M12)。狀態以程式碼為準(已有 50 Java 檔 + SelfTest/GameTest)。
 
-M1–M11 大致到位。0.1.15 station/tool gates、expanded recipes、safe output、two-row Fuel layout 與 16×16 texture revision 已完成 focused RED→GREEN、final automated gates 與 exact-jar deployment；舊 GUI world 已由 true-void lab replacement 取代，目前新世界 READY，等待使用者 fullscreen verdict。
+M1–M11 大致到位。新的 shared-terminal/EMI recipe/Axe Energy revision 依 `docs/superpowers/plans/2026-07-14-terminal-platform-emi-recipe-axe.md` 實作中；Task 1 exact display amount + shared four-mode sorting 已完成 focused RED→GREEN，後續 shell/recipe/EMI/station/texture tasks 尚未完成。
 
 ## In Progress
 
-- **0.1.15 visual gate / true-void lab replacement**：Prism 已部署唯一 exact 0.1.15 jar；world preparer 現在以 metadata template 生成真正 void、移除 embedded singleplayer state、建立 37×25 lab、預載 Core/stations、deterministic player kit、hotbar `1`–`9` 與 3-tick reusable reset。`build/gui-runs/20260713-221433-crafting-fuel-page/` 已達 `MS_GUI_TEST_READY`，只保留這一個 current client；接下來由使用者先過 fullscreen gate 後判定 Installed Stations、Fuel、recipe workspace、focus/tooltips 與 textures，不可先標記 GUI verified。
+- **Shared terminal platform revision**：Task 1 已讓 Storage/Craftable display stack 攜帶 exact `long` logical amount、Craftable 顯示目前 Core 庫存、零庫存仍可見且不畫假 overlay，tooltip 保留 exact amount，EMI inventory view strip marker 並保留 logical amount，且共用 Name/Quantity/Mod/ID deterministic comparator。Focused evidence：SelfTest 40622/40622、GameTest 223/223、Python 78/78。Task 2 起的 shared shell/recipe presentation/EMI/output/station/Axe/texture 工作仍在進行；0.1.15 舊 handoff 不可作為新 revision 的 fullscreen verdict。
 
 ## Next Up
 

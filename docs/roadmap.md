@@ -17,7 +17,7 @@
 
 ## In Progress
 
-- 0.1.15 visual gate：station/tool recipe scope、safe inventory→Core output、two-row Fuel layout、16×16 texture production/focused tests、final automated gates 與 exact-jar deployment 已完成；true-void replacement 的 `20260713-221433-crafting-fuel-page` 已 READY，待使用者 fullscreen verdict。
+- Shared terminal platform / EMI-first recipe UI / Axe Energy revision：Task 1 exact display amount、Craftable current-Core count 與 shared Name/Quantity/Mod/ID ordering 已完成 RED→GREEN；shared shell、server recipe presentation、EMI public widgets、output destination、station categories、Axe Energy、Fuel popup 與 family texture tasks 依 `docs/superpowers/plans/2026-07-14-terminal-platform-emi-recipe-axe.md` 繼續。舊 0.1.15 fullscreen handoff 不代表新 revision 已通過。
 
 ## Recently Done
 

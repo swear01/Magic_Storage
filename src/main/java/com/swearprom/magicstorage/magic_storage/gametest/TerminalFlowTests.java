@@ -173,12 +173,17 @@ public class TerminalFlowTests {
             if (actualCount != 999) helper.fail("Should store actual count 999, got " + actualCount);
             var display = core.getDisplayStacks();
             if (display.isEmpty()) helper.fail("Display should not be empty");
-            if (display.get(0).getCount() != 999) helper.fail("Display count should show 999, got " + display.get(0).getCount());
+            if (display.get(0).getCount() != 1 || TerminalDisplayStack.amount(display.get(0)) != 999) {
+                helper.fail("Display stack should stay visible with exact logical amount 999, got count="
+                        + display.get(0).getCount() + " amount=" + TerminalDisplayStack.amount(display.get(0)));
+            }
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new StorageTerminalMenu(7, player.getInventory(), core);
             menu.refreshDisplayItems(core);
-            if (menu.getSlot(0).getItem().getCount() != 999)
-                helper.fail("Menu display slot should show 999, got " + menu.getSlot(0).getItem().getCount());
+            if (menu.getSlot(0).getItem().getCount() != 1
+                    || TerminalDisplayStack.amount(menu.getSlot(0).getItem()) != 999) {
+                helper.fail("Menu slot should carry exact logical amount 999 without abusing stack count");
+            }
             var extracted = core.extractItem(ItemKey.of(new ItemStack(Items.STONE)), 500);
             if (extracted.getCount() != 500) helper.fail("Extracted wrong amount: " + extracted.getCount());
             var remaining = core.getItemCount(ItemKey.of(new ItemStack(Items.STONE)));
@@ -283,6 +288,37 @@ public class TerminalFlowTests {
             var descFirst = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(descSorted.get(0).getItem()).toString();
             var descSecond = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(descSorted.get(1).getItem()).toString();
             if (descFirst.compareTo(descSecond) <= 0) helper.fail("ID sort desc: " + descFirst + " after " + descSecond);
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void sort_items_by_mod_then_name(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core BE not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.STONE));
+            core.insertItem(MagicStorage.STORAGE_TERMINAL_ITEM.get().getDefaultInstance());
+            core.insertItem(MagicStorage.CRAFTING_TERMINAL_ITEM.get().getDefaultInstance());
+            var sorted = core.getDisplayStacks("", SortMode.MOD, SortOrder.ASCENDING);
+            if (sorted.size() != 3) {
+                helper.fail("Should have 3 mod-sorted items, got " + sorted.size());
+                return;
+            }
+            if (!sorted.get(0).is(MagicStorage.CRAFTING_TERMINAL_ITEM.get())
+                    || !sorted.get(1).is(MagicStorage.STORAGE_TERMINAL_ITEM.get())
+                    || !sorted.get(2).is(Items.STONE)) {
+                helper.fail("Mod sort must use namespace, then display name, then registry path");
+                return;
+            }
             helper.succeed();
         });
     }

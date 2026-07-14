@@ -26,6 +26,14 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("StorageTerminalMenu.DISPLAY_SLOTS", text)
         self.assertNotRegex(text, r"canCraft\([^)]*\)\s*\{\s*return true;\s*\}")
 
+    def test_emi_inventory_strips_terminal_display_metadata_and_keeps_exact_amount(self):
+        text = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java"
+        )
+        self.assertIn("EmiPlayerInventory getInventory", text)
+        self.assertIn("TerminalDisplayStack.strip(stack)", text)
+        self.assertIn("TerminalDisplayStack.amount(stack)", text)
+
     def test_emi_requires_an_item_page_and_supported_exact_backing_recipe(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java")
         supports_recipe = text[text.index("public boolean supportsRecipe"):text.index("@Override", text.index("public boolean supportsRecipe"))]
@@ -378,6 +386,10 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("graphics.pose().scale(0.5F, 0.5F, 1.0F)", storage)
         self.assertIn("30 - font.width(text)", storage)
         self.assertIn("copyWithCount(1)", storage)
+        self.assertIn("TerminalDisplayStack.amount(stack)", storage)
+        self.assertIn("if (amount <= 0) return;", storage)
+        self.assertIn("getTooltipFromContainerItem", storage)
+        self.assertIn("gui.magic_storage.stored_amount", storage)
         self.assertIn("protected void drawTypeCapacity", storage)
         self.assertIn("menu.getTypeCount()", storage)
         self.assertIn("menu.getMaxTypes()", storage)
@@ -398,6 +410,27 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotIn("railIconForEnergy", crafting)
         self.assertIn("menu.getPage() == CraftingTerminalPage.FUEL", crafting)
         self.assertIn("drawTypeCapacity(graphics)", crafting)
+
+    def test_terminal_display_amount_is_exact_server_metadata_not_stack_count(self):
+        helper = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalDisplayStack.java"
+        )
+        key = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/ItemKey.java"
+        )
+        core = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
+        )
+        crafting = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        self.assertIn("putLong(AMOUNT_KEY, amount)", helper)
+        self.assertIn("static ItemStack strip", helper)
+        self.assertIn("TerminalDisplayStack.strip(stack)", key)
+        self.assertIn("TerminalDisplayStack.create(stack, count)", core)
+        self.assertIn("core.getItemCount(key)", crafting)
+        self.assertNotIn("preview.craftable() * output.getCount()", crafting)
+        self.assertNotIn("Math.min(count, Integer.MAX_VALUE)", core)
 
     def test_compact_grid_is_removed_instead_of_hidden(self):
         menu = self.read_required(

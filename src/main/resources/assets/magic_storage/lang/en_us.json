@@ -31,6 +31,7 @@
   "gui.magic_storage.installed_machines": "Installed Stations",
   "gui.magic_storage.energy_reserves": "Energy Reserves",
   "gui.magic_storage.type_capacity": "%s / %s types",
+  "gui.magic_storage.stored_amount": "Stored: %s",
   "gui.magic_storage.select_recipe_item": "Select an item to preview its recipes",
   "gui.magic_storage.no_recipe": "No supported recipe",
   "gui.magic_storage.ready_to_craft": "Ready",
@@ -55,7 +56,7 @@
   "tooltip.magic_storage.remote_bound": "Bound to %s",
   "tooltip.magic_storage.remote_unbound": "Unbound - Shift+Right-click a Storage Core",
   "tooltip.magic_storage.sort_order": "Sort order (ascending / descending)",
-  "tooltip.magic_storage.sort_mode": "Sort by (name / quantity / id)",
+  "tooltip.magic_storage.sort_mode": "Sort by",
   "tooltip.magic_storage.search_mode": "Search mode (text / #tag / @mod)",
   "tooltip.magic_storage.machine_rate": "Rate: +%s/tick",
   "tooltip.magic_storage.energy_stored": "Stored: %s"
