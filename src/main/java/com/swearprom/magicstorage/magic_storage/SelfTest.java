@@ -492,6 +492,15 @@ class SelfTest {
                         && narrow.fuelTargetSelector().y() >= narrow.fuelPanel().y()
                         && narrow.fuelTargetSelector().right() <= narrow.fuelPanel().right()
                         && narrow.fuelTargetSelector().bottom() <= narrow.reserveGrid().bounds().y());
+        assertTrue("narrow Fuel target list button is separate from the cycle selector",
+                narrow.fuelTargetListButton().width() == TerminalLayout.CONTROL_SIZE
+                        && narrow.fuelTargetListButton().height() == TerminalLayout.CONTROL_SIZE
+                        && !narrow.fuelTargetListButton().overlaps(narrow.fuelTargetSelector()));
+        assertTrue("narrow Fuel target popup is anchored inside the terminal frame",
+                narrow.frame().contains(
+                        narrow.fuelTargetPopup().bounds().x(), narrow.fuelTargetPopup().bounds().y())
+                        && narrow.fuelTargetPopup().bounds().right() <= narrow.frame().right()
+                        && narrow.fuelTargetPopup().bounds().bottom() <= narrow.frame().bottom());
         assertTrue("narrow recipe workspace stacks diagram, ledger, and footer",
                 narrow.recipeDiagram().bottom() <= narrow.recipeLedger().y()
                         && narrow.recipeLedger().bottom() <= narrow.recipeFooter().y());
@@ -544,6 +553,28 @@ class SelfTest {
                 sideBySide.reserveGrid().cells().getFirst().x() == sideBySide.reserveGrid().bounds().x()
                         && sideBySide.reserveGrid().cells().getLast().right()
                         == sideBySide.reserveGrid().bounds().right());
+        assertTrue("Fuel popup includes Auto plus every server-approved target",
+                sideBySide.fuelTargetPopup().itemCount()
+                        == sideBySide.reserveGrid().itemCount() + 1);
+        assertTrue("Fuel popup rows are descriptor-driven and bounded",
+                sideBySide.fuelTargetPopup().rows(0).size() == 4
+                        && rectanglesDoNotOverlap(sideBySide.fuelTargetPopup().rows(0))
+                        && sideBySide.fuelTargetPopup().rows(0).stream().allMatch(row ->
+                        row.x() >= sideBySide.fuelTargetPopup().bounds().x()
+                                && row.right() <= sideBySide.fuelTargetPopup().bounds().right()
+                                && row.y() >= sideBySide.fuelTargetPopup().bounds().y()
+                                && row.bottom() <= sideBySide.fuelTargetPopup().bounds().bottom()));
+        assertTrue("Fuel popup never overlaps the left control rail",
+                !sideBySide.fuelTargetPopup().bounds().overlaps(sideBySide.railPanel()));
+
+        TerminalLayout.Rect sampleFlowCell = new TerminalLayout.Rect(20, 30, 72, 29);
+        assertTrue("station hover geometry is only the centered 18px slot",
+                TerminalLayout.centeredSlot(sampleFlowCell).equals(
+                        new TerminalLayout.Rect(47, 30, TerminalLayout.SLOT_SIZE, TerminalLayout.SLOT_SIZE)));
+        assertTrue("reserve hover geometry is only the centered 16px icon",
+                TerminalLayout.centeredIcon(sampleFlowCell).equals(
+                        new TerminalLayout.Rect(48, 30,
+                                TerminalLayout.ICON_CANVAS_SIZE, TerminalLayout.ICON_CANVAS_SIZE)));
 
         var manyFuelDescriptors = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 60);
         int manyFuelLeft = manyFuelDescriptors.centeredFrameLeft(320);
@@ -552,6 +583,21 @@ class SelfTest {
         assertTrue("large reserve descriptor sets cannot push rail or frame offscreen",
                 manyFuelLeft + manyFuelDescriptors.railPanel().x() >= 0
                         && manyFuelLeft + manyFuelDescriptors.imageWidth() <= 320);
+        assertTrue("large Fuel target lists expose a bounded popup viewport",
+                manyFuelDescriptors.fuelTargetPopup().capacity() > 0
+                        && manyFuelDescriptors.fuelTargetPopup().capacity() <= 6
+                        && manyFuelDescriptors.fuelTargetPopup().itemCount() == 61);
+        int maximumFuelTargetScroll = manyFuelDescriptors.fuelTargetPopup().maxScrollOffset();
+        assertTrue("Fuel target popup scroll clamps at both ends",
+                manyFuelDescriptors.fuelTargetPopup().clampScrollOffset(-1) == 0
+                        && manyFuelDescriptors.fuelTargetPopup().clampScrollOffset(Integer.MAX_VALUE)
+                        == maximumFuelTargetScroll
+                        && maximumFuelTargetScroll
+                        == manyFuelDescriptors.fuelTargetPopup().itemCount()
+                        - manyFuelDescriptors.fuelTargetPopup().capacity());
+        assertTrue("Fuel target popup final viewport remains full and bounded",
+                manyFuelDescriptors.fuelTargetPopup().rows(maximumFuelTargetScroll).size()
+                        == manyFuelDescriptors.fuelTargetPopup().capacity());
 
         var pageCapacity = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 3);
         var partialLastPage = TerminalLayout.forProfile(TerminalProfile.CRAFTING,

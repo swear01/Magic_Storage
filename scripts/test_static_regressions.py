@@ -714,7 +714,7 @@ class StaticRegressionTests(unittest.TestCase):
 
         self.assertEqual([], invalid_textures)
 
-    def test_crafting_terminal_uses_dedicated_fuel_page_without_popup_path(self):
+    def test_crafting_terminal_uses_dedicated_fuel_page_without_separate_popup_screen(self):
         terminal_screen = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
         )
@@ -764,6 +764,148 @@ class StaticRegressionTests(unittest.TestCase):
             self.assertIn(key, lang)
         self.assertNotIn("gui.magic_storage.previous_fuel_target", lang)
         self.assertNotIn("gui.magic_storage.next_fuel_target", lang)
+
+    def test_fuel_target_selector_keeps_cycle_control_and_adds_scalable_popup(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        en_us = json.loads(
+            self.read_required("src/main/resources/assets/magic_storage/lang/en_us.json")
+        )
+        zh_tw = json.loads(
+            self.read_required("src/main/resources/assets/magic_storage/lang/zh_tw.json")
+        )
+
+        self.assertIn("record PopupList", layout)
+        self.assertIn("Rect fuelTargetListButton", layout)
+        self.assertIn("PopupList fuelTargetPopup", layout)
+        self.assertIn("int maxScrollOffset()", layout)
+        self.assertIn("int clampScrollOffset(int", layout)
+        self.assertIn("List<Rect> rows(int", layout)
+        self.assertRegex(screen, r"\bTerminalCycleButton\s+fuelTargetSelector\b")
+        self.assertRegex(screen, r"\bTerminalIconButton\s+fuelTargetListBtn\b")
+        self.assertRegex(screen, r"\bFuelTargetPopup\s+fuelTargetPopup\b")
+        self.assertIn("selectAdjacentFuelTarget", screen)
+        self.assertIn("TerminalCycleDirection.NEXT", screen)
+        self.assertIn("fuelTargetOptions()", screen)
+        self.assertIn("menu.getSelectedFuelTarget()", screen)
+        self.assertIn("CraftingTerminalMenu.AUTO_FUEL_TARGET_BUTTON", screen)
+        self.assertIn("CraftingTerminalMenu.fuelTargetButtonId", screen)
+        self.assertIn("geometry.fuelTargetListButton()", screen)
+        self.assertIn("geometry.fuelTargetPopup()", screen)
+        self.assertIn(
+            'fuelTargetListBtn.setTooltip(Tooltip.create(Component.translatable('
+            '"gui.magic_storage.fuel_target_list")))',
+            screen,
+        )
+        render_popup = self.java_block(
+            screen,
+            r"\bprotected\s+void\s+renderWidget\s*\(",
+            "FuelTargetPopup.renderWidget",
+        )
+        self.assertIn("fuelTargetOptions()", render_popup)
+        self.assertIn("option.icon()", render_popup)
+        self.assertIn("option.label()", render_popup)
+        self.assertIn(
+            "Objects.equals(option.target(), menu.getSelectedFuelTarget())",
+            render_popup,
+        )
+        self.assertIn("gui.magic_storage.fuel_target_list", en_us)
+        self.assertIn("gui.magic_storage.fuel_target_list", zh_tw)
+
+    def test_fuel_target_popup_closes_cleanly_and_excludes_emi(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        click = self.java_block(
+            screen,
+            r"\bpublic\s+boolean\s+mouseClicked\s*\(",
+            "CraftingTerminalScreen.mouseClicked",
+        )
+        key = self.java_block(
+            screen,
+            r"\bpublic\s+boolean\s+keyPressed\s*\(",
+            "CraftingTerminalScreen.keyPressed",
+        )
+        scroll = self.java_block(
+            screen,
+            r"^[ ]{4}public\s+boolean\s+mouseScrolled\s*\(",
+            "CraftingTerminalScreen.mouseScrolled",
+        )
+        exclusions = self.java_block(
+            screen,
+            r"\bpublic\s+List<Rect2i>\s+getEmiExclusionAreas\s*\(",
+            "CraftingTerminalScreen.getEmiExclusionAreas",
+        )
+
+        self.assertIn("closeFuelTargetPopup", click)
+        self.assertIn("fuelTargetListBtn.isMouseOver", click)
+        self.assertIn("fuelTargetPopup.onClick", click)
+        self.assertLess(click.index("fuelTargetPopup.onClick"), click.index("super.mouseClicked"))
+        self.assertIn("GLFW.GLFW_KEY_ESCAPE", key)
+        self.assertIn("closeFuelTargetPopup", key)
+        self.assertIn("fuelTargetPopup.mouseScrolled", scroll)
+        self.assertIn("fuelTargetPopup.visible", exclusions)
+        self.assertIn("geometry.fuelTargetPopup().bounds()", exclusions)
+        toggle = self.java_block(
+            screen,
+            r"\bprivate\s+void\s+toggleFuelTargetPopup\s*\(",
+            "CraftingTerminalScreen.toggleFuelTargetPopup",
+        )
+        close = self.java_block(
+            screen,
+            r"\bprivate\s+void\s+closeFuelTargetPopup\s*\(",
+            "CraftingTerminalScreen.closeFuelTargetPopup",
+        )
+        page_update = self.java_block(
+            screen,
+            r"\bprivate\s+void\s+updatePageWidgets\s*\(",
+            "CraftingTerminalScreen.updatePageWidgets",
+        )
+        self.assertIn("fuelTargetPopup.reveal(selected)", toggle)
+        self.assertIn("setFocused(null)", toggle)
+        self.assertIn("setFocused(null)", close)
+        self.assertIn("if (!fuel) closeFuelTargetPopup()", page_update)
+
+        tooltip = self.java_block(
+            screen,
+            r"\bprotected\s+void\s+renderTooltip\s*\(",
+            "CraftingTerminalScreen.renderTooltip",
+        )
+        self.assertIn("fuelTargetPopup.isMouseOver", tooltip)
+        self.assertLess(
+            tooltip.index("fuelTargetPopup.isMouseOver"),
+            tooltip.index("super.renderTooltip"),
+            "popup rows must suppress tooltips from covered container slots",
+        )
+
+    def test_fuel_page_tooltips_use_only_station_slot_and_reserve_icon_bounds(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        machine_hit = self.java_block(
+            screen,
+            r"\bprivate\s+int\s+machineEnergyIndexAt\s*\(",
+            "CraftingTerminalScreen.machineEnergyIndexAt",
+        )
+        reserve_hit = self.java_block(
+            screen,
+            r"\bprivate\s+int\s+storedFuelIndexAt\s*\(",
+            "CraftingTerminalScreen.storedFuelIndexAt",
+        )
+
+        self.assertIn("static Rect centeredSlot(Rect", layout)
+        self.assertIn("static Rect centeredIcon(Rect", layout)
+        self.assertIn("TerminalLayout.centeredSlot(cell).contains", machine_hit)
+        self.assertNotIn("cell.contains", machine_hit)
+        self.assertIn("TerminalLayout.centeredIcon(cell).contains", reserve_hit)
+        self.assertNotIn("cell.contains", reserve_hit)
 
     def test_crafting_terminal_repositions_fuel_slots_without_sticky_checkbox_focus(self):
         screen = self.read_required(

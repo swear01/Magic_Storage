@@ -37,6 +37,7 @@
   "gui.magic_storage.fuel_input": "Fuel Input",
   "gui.magic_storage.fuel_target_auto": "Auto",
   "gui.magic_storage.fuel_target": "Fuel Target",
+  "gui.magic_storage.fuel_target_list": "Choose Fuel Target",
   "gui.magic_storage.installed_machines": "Stations & Axe Energy",
   "gui.magic_storage.axe_energy": "Axe Energy",
   "gui.magic_storage.energy_reserves": "Energy Reserves",

@@ -128,7 +128,7 @@ Patterns are references only; no source is copied verbatim.
 - Search mode continues to cycle Name / Tag / Mod, but the icon itself communicates the syntax: magnifier for Name, standalone `#` for Tag, and standalone `@` for Mod. Localized tooltips name the current mode.
 - The recipe footer has `×1`, `×8`, `×64`, and `Max`. Exact buttons are active only when the latest server-synced `craftableCount` meets their amount. Max is active for any positive count.
 - Max is not a trusted client amount. The server re-resolves the selected recipe and computes the current legal maximum independently of the 9,999 wire/display preview cap, then commits exactly that amount through the existing simulate-then-commit path. A stale or forged request with no legal craft is a no-op.
-- Fuel target uses one current-value vanilla `CycleButton` in the Energy Reserves header. Normal click cycles forward; Shift-click and hovered wheel reverse. The server receives only Auto or exact target IDs; retired previous/next IDs are no-ops. Descriptor growth changes panel pages, not rail width; a 60-descriptor layout remains onscreen, and the same selector rectangle can become a scrollable menu if the target list later grows too long.
+- Fuel target uses one current-value vanilla `CycleButton` in the Energy Reserves header. This revision originally used normal-click forward and Shift-click/hovered-wheel reverse. The server receives only Auto or exact target IDs; retired previous/next IDs are no-ops. Descriptor growth changes panel pages, not rail width; a 60-descriptor layout remains onscreen. The current contract supersedes those client controls with the shared left-next/right-previous/wheel direction model and adds the bounded list popup in `2026-07-14-terminal-platform-emi-recipe-axe.md`.
 - Button active state is only feedback; every server handler independently revalidates page, recipe, ingredients, energy, topology, and output delivery.
 
 ## Strict TDD Work Order
@@ -213,7 +213,7 @@ Only after confirmed RED, change `RecipeEnergyTable` and its callers.
 2. Add a GameTest proving retired previous/next button IDs no longer mutate the server target; direct Auto/exact target IDs remain authoritative.
 3. Add SelfTests requiring Fuel rail to contain only the three page tabs, selector geometry to stay inside the Fuel header, and sparse machine/reserve cells to span their full flow bounds while overflow remains paged.
 4. Add Python contracts requiring one vanilla `CycleButton`, forbidding Auto/previous/next rail widgets and dynamic current-item rendering on an action button, and updating the Prism checklist.
-5. Implement the selector in the Energy Reserves header. Normal click cycles forward; Shift-click and hovered wheel use vanilla reverse cycling. Reconcile its optimistic value from the server-synced selected target on every target change.
+5. Implement the historical selector in the Energy Reserves header with normal-click forward and Shift-click/hovered-wheel reverse; the active shared-control replacement is documented in `2026-07-14-terminal-platform-emi-recipe-axe.md`. Reconcile its optimistic value from the server-synced selected target on every target change.
 6. Derive flow columns from the visible descriptor count, up to the bounds-derived maximum. Compute proportional cell edges so the last cell reaches the exact right/bottom bounds without cumulative integer remainder.
 7. Keep direct Auto/exact target server IDs and the unchanged 94-data-slot contract. Remove retired previous/next IDs and `cycleFuelTarget`; no compatibility flag or silent bridge.
 8. Run focused GREEN, full gates, automatic patch deployment, and a new fullscreen handoff.
@@ -260,5 +260,5 @@ The runner opens the offline native client and hands control to the user. It doe
 - Full client-side mirror of the network inventory for EMI synthetic favorites.
 - Smithing Trim, dynamic/context-dependent transformations, or production brewing support. Exact component-preserving Smithing Transform is covered by the 0.1.15 extension.
 - Saved-data ID migration or removal of Brew/Bottle reserved pools.
-- Runtime third-party machine/energy descriptor registration in 0.1.15. The count-driven two-row UI, control panel, and selector rectangle are ready for varying descriptor counts, but a safe cross-mod API still needs server-owned registration, client synchronization, fixed menu parity/migration design, and a scrollable selector when the list becomes long.
+- Runtime third-party machine/energy descriptor registration in 0.1.15. The count-driven two-row UI, control panel, cycle selector, and later bounded list popup are ready for varying descriptor counts, but a safe cross-mod API still needs server-owned registration, client synchronization, and fixed menu parity/migration design.
 - A new GUI library or copied third-party assets/source.

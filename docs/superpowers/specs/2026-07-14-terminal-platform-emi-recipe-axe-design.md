@@ -119,7 +119,7 @@ The old persisted axe station slot is migrated once. A valid finite or Unbreakab
 
 ## Fuel target selector and station hit boxes
 
-The current target cycle remains available and gains a separate list button. The anchored popup is generated from the ordered server-approved target descriptors and shows representative item, localized name, and selected state. It supports bounded scrolling, outside-click close, Escape close, focus cleanup, and an EMI exclusion rectangle.
+The current target cycle remains available and gains a separate list button. The anchored popup is generated from the ordered server-approved target descriptors and shows representative item, localized name, and selected state. It supports bounded scrolling, outside-click close, Escape close, page-leave focus cleanup, and an EMI exclusion rectangle. While open, its rectangle consumes pointer/scroll input and suppresses covered container-slot tooltips instead of clicking or describing the UI underneath it.
 
 Station tooltips trigger only over the actual station slot or representative icon bounds. Hovering unused padding in a flow cell produces no station tooltip. Paging and future descriptor growth continue to use panel-local flow geometry.
 

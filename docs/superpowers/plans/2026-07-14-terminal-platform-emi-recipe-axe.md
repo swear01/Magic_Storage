@@ -171,6 +171,8 @@
 
 ## Task 7: Scalable Fuel target popup and exact hover bounds
 
+> Status: complete. RED began with missing popup/list/exact-hitbox APIs and three focused static failures, then added overlay click-through, covered-slot tooltip, and stale Prism checklist failures. GREEN is compileJava, build, SelfTest 222959/222959, GameTest 251/251, Python 102/102, runData without drift, and runClient dry-run. The shared cycle remains, while immutable bounded popup geometry, descriptor rows, selected state, close/focus/EMI behavior, event suppression, and exact slot/icon hover bounds are now guarded.
+
 **Files:**
 
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java`
@@ -179,6 +181,8 @@
 - Modify: `src/main/resources/assets/magic_storage/lang/zh_tw.json`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/SelfTest.java`
 - Modify: `scripts/test_static_regressions.py`
+- Modify: `scripts/run_prism_gui_session.py`
+- Modify: `scripts/test_run_prism_gui_session.py`
 - Modify: `docs/notes.md`
 
 **RED:** Add tests for the separate list button, descriptor-driven popup rows, selected state, bounded scrolling, left-next/right-previous cycle behavior, outside-click and Escape close, focus cleanup, popup EMI exclusion, no rail overlap, and tooltips only inside the actual station slot/icon rectangle. Run SelfTest/Python and observe the current whole-flow-cell hover and cycle-only selector fail.
