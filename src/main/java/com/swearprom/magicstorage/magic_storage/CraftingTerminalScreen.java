@@ -23,6 +23,8 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     private static final int TOOL_ROW_BACKGROUND = 0xFF381515;
     private static final int TOOL_ROW_BORDER = 0xFF873737;
 
+    private final NativeRecipeDiagramRenderer nativeRecipeDiagramRenderer;
+    private final RecipeDiagramRenderer preferredRecipeDiagramRenderer;
     private Button prevRecipeBtn;
     private Button nextRecipeBtn;
     private Button craft1Btn;
@@ -38,9 +40,14 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     private EnergyType lastFuelTarget;
     private int machinePage;
     private int reservePage;
+    private RecipeDiagramRenderer.Geometry recipeDiagramGeometry;
+    private int lastRecipeMouseX;
+    private int lastRecipeMouseY;
 
     public CraftingTerminalScreen(CraftingTerminalMenu menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
+        nativeRecipeDiagramRenderer = new NativeRecipeDiagramRenderer();
+        preferredRecipeDiagramRenderer = ClientSetup.createRecipeDiagramRenderer();
     }
 
     @Override
@@ -90,6 +97,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     @Override
     protected void init() {
         super.init();
+        recipeDiagramGeometry = createRecipeDiagramGeometry();
         repositionFuelSlots();
         List<TerminalLayout.Rect> navigationButtons = geometry.recipeNavigationButtons();
         prevRecipeBtn = addRecipeNavigationButton(
@@ -121,6 +129,26 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
         updatePageWidgets();
         updateSidebarState();
+    }
+
+    private RecipeDiagramRenderer.Geometry createRecipeDiagramGeometry() {
+        return new RecipeDiagramRenderer.Geometry(
+                recipeRect(geometry.recipeDiagram()),
+                geometry.recipeInputSlots().stream().map(CraftingTerminalScreen::recipeRect).toList(),
+                recipeRect(geometry.recipeArrow()),
+                recipeRect(geometry.recipeOutput()),
+                recipeRect(geometry.recipeStation()),
+                recipeRect(geometry.recipeShapelessMarker()));
+    }
+
+    private static RecipeDiagramRenderer.Rect recipeRect(TerminalLayout.Rect bounds) {
+        return new RecipeDiagramRenderer.Rect(
+                bounds.x(), bounds.y(), bounds.width(), bounds.height());
+    }
+
+    private RecipeDiagramRenderer activeRecipeDiagramRenderer(RecipePresentation presentation) {
+        return preferredRecipeDiagramRenderer.supports(presentation, recipeDiagramGeometry)
+                ? preferredRecipeDiagramRenderer : nativeRecipeDiagramRenderer;
     }
 
     private Button addRecipeButton(
@@ -260,7 +288,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             renderFuelPage(graphics);
         } else {
             super.renderBg(graphics, partialTick, mouseX, mouseY);
-            renderRecipePanel(graphics);
+            renderRecipePanel(graphics, partialTick, mouseX, mouseY);
         }
         renderSideRail(graphics);
     }
@@ -401,7 +429,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         graphics.fill(x, y + 16, x + 17, y + 17, 0xFFFFFFFF);
     }
 
-    private void renderRecipePanel(GuiGraphics graphics) {
+    private void renderRecipePanel(
+            GuiGraphics graphics,
+            float partialTick,
+            int mouseX,
+            int mouseY
+    ) {
         TerminalLayout.Rect panel = geometry.workspace();
         drawInsetPanel(graphics, leftPos, topPos, panel);
         TerminalLayout.Rect diagram = geometry.recipeDiagram();
@@ -431,20 +464,18 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             return;
         }
 
-        renderRecipeInputs(graphics, presentation);
-        drawRecipeArrow(graphics, geometry.recipeArrow(), 0xFF5A5A5A);
-        renderRecipeStation(graphics, presentation.station());
-        if (presentation.shapeless()) {
-            renderShapelessMarker(graphics, geometry.recipeShapelessMarker());
-        }
-
-        TerminalLayout.Rect outputBounds = geometry.recipeOutput();
-        drawLargeSlotFrame(graphics, outputBounds);
-        ItemStack output = presentation.output();
-        int outputX = leftPos + outputBounds.x() + (outputBounds.width() - 16) / 2;
-        int outputY = topPos + outputBounds.y() + (outputBounds.height() - 16) / 2;
-        graphics.renderItem(output, outputX, outputY);
-        graphics.renderItemDecorations(font, output, outputX, outputY);
+        lastRecipeMouseX = mouseX;
+        lastRecipeMouseY = mouseY;
+        activeRecipeDiagramRenderer(presentation).render(
+                graphics,
+                font,
+                presentation,
+                recipeDiagramGeometry,
+                leftPos,
+                topPos,
+                mouseX,
+                mouseY,
+                partialTick);
 
         int recipeCount = menu.getRecipeCount();
         String recipePosition = recipeCount <= 0 ? "" :
@@ -460,81 +491,6 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         for (int index = 0; index < resources.size(); index++) {
             renderResourceRow(graphics, cells.get(index), resources.get(index));
         }
-    }
-
-    private void renderRecipeInputs(GuiGraphics graphics, RecipePresentation presentation) {
-        List<ItemStack> inputs = presentation.inputs();
-        if (presentation.kind() == RecipePresentationKind.CRAFTING) {
-            for (TerminalLayout.Rect slot : geometry.recipeInputSlots()) {
-                drawRecipeInputSlot(graphics, slot, ItemStack.EMPTY);
-            }
-        }
-        int positions = presentation.width() * presentation.height();
-        for (int input = 0; input < positions; input++) {
-            drawRecipeInputSlot(
-                    graphics,
-                    presentationInputSlot(presentation, input),
-                    inputs.get(input));
-        }
-    }
-
-    private TerminalLayout.Rect presentationInputSlot(
-            RecipePresentation presentation,
-            int input
-    ) {
-        int column = input % presentation.width();
-        int row = input / presentation.width();
-        int columnOffset = (3 - presentation.width()) / 2;
-        int rowOffset = (3 - presentation.height()) / 2;
-        return geometry.recipeInputSlots().get((row + rowOffset) * 3 + column + columnOffset);
-    }
-
-    private void drawRecipeInputSlot(
-            GuiGraphics graphics,
-            TerminalLayout.Rect slot,
-            ItemStack stack
-    ) {
-        int itemX = leftPos + slot.x() + 1;
-        int itemY = topPos + slot.y() + 1;
-        drawSlotFrame(graphics, itemX, itemY);
-        if (!stack.isEmpty()) graphics.renderItem(stack, itemX, itemY);
-    }
-
-    private void renderRecipeStation(GuiGraphics graphics, ItemStack station) {
-        TerminalLayout.Rect bounds = geometry.recipeStation();
-        int itemX = leftPos + bounds.x() + 1;
-        int itemY = topPos + bounds.y() + 1;
-        drawSlotFrame(graphics, itemX, itemY);
-        graphics.renderItem(station, itemX, itemY);
-    }
-
-    private void drawLargeSlotFrame(GuiGraphics graphics, TerminalLayout.Rect bounds) {
-        int x = leftPos + bounds.x();
-        int y = topPos + bounds.y();
-        graphics.fill(x, y, x + bounds.width(), y + bounds.height(), 0xFF373737);
-        graphics.fill(x + 1, y + 1, x + bounds.width() - 1, y + bounds.height() - 1, 0xFF8B8B8B);
-        graphics.fill(x + bounds.width() - 2, y + 1,
-                x + bounds.width() - 1, y + bounds.height() - 1, 0xFFFFFFFF);
-        graphics.fill(x + 1, y + bounds.height() - 2,
-                x + bounds.width() - 1, y + bounds.height() - 1, 0xFFFFFFFF);
-    }
-
-    private void renderShapelessMarker(GuiGraphics graphics, TerminalLayout.Rect bounds) {
-        int x = leftPos + bounds.x();
-        int y = topPos + bounds.y();
-        int color = 0xFF5A5A5A;
-        graphics.fill(x, y + 2, x + 7, y + 3, color);
-        graphics.fill(x + 6, y + 1, x + 8, y + 4, color);
-        graphics.fill(x + 2, y + 7, x + 9, y + 8, color);
-        graphics.fill(x + 1, y + 6, x + 3, y + 9, color);
-    }
-
-    private void drawRecipeArrow(GuiGraphics graphics, TerminalLayout.Rect bounds, int color) {
-        int iconX = leftPos + bounds.x()
-                + (bounds.width() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
-        int iconY = topPos + bounds.y()
-                + (bounds.height() - TerminalLayout.ICON_CANVAS_SIZE) / 2;
-        blitControlIcon(graphics, iconX, iconY, TerminalControlIcon.NEXT, color);
     }
 
     private void renderResourceRow(
@@ -583,19 +539,15 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         if (menu.getPage().isItemPage()) {
             RecipePresentation presentation = menu.getRecipePresentation();
             if (presentation.isEmpty()) return;
-            ItemStack output = presentation.output();
-            if (!output.isEmpty()
-                    && geometry.recipeOutput().contains(mouseX - leftPos, mouseY - topPos)) {
-                graphics.renderTooltip(font, output, mouseX, mouseY);
-                return;
-            }
-            ItemStack input = recipeInputAt(presentation, mouseX, mouseY);
-            if (!input.isEmpty()) {
-                graphics.renderTooltip(font, input, mouseX, mouseY);
-                return;
-            }
-            if (geometry.recipeStation().contains(mouseX - leftPos, mouseY - topPos)) {
-                graphics.renderTooltip(font, presentation.station(), mouseX, mouseY);
+            if (activeRecipeDiagramRenderer(presentation).renderTooltip(
+                    graphics,
+                    font,
+                    presentation,
+                    recipeDiagramGeometry,
+                    leftPos,
+                    topPos,
+                    mouseX,
+                    mouseY)) {
                 return;
             }
             RecipePresentation.Resource resource = recipeResourceAt(
@@ -652,22 +604,6 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 && input.contains(mouseX - leftPos, mouseY - topPos)) {
             graphics.renderTooltip(font, Component.translatable("gui.magic_storage.fuel_input"), mouseX, mouseY);
         }
-    }
-
-    private ItemStack recipeInputAt(
-            RecipePresentation presentation,
-            int mouseX,
-            int mouseY
-    ) {
-        List<ItemStack> inputs = presentation.inputs();
-        int positions = presentation.width() * presentation.height();
-        for (int input = 0; input < positions; input++) {
-            if (presentationInputSlot(presentation, input)
-                    .contains(mouseX - leftPos, mouseY - topPos)) {
-                return inputs.get(input);
-            }
-        }
-        return ItemStack.EMPTY;
     }
 
     private RecipePresentation.Resource recipeResourceAt(
@@ -737,6 +673,46 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     public List<Rect2i> getEmiExclusionAreas() {
         return terminalExclusionAreas();
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (menu.getPage().isItemPage()) {
+            RecipePresentation presentation = menu.getRecipePresentation();
+            if (!presentation.isEmpty()
+                    && activeRecipeDiagramRenderer(presentation).mouseClicked(
+                    presentation,
+                    recipeDiagramGeometry,
+                    leftPos,
+                    topPos,
+                    mouseX,
+                    mouseY,
+                    button)) {
+                return true;
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (menu.getPage().isItemPage()) {
+            RecipePresentation presentation = menu.getRecipePresentation();
+            if (!presentation.isEmpty()
+                    && activeRecipeDiagramRenderer(presentation).keyPressed(
+                    presentation,
+                    recipeDiagramGeometry,
+                    leftPos,
+                    topPos,
+                    lastRecipeMouseX,
+                    lastRecipeMouseY,
+                    keyCode,
+                    scanCode,
+                    modifiers)) {
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override

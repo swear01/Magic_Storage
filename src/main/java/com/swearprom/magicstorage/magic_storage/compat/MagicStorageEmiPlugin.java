@@ -29,6 +29,7 @@ public class MagicStorageEmiPlugin implements EmiPlugin {
 
     @Override
     public void register(EmiRegistry registry) {
+        EmiRecipeDiagramBootstrap.markRegistryReady();
         registry.addRecipeHandler(MagicStorage.CRAFTING_TERMINAL_MENU.get(), new CraftingTerminalHandler());
         registry.addExclusionArea(CraftingTerminalScreen.class, (screen, consumer) -> {
             for (var area : screen.getEmiExclusionAreas()) {

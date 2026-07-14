@@ -91,6 +91,8 @@
 
 ## Task 4: EMI-first public-widget renderer with explicit native fallback
 
+> Status: complete. Five focused static failures established the missing runtime/boundary/public-widget/exact-selection/bounded-no-catch contracts. GREEN is compileJava, build, SelfTest 222946/222946, GameTest 231/231, focused Python 48/48, full Python 95/95, runData without drift, and `runClient --dry-run`; full EMI is a development `runtimeOnly` dependency while release metadata remains optional. The local Maven full-jar transfer required a user-approved same-URL range-prefetch into Gradle cache and did not change project or CI dependency sources.
+
 **Files:**
 
 - Modify: `build.gradle`

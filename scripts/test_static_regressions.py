@@ -339,6 +339,133 @@ class StaticRegressionTests(unittest.TestCase):
             entrypoint,
         )
 
+    def test_development_runtime_includes_full_emi_without_release_loader_dependency(self):
+        build = self.read_required("build.gradle")
+        metadata = self.read_required("src/main/templates/META-INF/neoforge.mods.toml")
+
+        self.assertRegex(
+            build,
+            r'compileOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}:api"',
+        )
+        self.assertRegex(
+            build,
+            r'runtimeOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
+            "the normal development client must exercise the full EMI runtime",
+        )
+        self.assertNotRegex(
+            metadata,
+            r'modId\s*=\s*"emi"',
+            "EMI remains an optional released-mod integration",
+        )
+
+    def test_recipe_renderer_boundary_keeps_emi_out_of_base_screen_and_native_path(self):
+        interface = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/RecipeDiagramRenderer.java"
+        )
+        native = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/NativeRecipeDiagramRenderer.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        setup = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/ClientSetup.java"
+        )
+        bootstrap = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/compat/EmiRecipeDiagramBootstrap.java"
+        )
+
+        for relative_path, text in [
+            ("RecipeDiagramRenderer.java", interface),
+            ("NativeRecipeDiagramRenderer.java", native),
+            ("CraftingTerminalScreen.java", screen),
+            ("ClientSetup.java", setup),
+        ]:
+            self.assertNotIn(
+                "import dev.emi.", text,
+                f"{relative_path} must not link EMI API classes",
+            )
+        self.assertIn('ModList.get().isLoaded("emi")', setup)
+        self.assertIn("EmiRecipeDiagramBootstrap", setup)
+        self.assertIn("RecipeDiagramRenderer", bootstrap)
+        self.assertIn("EmiRecipeDiagramRenderer", bootstrap)
+        self.assertIn("RecipeDiagramRenderer", screen)
+        self.assertIn("NativeRecipeDiagramRenderer", screen)
+
+    def test_emi_diagram_adapter_uses_only_public_recipe_widget_contracts(self):
+        renderer = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/compat/EmiRecipeDiagramRenderer.java"
+        )
+
+        for public_api in [
+            "dev.emi.emi.api.EmiApi",
+            "dev.emi.emi.api.recipe.EmiRecipe",
+            "dev.emi.emi.api.widget.Widget",
+            "dev.emi.emi.api.widget.WidgetHolder",
+        ]:
+            self.assertIn(public_api, renderer)
+        for internal_api in [
+            "dev.emi.emi.screen",
+            "WidgetGroup",
+            "RecipeScreen",
+            "EmiScreenManager",
+            "EmiRenderHelper",
+        ]:
+            self.assertNotIn(internal_api, renderer)
+        self.assertRegex(renderer, r"implements\s+WidgetHolder")
+        self.assertRegex(renderer, r"List<Widget>")
+        self.assertIn("recipe.addWidgets(", renderer)
+        self.assertIn("widget.render(", renderer)
+        self.assertIn("widget.getTooltip(", renderer)
+        self.assertIn("widget.mouseClicked(", renderer)
+        self.assertIn("widget.keyPressed(", renderer)
+
+    def test_emi_diagram_selection_is_exact_and_has_only_capability_fallbacks(self):
+        setup = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/ClientSetup.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        native = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/NativeRecipeDiagramRenderer.java"
+        )
+        renderer = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/compat/EmiRecipeDiagramRenderer.java"
+        )
+
+        self.assertIn("NativeRecipeDiagramRenderer", setup)
+        self.assertIn('ModList.get().isLoaded("emi")', setup)
+        self.assertIn("preferredRecipeDiagramRenderer", screen)
+        self.assertIn("nativeRecipeDiagramRenderer", screen)
+        self.assertRegex(
+            screen,
+            r"preferredRecipeDiagramRenderer\.supports\([^)]*\)\s*"
+            r"\?\s*preferredRecipeDiagramRenderer\s*:\s*nativeRecipeDiagramRenderer",
+        )
+        self.assertIn("return true;", native)
+        self.assertIn("RecipePresentationKind.AXE", renderer)
+        self.assertIn("EmiApi.getRecipeManager().getRecipe(presentation.recipeId())", renderer)
+        self.assertIn("recipe.getId()", renderer)
+        self.assertIn("recipe.getBackingRecipe()", renderer)
+        self.assertIn("presentation.recipeId()", renderer)
+
+    def test_emi_diagram_is_bounded_and_does_not_catch_into_native_rendering(self):
+        renderer = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/compat/EmiRecipeDiagramRenderer.java"
+        )
+
+        self.assertIn("graphics.enableScissor(", renderer)
+        self.assertIn("graphics.disableScissor()", renderer)
+        self.assertIn("widget.getBounds()", renderer)
+        self.assertRegex(renderer, r"diagram\.contains\(")
+        self.assertNotRegex(
+            renderer,
+            r"catch\s*\(\s*(?:Throwable|Exception|RuntimeException)",
+            "unexpected EMI failures must surface instead of silently selecting native rendering",
+        )
+        self.assertNotIn("new NativeRecipeDiagramRenderer", renderer)
+
     def test_crafting_screen_does_not_recompute_recipes_or_read_core_storage_client_side(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java")
         self.assertTrue(
@@ -841,6 +968,9 @@ class StaticRegressionTests(unittest.TestCase):
         screen = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
         )
+        native = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/NativeRecipeDiagramRenderer.java"
+        )
         recipe_panel = self.java_block(
             screen,
             r"\bprivate\s+void\s+renderRecipePanel\s*\(",
@@ -855,19 +985,21 @@ class StaticRegressionTests(unittest.TestCase):
             presentation,
             "renderRecipePanel must read the server-synced RecipePresentation",
         )
+        self.assertIn("activeRecipeDiagramRenderer(", recipe_panel)
+        self.assertIn(".render(", recipe_panel)
         output = re.search(
             rf"\bItemStack\s+([A-Za-z_]\w*)\s*=\s*"
             rf"{re.escape(presentation.group(1))}\.output\(\)\s*;",
-            recipe_panel,
+            native,
         )
         self.assertIsNotNone(output, "recipe output must come from RecipePresentation.output()")
         output_name = output.group(1)
-        self.assertRegex(recipe_panel, rf"graphics\.renderItem\(\s*{re.escape(output_name)}\s*,")
+        self.assertRegex(native, rf"graphics\.renderItem\(\s*{re.escape(output_name)}\s*,")
         self.assertRegex(
-            recipe_panel,
+            native,
             rf"graphics\.renderItemDecorations\(\s*font\s*,\s*{re.escape(output_name)}\s*,",
         )
-        self.assertNotIn("copyWithCount(1)", recipe_panel)
+        self.assertNotIn("output.copyWithCount(1)", native)
 
     def test_recipe_ledger_uses_neutral_items_and_dark_red_energy_tool_rows(self):
         screen = self.read_required(
