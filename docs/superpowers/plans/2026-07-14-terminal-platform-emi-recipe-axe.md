@@ -193,6 +193,8 @@
 
 ## Task 8: Cohesive 16×16 texture and icon families
 
+> Status: complete. RED found the unreferenced `block/import_bus.png`/`block/export_bus.png`, obsolete `gui/grid.png`/`gui/crafting_grid.png`, one 32×32 orphan, and a missing reproducible family manifest. GREEN used `retro-diffusion/rd-fast` with seed 71421, selected shared chassis 04, 0.38 block/0.68 item img2img, a fixed 14-color palette, shared chassis mask, semantic cleanup, and inspected candidate/selected contact sheets before runtime replacement. All 16 model-referenced block/item textures are unique-role 16×16 RGBA assets; T1–T6 bars, blue inward Import, orange outward Export, Remote transparency, manifest hashes, palette/chassis pixels, contiguous 16px atlas cells, and no runtime orphans/sidecars are guarded. Focused Python 2/2, full Python 103/103, resource build, and jar resource inventory are green; fullscreen texture verdict remains part of Task 9.
+
 **Files:**
 
 - Modify: `src/main/resources/assets/magic_storage/textures/block/*.png`

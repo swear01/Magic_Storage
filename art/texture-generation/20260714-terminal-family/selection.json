@@ -1,0 +1,702 @@
+{
+  "schema": 1,
+  "model": "retro-diffusion/rd-fast",
+  "runtime_size": [
+    16,
+    16
+  ],
+  "settings": {
+    "seed": 71421,
+    "block_img2img_strength": 0.38,
+    "item_img2img_strength": 0.68,
+    "style": "mc_texture/mc_item"
+  },
+  "palette": [
+    "#0E1016",
+    "#161922",
+    "#20242F",
+    "#2A303D",
+    "#353D4C",
+    "#465164",
+    "#5B687D",
+    "#AAB6CC",
+    "#3FDCE5",
+    "#2EA8FF",
+    "#9A5CE8",
+    "#C083FF",
+    "#FF8A24",
+    "#FFC060"
+  ],
+  "chassis": {
+    "source": "selected/chassis.png",
+    "metadata": "metadata/chassis.json",
+    "selected_candidate": "candidates/chassis/shared_chassis_04.png",
+    "points": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        0,
+        7
+      ],
+      [
+        0,
+        8
+      ],
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        0,
+        12
+      ],
+      [
+        0,
+        13
+      ],
+      [
+        0,
+        14
+      ],
+      [
+        0,
+        15
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        1,
+        8
+      ],
+      [
+        1,
+        9
+      ],
+      [
+        1,
+        10
+      ],
+      [
+        1,
+        11
+      ],
+      [
+        1,
+        12
+      ],
+      [
+        1,
+        13
+      ],
+      [
+        1,
+        14
+      ],
+      [
+        1,
+        15
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        13
+      ],
+      [
+        2,
+        14
+      ],
+      [
+        2,
+        15
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        14
+      ],
+      [
+        3,
+        15
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        4,
+        14
+      ],
+      [
+        4,
+        15
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        5,
+        14
+      ],
+      [
+        5,
+        15
+      ],
+      [
+        6,
+        0
+      ],
+      [
+        6,
+        1
+      ],
+      [
+        6,
+        14
+      ],
+      [
+        6,
+        15
+      ],
+      [
+        7,
+        0
+      ],
+      [
+        7,
+        1
+      ],
+      [
+        7,
+        14
+      ],
+      [
+        7,
+        15
+      ],
+      [
+        8,
+        0
+      ],
+      [
+        8,
+        1
+      ],
+      [
+        8,
+        14
+      ],
+      [
+        8,
+        15
+      ],
+      [
+        9,
+        0
+      ],
+      [
+        9,
+        1
+      ],
+      [
+        9,
+        14
+      ],
+      [
+        9,
+        15
+      ],
+      [
+        10,
+        0
+      ],
+      [
+        10,
+        1
+      ],
+      [
+        10,
+        14
+      ],
+      [
+        10,
+        15
+      ],
+      [
+        11,
+        0
+      ],
+      [
+        11,
+        1
+      ],
+      [
+        11,
+        14
+      ],
+      [
+        11,
+        15
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        12,
+        1
+      ],
+      [
+        12,
+        14
+      ],
+      [
+        12,
+        15
+      ],
+      [
+        13,
+        0
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        13,
+        2
+      ],
+      [
+        13,
+        13
+      ],
+      [
+        13,
+        14
+      ],
+      [
+        13,
+        15
+      ],
+      [
+        14,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        14,
+        3
+      ],
+      [
+        14,
+        4
+      ],
+      [
+        14,
+        5
+      ],
+      [
+        14,
+        6
+      ],
+      [
+        14,
+        7
+      ],
+      [
+        14,
+        8
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        14,
+        10
+      ],
+      [
+        14,
+        11
+      ],
+      [
+        14,
+        12
+      ],
+      [
+        14,
+        13
+      ],
+      [
+        14,
+        14
+      ],
+      [
+        14,
+        15
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        15,
+        1
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        15,
+        3
+      ],
+      [
+        15,
+        4
+      ],
+      [
+        15,
+        5
+      ],
+      [
+        15,
+        6
+      ],
+      [
+        15,
+        7
+      ],
+      [
+        15,
+        8
+      ],
+      [
+        15,
+        9
+      ],
+      [
+        15,
+        10
+      ],
+      [
+        15,
+        11
+      ],
+      [
+        15,
+        12
+      ],
+      [
+        15,
+        13
+      ],
+      [
+        15,
+        14
+      ],
+      [
+        15,
+        15
+      ]
+    ]
+  },
+  "tier_bar": {
+    "positions": [
+      [
+        5,
+        13
+      ],
+      [
+        6,
+        13
+      ],
+      [
+        7,
+        13
+      ],
+      [
+        8,
+        13
+      ],
+      [
+        9,
+        13
+      ],
+      [
+        10,
+        13
+      ]
+    ],
+    "active": "#3FDCE5",
+    "inactive": "#2A303D"
+  },
+  "members": {
+    "magic_storage:block/storage_core": {
+      "role": "core_rune_crystal",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_core.png",
+      "source": "selected/storage_core.png",
+      "metadata": "metadata/storage_core.json",
+      "sha256": "5c4c9322f10a4a6273d31d7415eca07bc0cc4ed8e57993cc2447114ac614ab36"
+    },
+    "magic_storage:block/storage_terminal": {
+      "role": "storage_item_grid",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_terminal.png",
+      "source": "selected/storage_terminal.png",
+      "metadata": "metadata/storage_terminal.json",
+      "sha256": "1371fe8fdc2f3bd59fe4219e350ec9eabd097f4a43ebfe31457eb924c4f1a78a"
+    },
+    "magic_storage:block/crafting_terminal": {
+      "role": "crafting_grid_mark",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/crafting_terminal.png",
+      "source": "selected/crafting_terminal.png",
+      "metadata": "metadata/crafting_terminal.json",
+      "sha256": "9aab75cf445c49535191b20c685d4351d8b4ce9ee222c47f0185d7a59220f76f"
+    },
+    "magic_storage:block/storage_unit_t1": {
+      "role": "storage_cell_tier_1",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t1.png",
+      "source": "selected/storage_unit_t1.png",
+      "metadata": "metadata/storage_unit_base.json",
+      "sha256": "5abbdad9f8a39299cb080d5ff33ef1ae22e313b9cd35b84050c46e50cbaeb253"
+    },
+    "magic_storage:block/storage_unit_t2": {
+      "role": "storage_cell_tier_2",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t2.png",
+      "source": "selected/storage_unit_t2.png",
+      "metadata": "metadata/storage_unit_base.json",
+      "sha256": "63328b1d0bce62201b3efc08d992b608c64c2b6d72ff7732bfee42499d3ceefc"
+    },
+    "magic_storage:block/storage_unit_t3": {
+      "role": "storage_cell_tier_3",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t3.png",
+      "source": "selected/storage_unit_t3.png",
+      "metadata": "metadata/storage_unit_base.json",
+      "sha256": "a4e7674dfb84b7fdf4575235dce077b8a8a477e8c9d14ae0d0fe7f6ab12787db"
+    },
+    "magic_storage:block/storage_unit_t4": {
+      "role": "storage_cell_tier_4",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t4.png",
+      "source": "selected/storage_unit_t4.png",
+      "metadata": "metadata/storage_unit_base.json",
+      "sha256": "b76263d47d12649eda6b807e7911d51dd06fea8f4b9ffee47da9eca35034389f"
+    },
+    "magic_storage:block/storage_unit_t5": {
+      "role": "storage_cell_tier_5",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t5.png",
+      "source": "selected/storage_unit_t5.png",
+      "metadata": "metadata/storage_unit_base.json",
+      "sha256": "d33db0a3c5a510bc304800a037a0d049f2bf50aceff94bbfe6d5628859b80c49"
+    },
+    "magic_storage:block/storage_unit_t6": {
+      "role": "storage_cell_tier_6",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t6.png",
+      "source": "selected/storage_unit_t6.png",
+      "metadata": "metadata/storage_unit_base.json",
+      "sha256": "3e90243674e8c22962e3b38ee1ae38d7c19304a2acb3768f13f9c04f0becbc0e"
+    },
+    "magic_storage:block/import_bus_top": {
+      "role": "import_casing_top",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/import_bus_top.png",
+      "source": "selected/import_bus_top.png",
+      "metadata": "metadata/bus_top.json",
+      "sha256": "d9bef922c62d52008822268d221637d655d028490dd775df2758f7c681ace999"
+    },
+    "magic_storage:block/import_bus_side": {
+      "role": "import_casing_side",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/import_bus_side.png",
+      "source": "selected/import_bus_side.png",
+      "metadata": "metadata/bus_side.json",
+      "sha256": "84a915fd762d8deb7a9b14602c2e7840bdedc132e77b8c486a9c216f7eab2931"
+    },
+    "magic_storage:block/import_bus_front": {
+      "role": "import_inward_arrow",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/import_bus_front.png",
+      "source": "selected/import_bus_front.png",
+      "metadata": "metadata/import_bus_front.json",
+      "sha256": "ae59c360350c466f8a92586c5d1eb82d3aba7c1fdce1e65235ced43384839e05"
+    },
+    "magic_storage:block/export_bus_top": {
+      "role": "export_casing_top",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/export_bus_top.png",
+      "source": "selected/export_bus_top.png",
+      "metadata": "metadata/bus_top.json",
+      "sha256": "d9bef922c62d52008822268d221637d655d028490dd775df2758f7c681ace999"
+    },
+    "magic_storage:block/export_bus_side": {
+      "role": "export_casing_side",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/export_bus_side.png",
+      "source": "selected/export_bus_side.png",
+      "metadata": "metadata/bus_side.json",
+      "sha256": "84a915fd762d8deb7a9b14602c2e7840bdedc132e77b8c486a9c216f7eab2931"
+    },
+    "magic_storage:block/export_bus_front": {
+      "role": "export_outward_arrow",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/export_bus_front.png",
+      "source": "selected/export_bus_front.png",
+      "metadata": "metadata/export_bus_front.json",
+      "sha256": "f148af23077b0c14231a8e9309d232bea5a72b329daebc031444be76153cf827"
+    },
+    "magic_storage:item/remote_terminal": {
+      "role": "remote_display",
+      "runtime": "src/main/resources/assets/magic_storage/textures/item/remote_terminal.png",
+      "source": "selected/remote_terminal.png",
+      "metadata": "metadata/remote_terminal.json",
+      "sha256": "68539d7d4e454a5a438c5a14efc0d969f1c23ddf34a2ea27750b7a678f30789f"
+    }
+  },
+  "control_atlas": {
+    "runtime": "src/main/resources/assets/magic_storage/textures/gui/terminal_controls.png",
+    "source": "selected/terminal_controls.png",
+    "cell_size": 16,
+    "icons": [
+      {
+        "name": "SORT_ASCENDING",
+        "atlas_index": 0
+      },
+      {
+        "name": "SORT_DESCENDING",
+        "atlas_index": 1
+      },
+      {
+        "name": "SORT_NAME",
+        "atlas_index": 2
+      },
+      {
+        "name": "SORT_QUANTITY",
+        "atlas_index": 3
+      },
+      {
+        "name": "SORT_MOD",
+        "atlas_index": 4
+      },
+      {
+        "name": "SORT_ID",
+        "atlas_index": 5
+      },
+      {
+        "name": "SEARCH",
+        "atlas_index": 6
+      },
+      {
+        "name": "SEARCH_TAG",
+        "atlas_index": 7
+      },
+      {
+        "name": "SEARCH_MOD",
+        "atlas_index": 8
+      },
+      {
+        "name": "PREVIOUS",
+        "atlas_index": 9
+      },
+      {
+        "name": "NEXT",
+        "atlas_index": 10
+      }
+    ],
+    "sha256": "da494050df97215de4ab37a6af0019815b1208d973676c4aae5e11f91eaf6c88"
+  },
+  "contact_sheets": [
+    "chassis-contact-sheet.png",
+    "candidate-contact-sheet.png",
+    "selected-contact-sheet.png"
+  ]
+}

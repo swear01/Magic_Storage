@@ -1,7 +1,10 @@
 from pathlib import Path
+import hashlib
 import json
 import re
+import struct
 import unittest
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -11,6 +14,89 @@ class StaticRegressionTests(unittest.TestCase):
         path = ROOT / relative_path
         self.assertTrue(path.exists(), f"missing {relative_path}")
         return path.read_text()
+
+    def png_dimensions(self, path: Path) -> tuple[int, int]:
+        with path.open("rb") as texture_file:
+            header = texture_file.read(24)
+        self.assertEqual(b"\x89PNG\r\n\x1a\n", header[:8], f"not a PNG: {path}")
+        self.assertEqual(b"IHDR", header[12:16], f"missing PNG IHDR: {path}")
+        return int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+
+    def rgba_png_pixels(self, path: Path) -> tuple[int, int, list[tuple[int, int, int, int]]]:
+        payload = path.read_bytes()
+        self.assertEqual(b"\x89PNG\r\n\x1a\n", payload[:8], f"not a PNG: {path}")
+        offset = 8
+        width = height = None
+        compressed = bytearray()
+        while offset < len(payload):
+            length = struct.unpack(">I", payload[offset:offset + 4])[0]
+            chunk_type = payload[offset + 4:offset + 8]
+            chunk = payload[offset + 8:offset + 8 + length]
+            offset += length + 12
+            if chunk_type == b"IHDR":
+                width, height, bit_depth, color_type, compression, filtering, interlace = struct.unpack(
+                    ">IIBBBBB", chunk
+                )
+                self.assertEqual((8, 6, 0, 0, 0),
+                                 (bit_depth, color_type, compression, filtering, interlace),
+                                 f"expected non-interlaced RGBA8 PNG: {path}")
+            elif chunk_type == b"IDAT":
+                compressed.extend(chunk)
+            elif chunk_type == b"IEND":
+                break
+        self.assertIsNotNone(width, f"missing PNG dimensions: {path}")
+        raw = zlib.decompress(bytes(compressed))
+        stride = width * 4
+        previous = bytearray(stride)
+        pixels = []
+        cursor = 0
+        for _ in range(height):
+            filter_type = raw[cursor]
+            cursor += 1
+            scanline = bytearray(raw[cursor:cursor + stride])
+            cursor += stride
+            for index in range(stride):
+                left = scanline[index - 4] if index >= 4 else 0
+                up = previous[index]
+                upper_left = previous[index - 4] if index >= 4 else 0
+                if filter_type == 1:
+                    scanline[index] = (scanline[index] + left) & 0xFF
+                elif filter_type == 2:
+                    scanline[index] = (scanline[index] + up) & 0xFF
+                elif filter_type == 3:
+                    scanline[index] = (scanline[index] + ((left + up) // 2)) & 0xFF
+                elif filter_type == 4:
+                    prediction = left + up - upper_left
+                    distances = (
+                        abs(prediction - left),
+                        abs(prediction - up),
+                        abs(prediction - upper_left),
+                    )
+                    predictor = (left, up, upper_left)[distances.index(min(distances))]
+                    scanline[index] = (scanline[index] + predictor) & 0xFF
+                elif filter_type != 0:
+                    self.fail(f"unsupported PNG filter {filter_type}: {path}")
+            pixels.extend(tuple(scanline[index:index + 4]) for index in range(0, stride, 4))
+            previous = scanline
+        return width, height, pixels
+
+    def expected_texture_family(self) -> dict[str, str]:
+        return {
+            "magic_storage:block/storage_core": "core_rune_crystal",
+            "magic_storage:block/storage_terminal": "storage_item_grid",
+            "magic_storage:block/crafting_terminal": "crafting_grid_mark",
+            **{
+                f"magic_storage:block/storage_unit_t{tier}": f"storage_cell_tier_{tier}"
+                for tier in range(1, 7)
+            },
+            "magic_storage:block/import_bus_top": "import_casing_top",
+            "magic_storage:block/import_bus_side": "import_casing_side",
+            "magic_storage:block/import_bus_front": "import_inward_arrow",
+            "magic_storage:block/export_bus_top": "export_casing_top",
+            "magic_storage:block/export_bus_side": "export_casing_side",
+            "magic_storage:block/export_bus_front": "export_outward_arrow",
+            "magic_storage:item/remote_terminal": "remote_display",
+        }
 
     def java_block(self, text: str, declaration: str, description: str) -> str:
         match = re.search(declaration, text, re.MULTILINE)
@@ -672,7 +758,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("FMLEnvironment.dist == Dist.CLIENT", magic_storage)
         self.assertIn("ClientSetup.register(modEventBus)", magic_storage)
 
-    def test_runtime_textures_exclude_generation_metadata_and_previews(self):
+    def test_runtime_texture_family_is_complete_native_and_orphan_free(self):
         textures = ROOT / "src/main/resources/assets/magic_storage/textures"
         generation_artifacts = sorted(
             path.relative_to(ROOT).as_posix()
@@ -690,29 +776,170 @@ class StaticRegressionTests(unittest.TestCase):
             and texture_id.startswith(("magic_storage:block/", "magic_storage:item/"))
         }
         self.assertTrue(texture_ids, "no gameplay texture references found in block/item models")
+        expected_family = self.expected_texture_family()
+        self.assertEqual(set(expected_family), texture_ids)
+
+        runtime_texture_ids = {
+            f"magic_storage:{path.parent.name}/{path.stem}"
+            for category in (textures / "block", textures / "item")
+            for path in category.glob("*.png")
+        }
+        self.assertEqual(
+            set(expected_family),
+            runtime_texture_ids,
+            "runtime block/item textures must contain exactly the model-referenced semantic family",
+        )
 
         invalid_textures = []
-        for texture_id in sorted(texture_ids):
+        for texture_id in sorted(runtime_texture_ids):
             texture_path = textures / f"{texture_id.split(':', 1)[1]}.png"
             relative_path = texture_path.relative_to(ROOT).as_posix()
             if not texture_path.is_file():
                 invalid_textures.append(f"missing {relative_path}")
                 continue
-
-            with texture_path.open("rb") as texture_file:
-                header = texture_file.read(24)
-            if header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
-                invalid_textures.append(f"not a PNG {relative_path}")
-                continue
-
-            dimensions = (
-                int.from_bytes(header[16:20], "big"),
-                int.from_bytes(header[20:24], "big"),
-            )
+            dimensions = self.png_dimensions(texture_path)
             if dimensions != (16, 16):
                 invalid_textures.append(f"{relative_path} is {dimensions[0]}x{dimensions[1]}")
 
         self.assertEqual([], invalid_textures)
+        runtime_gui = {
+            path.name for path in (textures / "gui").glob("*.png")
+        }
+        self.assertEqual({"icons.png", "terminal_controls.png"}, runtime_gui)
+
+    def test_texture_family_manifest_palette_chassis_and_control_atlas_are_reproducible(self):
+        art = ROOT / "art/texture-generation/20260714-terminal-family"
+        manifest_path = art / "selection.json"
+        self.assertTrue(manifest_path.is_file(), f"missing {manifest_path.relative_to(ROOT)}")
+        manifest = json.loads(manifest_path.read_text())
+        absolute_metadata_paths = []
+        for metadata_path in art.rglob("*.json"):
+            def visit(value):
+                if isinstance(value, dict):
+                    for nested in value.values():
+                        visit(nested)
+                elif isinstance(value, list):
+                    for nested in value:
+                        visit(nested)
+                elif isinstance(value, str) and value.startswith("/"):
+                    absolute_metadata_paths.append(
+                        f"{metadata_path.relative_to(ROOT)}: {value}"
+                    )
+            visit(json.loads(metadata_path.read_text()))
+        self.assertEqual([], absolute_metadata_paths)
+        expected_family = self.expected_texture_family()
+        self.assertEqual(1, manifest.get("schema"))
+        self.assertEqual("retro-diffusion/rd-fast", manifest.get("model"))
+        self.assertEqual([16, 16], manifest.get("runtime_size"))
+        self.assertEqual(71421, manifest.get("settings", {}).get("seed"))
+        self.assertEqual(0.38, manifest.get("settings", {}).get("block_img2img_strength"))
+        self.assertEqual(0.68, manifest.get("settings", {}).get("item_img2img_strength"))
+
+        palette = {
+            tuple(bytes.fromhex(color.removeprefix("#")))
+            for color in manifest.get("palette", [])
+        }
+        self.assertGreaterEqual(len(palette), 8)
+        chassis_source = art / manifest["chassis"]["source"]
+        chassis_metadata = art / manifest["chassis"]["metadata"]
+        self.assertTrue(chassis_source.is_file())
+        self.assertTrue(chassis_metadata.is_file())
+        self.assertEqual((16, 16), self.png_dimensions(chassis_source))
+
+        members = manifest.get("members", {})
+        self.assertEqual(set(expected_family), set(members))
+        for texture_id, expected_role in expected_family.items():
+            member = members[texture_id]
+            self.assertEqual(expected_role, member.get("role"), texture_id)
+            runtime = ROOT / member["runtime"]
+            source = art / member["source"]
+            metadata_path = art / member["metadata"]
+            self.assertTrue(runtime.is_file(), texture_id)
+            self.assertTrue(source.is_file(), texture_id)
+            self.assertTrue(metadata_path.is_file(), texture_id)
+            self.assertEqual(hashlib.sha256(runtime.read_bytes()).hexdigest(), member.get("sha256"))
+            metadata = json.loads(metadata_path.read_text())
+            self.assertEqual("retro-diffusion/rd-fast", metadata.get("model"), texture_id)
+            self.assertEqual(16, metadata.get("size"), texture_id)
+            self.assertEqual(71421, metadata.get("seed"), texture_id)
+            self.assertTrue(metadata.get("img2img"), texture_id)
+            self.assertEqual(manifest["chassis"]["source"], metadata.get("reference_image"), texture_id)
+
+            width, height, pixels = self.rgba_png_pixels(runtime)
+            self.assertEqual((16, 16), (width, height), texture_id)
+            used_colors = {pixel[:3] for pixel in pixels if pixel[3] != 0}
+            self.assertLessEqual(used_colors, palette, texture_id)
+
+        _, _, chassis_pixels = self.rgba_png_pixels(chassis_source)
+        chassis_points = [tuple(point) for point in manifest.get("chassis", {}).get("points", [])]
+        self.assertGreaterEqual(len(chassis_points), 32)
+        for texture_id in expected_family:
+            if ":block/" not in texture_id:
+                continue
+            runtime = ROOT / members[texture_id]["runtime"]
+            _, _, pixels = self.rgba_png_pixels(runtime)
+            for x, y in chassis_points:
+                self.assertEqual(chassis_pixels[y * 16 + x], pixels[y * 16 + x],
+                                 f"{texture_id} does not share chassis pixel {(x, y)}")
+
+        tier_bar = manifest.get("tier_bar", {})
+        positions = [tuple(point) for point in tier_bar.get("positions", [])]
+        self.assertEqual(6, len(positions))
+        active = tuple(bytes.fromhex(tier_bar["active"].removeprefix("#")))
+        inactive = tuple(bytes.fromhex(tier_bar["inactive"].removeprefix("#")))
+        for tier in range(1, 7):
+            runtime = ROOT / members[f"magic_storage:block/storage_unit_t{tier}"]["runtime"]
+            _, _, pixels = self.rgba_png_pixels(runtime)
+            actual = [pixels[y * 16 + x][:3] for x, y in positions]
+            self.assertEqual([active] * tier + [inactive] * (6 - tier), actual)
+
+        semantic_accents = {
+            "magic_storage:block/storage_core": {"#3FDCE5", "#9A5CE8"},
+            "magic_storage:block/storage_terminal": {"#3FDCE5"},
+            "magic_storage:block/crafting_terminal": {"#3FDCE5", "#9A5CE8"},
+            "magic_storage:block/import_bus_front": {"#2EA8FF"},
+            "magic_storage:block/export_bus_front": {"#FF8A24"},
+            "magic_storage:item/remote_terminal": {"#3FDCE5", "#9A5CE8"},
+        }
+        for texture_id, colors in semantic_accents.items():
+            runtime = ROOT / members[texture_id]["runtime"]
+            _, _, pixels = self.rgba_png_pixels(runtime)
+            used = {pixel[:3] for pixel in pixels if pixel[3] != 0}
+            required = {tuple(bytes.fromhex(color.removeprefix("#"))) for color in colors}
+            self.assertLessEqual(required, used, texture_id)
+
+        remote = ROOT / members["magic_storage:item/remote_terminal"]["runtime"]
+        _, _, remote_pixels = self.rgba_png_pixels(remote)
+        self.assertTrue(all(remote_pixels[y * 16 + x][3] == 0
+                            for x, y in ((0, 0), (15, 0), (0, 15), (15, 15))))
+
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        enum = re.search(r"enum TerminalControlIcon\s*\{(?P<body>.*?);", screen, re.DOTALL)
+        self.assertIsNotNone(enum)
+        icons = [
+            {"name": name, "atlas_index": int(index)}
+            for name, index in re.findall(r"\b([A-Z][A-Z0-9_]*)\((\d+)\)", enum.group("body"))
+        ]
+        self.assertEqual(list(range(len(icons))), [icon["atlas_index"] for icon in icons])
+        self.assertEqual(icons, manifest.get("control_atlas", {}).get("icons"))
+        atlas = ROOT / manifest["control_atlas"]["runtime"]
+        self.assertEqual((256, 16), self.png_dimensions(atlas))
+        _, _, atlas_pixels = self.rgba_png_pixels(atlas)
+        for icon in icons:
+            first = icon["atlas_index"] * 16
+            alpha = [atlas_pixels[y * 256 + first + x][3] for y in range(16) for x in range(16)]
+            self.assertGreaterEqual(sum(value != 0 for value in alpha), 12, icon["name"])
+            self.assertTrue(all(
+                atlas_pixels[y * 256 + first + x][:3] == (255, 255, 255)
+                for y in range(16) for x in range(16)
+                if atlas_pixels[y * 256 + first + x][3] != 0
+            ), icon["name"])
+        self.assertTrue(all(
+            atlas_pixels[y * 256 + x][3] == 0
+            for y in range(16) for x in range(len(icons) * 16, 256)
+        ))
 
     def test_crafting_terminal_uses_dedicated_fuel_page_without_separate_popup_screen(self):
         terminal_screen = self.read_required(

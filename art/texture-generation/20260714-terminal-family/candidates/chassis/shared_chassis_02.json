@@ -1,0 +1,28 @@
+{
+  "created_at_utc": "20260714T061427Z",
+  "type": "block",
+  "subject": "Magic Storage shared dark arcane machine chassis",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "flat front-facing 16x16 Minecraft machine face, common modular chassis only, dark deepslate and polished blackstone casing, sturdy symmetric outer rim, recessed empty central panel reserved for later role symbols, subtle cyan and amethyst corner fasteners, crisp chunky one-pixel clusters, strict limited palette, vanilla-style pixel art, no arrow, no crystal, no screen, no text, no letters, no numbers, no gradient, no perspective, no 3D cube, no scene",
+  "size": 16,
+  "seed": 71421,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "flat front-facing 16x16 Minecraft machine face, common modular chassis only, dark deepslate and polished blackstone casing, sturdy symmetric outer rim, recessed empty central panel reserved for later role symbols, subtle cyan and amethyst corner fasteners, crisp chunky one-pixel clusters, strict limited palette, vanilla-style pixel art, no arrow, no crystal, no screen, no text, no letters, no numbers, no gradient, no perspective, no 3D cube, no scene",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 4,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": true,
+    "seed": 71421
+  },
+  "final_png": "candidates/chassis/shared_chassis_02.png",
+  "preview_png": "candidates/chassis/shared_chassis_02.preview.png",
+  "raw_png": "candidates/chassis/shared_chassis_02.raw.png"
+}

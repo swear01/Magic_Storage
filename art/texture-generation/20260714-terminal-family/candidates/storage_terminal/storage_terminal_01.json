@@ -1,0 +1,30 @@
+{
+  "created_at_utc": "20260714T061622Z",
+  "type": "block",
+  "subject": "Magic Storage item-grid terminal face",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "flat front-facing 16x16 Minecraft terminal face derived from the supplied shared chassis, preserve the exact dark deepslate and blackstone outer casing, recessed cyan display showing a clear compact item storage grid with three small item cells, one restrained amethyst status pixel, unmistakable storage inventory terminal, crisp chunky one-pixel clusters, strict limited palette, no text, no letters, no numbers, no gradient, no perspective, no 3D cube, no scene",
+  "size": 16,
+  "seed": 71421,
+  "reference_image": "selected/chassis.png",
+  "img2img": true,
+  "input": {
+    "prompt": "flat front-facing 16x16 Minecraft terminal face derived from the supplied shared chassis, preserve the exact dark deepslate and blackstone outer casing, recessed cyan display showing a clear compact item storage grid with three small item cells, one restrained amethyst status pixel, unmistakable storage inventory terminal, crisp chunky one-pixel clusters, strict limited palette, no text, no letters, no numbers, no gradient, no perspective, no 3D cube, no scene",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 2,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": true,
+    "seed": 71421,
+    "input_image": "[data:uri omitted]",
+    "strength": 0.38
+  },
+  "final_png": "candidates/storage_terminal/storage_terminal_01.png",
+  "preview_png": "candidates/storage_terminal/storage_terminal_01.preview.png",
+  "raw_png": "candidates/storage_terminal/storage_terminal_01.raw.png"
+}
