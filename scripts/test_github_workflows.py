@@ -93,6 +93,13 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn(f"git push origin main v{version}", readme)
         self.assertIn(f"目前版本 {version}", notes)
 
+    def test_current_manual_gui_log_check_does_not_pin_historical_version_or_selftest_total(self):
+        notes = self.read_required("docs/notes.md")
+        manual_section = notes.split("GUI 測試項目仍由當次變更動態決定", 1)[1].split("## Reference Source", 1)[0]
+        self.assertIn("SelfTest: [0-9]+ passed, 0 failed, [0-9]+ total", manual_section)
+        self.assertNotRegex(manual_section, r"SelfTest: \d+ passed")
+        self.assertNotRegex(manual_section, r"0\.1\.\d+ 必須重新產生 current-run artifact")
+
     def test_client_smoke_workflow_is_manual_only_and_uses_neoforge_runtime_client(self):
         text = self.read_required(".github/workflows/client-smoke.yml")
         self.assertIn("name: Client Smoke", text)

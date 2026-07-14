@@ -25,7 +25,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts
 ```
 
-Expected automated coverage is currently SelfTest 222959 + GameTest 251 + 103 Python script/static regression tests.
+Expected automated coverage is currently SelfTest 222959 + GameTest 251 + 104 Python script/static regression tests.
 
 Current main keeps the explicit Storage/Craftable/Fuel tabs and classifies the nine Fuel-page descriptors as five stackable process machines, three max-one instant stations, and one consumable Axe Energy input. The Core persists the eight removable machine/station stacks plus finite Axe Energy and an explicit infinite flag; accepted axes are consumed atomically, finite value is remaining durability × (Unbreaking level + 1), and Unbreakable supplies non-decrementing infinite energy. Upgrade migration keeps one legacy instant station and recovers extras into Core storage; a legacy axe that cannot convert remains visible and retrievable from the Axe Energy slot. Current main also uses one capability-based terminal profile/layout platform: Storage is the reduced profile, Crafting extends the shared shell, all rail controls use uniform 18×18 buttons with 16×16 semantic-item/atlas icons, cycle controls support left/right and wheel directions, and every network amount uses one screen-wide slot-bounded scale. Fuel Target keeps that cycle control and adds a descriptor-driven list popup with representative items, selected state, bounded scrolling, explicit close/focus behavior, EMI exclusion, and non-click-through input; station/reserve details trigger only on their actual slot/icon. All model-referenced block/item textures now form one native 16×16 dark-stone/cyan/amethyst family with explicit Core, terminal, tier-bar, inward Import, outward Export, and Remote motifs; the 16px control atlas uses matching fixed canvases. The server synchronizes an exact immutable recipe presentation—identity, positioned inputs, exact result components/count, station, and typed resource ledger with an explicit infinity bit—so the client diagram never scans Core state or `RecipeManager`. When EMI is installed, the top diagram resolves that exact ID and renders only through EMI's public recipe/widget APIs; absent EMI and unsupported internal axe recipes use the explicit native renderer, while the ledger and craft controls remain Magic Storage-owned. EMI is present in the development runtime but remains optional in released metadata and is not bundled. Recipes remain server-gated by their installed station or Axe Energy; exact crafting/cooking/stonecutting, component-exact smithing transforms, and deterministic vanilla default-state axe actions are supported. Direct terminal crafting defaults to Player delivery but has an independent server-synchronized rail control for Player or Storage: Player fills the 36-slot inventory first and sends only overflow to Core, while Storage keeps primary results and crafting remainders in Core. A complete batch is rejected before mutation if its selected destination cannot accept it, and Max searches for the largest fully deliverable amount across `ItemStack` and `Integer.MAX_VALUE` boundaries, then commits each Core key through one long-count mutation instead of an unbounded chunk loop. EMI Cursor/Inventory requests remain authoritative and do not consult this direct-terminal toggle. EMI crafting remains exact, one-level, and server-authoritative rather than recursive autocrafting. The final fullscreen user-owned GUI checklist remains the visual release gate. Active contract: `docs/superpowers/plans/2026-07-14-terminal-platform-emi-recipe-axe.md`.
 
@@ -40,8 +40,8 @@ GitHub Actions runs on pushes to `main`, pull requests, and manual dispatch:
 Release example:
 
 ```bash
-git tag v0.1.15
-git push origin main v0.1.15
+git tag v0.1.16
+git push origin main v0.1.16
 ```
 
 ## Manual GUI verification

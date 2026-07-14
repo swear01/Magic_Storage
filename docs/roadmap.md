@@ -17,10 +17,11 @@
 
 ## In Progress
 
-- Shared terminal platform / EMI-first recipe UI / Axe Energy revision：Task 1–7功能與Task 8 cohesive 16×16 semantic texture/control family均已完成 RED→GREEN；依 `docs/superpowers/plans/2026-07-14-terminal-platform-emi-recipe-axe.md` 只剩Task 9完整 gates、transactional patch bump/deploy與使用者fullscreen verdict。舊 0.1.15 handoff 不代表新 revision 已通過。
+- Shared terminal platform / EMI-first recipe UI / Axe Energy revision：Task 1–9 實作、automated gates 與 0.1.16 transactional Prism 部署已完成；只剩 current-run 的使用者 fullscreen verdict，舊 handoff 不可沿用。
 
 ## Recently Done
 
+- 2026-07-14 shared-terminal Task 9：active-doc consistency audit 用新 static RED 抓到 manual GUI log 仍鎖死歷史 SelfTest/version，改為 zero-failure 正則並禁止 current 流程釘死特定 patch。0.1.16 的 compileJava/build、SelfTest 222959、GameTest 251、Python 104、runData no-new-drift、runClient dry-run、78 JSON/model/texture/jar 檢查已綠。Deploy script 原子部署唯一 jar，build/deployed SHA-256 同為 `2ca800b1edbf643f278064d1d3392414fc2c48b529a1003b3e2ce7d6fbbd350a`；目視 verdict 尚待 current-run fullscreen handoff。
 - 2026-07-14 shared-terminal Task 8：RED抓到2張unreferenced bus PNG、obsolete `grid.png`/`crafting_grid.png`、32×32 orphan與missing reproducibility manifest。GREEN以Replicate `rd-fast` seed 71421、selected chassis 04、0.38/0.68 img2img、14色palette與semantic cleanup建立16個model-referenced native assets；Core/Storage/Crafting、六段tier bars、blue inward Import、orange outward Export、Remote與16px white control atlas現在共用明確family。Predictions/prompts/portable metadata/assembly/contact sheets只在`art/texture-generation/20260714-terminal-family/`；runtime只留實際引用PNG。Focused Python 2/2、full Python 103/103、build與jar inventory已綠；fullscreen外觀仍待Task 9。
 
 - 2026-07-14 shared-terminal Task 7：`TerminalLayout.PopupList` 從 ordered server-approved targets 建立 Auto+targets rows、最多六列 viewport、clamped scroll與 selector/list/popup geometry；shared cycle方向不變。Popup顯示代表物/名稱/selected state，選取、Escape、外部點擊、離頁都關閉並清 focus，開啟時加入 EMI exclusion，且覆蓋區直接攔截底層 slot click/tooltip。Machine/reserve hover由 whole flow cell縮到實際 18px station slot/16px representative icon。RED涵蓋 missing geometry API、cycle-only selector、whole-cell hover、overlay click-through與舊 Prism checklist；GREEN為 compileJava/build、SelfTest 222959/222959、GameTest 251/251、Python 102/102、runData no-new-drift、runClient dry-run。Fullscreen popup/selected-state verdict仍待最終 gate。

@@ -212,6 +212,8 @@
 
 ## Task 9: Documentation, version, complete gates, and Prism handoff
 
+> Automated status: complete. Active-doc RED found the current manual GUI log command pinned to historical SelfTest 40608 and patch 0.1.15; GREEN uses a zero-failure regex and requires a fresh artifact for every version. Version 0.1.16 passed compileJava, build, SelfTest 222959/222959, GameTest 251/251, Python 104/104, runData without new drift, runClient dry-run, and 78 JSON/model/texture/jar checks. The transactional deploy left one Prism jar whose SHA-256 matches the build at `2ca800b1edbf643f278064d1d3392414fc2c48b529a1003b3e2ce7d6fbbd350a`. The current-run offline handoff and user-owned fullscreen verdict remain pending.
+
 **Files:**
 
 - Modify: `gradle.properties`
