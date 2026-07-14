@@ -13,6 +13,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.Unbreakable;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.AABB;
@@ -491,6 +492,157 @@ public class PersistenceTests {
     }
 
     @GameTest(template = "platform")
+    public static void finite_axe_energy_survives_nbt_round_trip(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        var source = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        ItemStack axe = new ItemStack(Items.DIAMOND_AXE);
+        axe.setDamageValue(axe.getMaxDamage() - 37);
+        axe.enchant(registries.registryOrThrow(Registries.ENCHANTMENT)
+                .getHolderOrThrow(Enchantments.UNBREAKING), 1);
+        if (!source.addAxeEnergy(axe) || !axe.isEmpty()) {
+            helper.fail("Finite axe must be accepted and consumed before persistence");
+            return;
+        }
+        if (source.getAxeEnergy() != 74 || source.hasInfiniteAxeEnergy()) {
+            helper.fail("Expected exactly 74 finite Axe Energy before save");
+            return;
+        }
+
+        var saved = new CompoundTag();
+        source.saveAdditional(saved, registries);
+        var restored = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        restored.loadAdditional(saved, registries);
+        if (restored.getAxeEnergy() != 74) {
+            helper.fail("Finite Axe Energy did not survive NBT round-trip: " + restored.getAxeEnergy());
+            return;
+        }
+        if (restored.hasInfiniteAxeEnergy()) {
+            helper.fail("Finite Axe Energy round-trip must not enable the infinite flag");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void infinite_axe_energy_flag_survives_nbt_round_trip(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        var source = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        ItemStack axe = new ItemStack(Items.NETHERITE_AXE);
+        axe.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
+        if (!source.addAxeEnergy(axe) || !axe.isEmpty()) {
+            helper.fail("Unbreakable axe must be accepted and consumed before persistence");
+            return;
+        }
+        if (!source.hasInfiniteAxeEnergy() || source.getAxeEnergy() != 0) {
+            helper.fail("Infinite Axe Energy must use an explicit flag instead of a finite sentinel");
+            return;
+        }
+
+        var saved = new CompoundTag();
+        source.saveAdditional(saved, registries);
+        var restored = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        restored.loadAdditional(saved, registries);
+        if (!restored.hasInfiniteAxeEnergy()) {
+            helper.fail("Infinite Axe Energy flag did not survive NBT round-trip");
+            return;
+        }
+        if (restored.getAxeEnergy() != 0) {
+            helper.fail("Infinite Axe Energy round-trip must not use Long.MAX_VALUE or another finite sentinel");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void legacy_slot_eight_finite_axe_migrates_and_clears_after_success(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        ItemStack legacyAxe = new ItemStack(Items.IRON_AXE);
+        legacyAxe.setDamageValue(legacyAxe.getMaxDamage() - 9);
+        legacyAxe.enchant(registries.registryOrThrow(Registries.ENCHANTMENT)
+                .getHolderOrThrow(Enchantments.UNBREAKING), 2);
+        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        core.loadAdditional(legacyMachineTag(registries, legacyAxe), registries);
+
+        if (core.getAxeEnergy() != 27 || core.hasInfiniteAxeEnergy()) {
+            helper.fail("Legacy finite axe must migrate to exactly 27 finite Axe Energy");
+            return;
+        }
+        if (!core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
+            helper.fail("Legacy slot 8 axe must clear after successful finite migration");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void legacy_slot_eight_overflow_preserves_axe_and_existing_energy(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        ItemStack legacyAxe = new ItemStack(Items.IRON_AXE);
+        legacyAxe.setDamageValue(legacyAxe.getMaxDamage() - 2);
+        CompoundTag persisted = legacyMachineTag(registries, legacyAxe);
+        persisted.putLong("axeEnergy", Long.MAX_VALUE - 1);
+        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        core.loadAdditional(persisted, registries);
+
+        if (core.getAxeEnergy() != Long.MAX_VALUE - 1 || core.hasInfiniteAxeEnergy()) {
+            helper.fail("Overflow migration must preserve the existing finite Axe Energy");
+            return;
+        }
+        ItemStack retained = core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT);
+        if (retained.getCount() != 1 || !ItemStack.isSameItemSameComponents(retained, legacyAxe)) {
+            helper.fail("Overflow migration must leave the complete legacy slot 8 axe untouched: " + retained);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void legacy_slot_eight_unbreakable_axe_migrates_to_infinite(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        ItemStack legacyAxe = new ItemStack(Items.DIAMOND_AXE);
+        legacyAxe.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
+        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        core.loadAdditional(legacyMachineTag(registries, legacyAxe), registries);
+
+        if (!core.hasInfiniteAxeEnergy() || core.getAxeEnergy() != 0) {
+            helper.fail("Legacy Unbreakable axe must migrate to explicit infinite Axe Energy");
+            return;
+        }
+        if (!core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
+            helper.fail("Legacy slot 8 axe must clear after successful infinite migration");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void stacked_legacy_instant_station_keeps_one_and_recovers_extras(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        ItemStack legacyStations = new ItemStack(Items.CRAFTING_TABLE, 3);
+        var machineItems = new ListTag();
+        var stationEntry = new CompoundTag();
+        stationEntry.putByte("Slot", (byte) MachineEnergyTable.CRAFTING_TABLE_SLOT);
+        machineItems.add(legacyStations.save(registries, stationEntry));
+        var machines = new CompoundTag();
+        machines.put("Items", machineItems);
+        var persisted = new CompoundTag();
+        persisted.put("machines", machines);
+        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        core.loadAdditional(persisted, registries);
+
+        ItemStack installed = core.getMachineContainer().getItem(MachineEnergyTable.CRAFTING_TABLE_SLOT);
+        if (!installed.is(Items.CRAFTING_TABLE) || installed.getCount() != 1) {
+            helper.fail("Legacy instant station must normalize to exactly one installed item: " + installed);
+            return;
+        }
+        if (core.getItemCount(ItemKey.of(new ItemStack(Items.CRAFTING_TABLE))) != 2) {
+            helper.fail("Legacy instant-station extras must remain recoverable in Core storage");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
     public static void energy_at_long_max_does_not_wrap_or_consume_fuel(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -531,5 +683,20 @@ public class PersistenceTests {
             }
             helper.succeed();
         });
+    }
+
+    private static CompoundTag legacyMachineTag(
+            net.minecraft.core.HolderLookup.Provider registries,
+            ItemStack legacyAxe
+    ) {
+        var machineItems = new ListTag();
+        var axeEntry = new CompoundTag();
+        axeEntry.putByte("Slot", (byte) MachineEnergyTable.AXE_SLOT);
+        machineItems.add(legacyAxe.save(registries, axeEntry));
+        var machines = new CompoundTag();
+        machines.put("Items", machineItems);
+        var tag = new CompoundTag();
+        tag.put("machines", machines);
+        return tag;
     }
 }

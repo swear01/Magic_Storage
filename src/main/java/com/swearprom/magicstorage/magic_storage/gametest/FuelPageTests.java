@@ -2,12 +2,16 @@ package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.Unbreakable;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -491,6 +495,7 @@ public class FuelPageTests {
             }
             var tag = new CompoundTag();
             tag.put("energy", energy);
+            tag.putLong("axeEnergy", Long.MAX_VALUE - 2);
             core.loadAdditional(tag, helper.getLevel().registryAccess());
             long stoneInserted = core.insertItem(new ItemStack(Items.STONE));
             long dirtInserted = core.insertItem(new ItemStack(Items.DIRT));
@@ -512,8 +517,8 @@ public class FuelPageTests {
 
             var serverData = dataSlots(serverMenu);
             var clientData = dataSlots(clientMenu);
-            if (serverData.size() != 95 || clientData.size() != 95) {
-                helper.fail("Crafting fuel/resource/output sync requires exact 95-slot parity, server="
+            if (serverData.size() != 100 || clientData.size() != 100) {
+                helper.fail("Crafting fuel/resource/output/Axe Energy sync requires exact 100-slot parity, server="
                         + serverData.size() + " client=" + clientData.size());
                 return;
             }
@@ -547,6 +552,11 @@ public class FuelPageTests {
                             + " got " + clientMenu.getEnergyAmount(type));
                     return;
                 }
+            }
+            if (clientMenu.getAxeEnergyAmount() != Long.MAX_VALUE - 2
+                    || clientMenu.hasInfiniteAxeEnergy()) {
+                helper.fail("Finite Axe Energy long sync mismatch");
+                return;
             }
             helper.succeed();
         });
@@ -738,6 +748,185 @@ public class FuelPageTests {
             if (!menu.getSlot(furnaceMachineSlot).getItem().isEmpty()
                     || player.getInventory().countItem(Items.FURNACE) != 3) {
                 helper.fail("Shift-moving an installed machine must return the complete stack to the player");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void instant_station_accepts_one_and_rejects_second_without_consuming(GameTestHelper helper) {
+        withCore(helper, (core, player) -> {
+            player.getInventory().setItem(0, new ItemStack(Items.CRAFTING_TABLE, 2));
+            var menu = new CraftingTerminalMenu(122, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            int playerSlot = findPlayerMenuSlot(menu, Items.CRAFTING_TABLE);
+            int stationSlot = CraftingTerminalMenu.MACHINE_SLOT_START
+                    + MachineEnergyTable.CRAFTING_TABLE_SLOT;
+
+            menu.quickMoveStack(player, playerSlot);
+            ItemStack installed = menu.getSlot(stationSlot).getItem();
+            ItemStack rejected = menu.getSlot(playerSlot).getItem();
+            if (!installed.is(Items.CRAFTING_TABLE) || installed.getCount() != 1) {
+                helper.fail("Instant station must install exactly one Crafting Table: " + installed);
+                return;
+            }
+            if (!rejected.is(Items.CRAFTING_TABLE) || rejected.getCount() != 1) {
+                helper.fail("Second instant station must remain in the source slot: " + rejected);
+                return;
+            }
+
+            menu.quickMoveStack(player, playerSlot);
+            if (menu.getSlot(stationSlot).getItem().getCount() != 1
+                    || menu.getSlot(playerSlot).getItem().getCount() != 1) {
+                helper.fail("A full instant-station slot must reject a second insertion without consuming it");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void axes_convert_to_exact_finite_energy_and_never_remain_installed(GameTestHelper helper) {
+        withCore(helper, (core, player) -> {
+            ItemStack axe = new ItemStack(Items.IRON_AXE);
+            axe.setDamageValue(axe.getMaxDamage() - 5);
+            axe.enchant(helper.getLevel().registryAccess().registryOrThrow(Registries.ENCHANTMENT)
+                    .getHolderOrThrow(Enchantments.UNBREAKING), 2);
+            player.getInventory().setItem(0, axe);
+            var menu = new CraftingTerminalMenu(123, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            int playerSlot = findPlayerMenuSlot(menu, Items.IRON_AXE);
+            int axeSlot = CraftingTerminalMenu.MACHINE_SLOT_START + MachineEnergyTable.AXE_SLOT;
+
+            menu.quickMoveStack(player, playerSlot);
+            if (core.getAxeEnergy() != 15 || core.hasInfiniteAxeEnergy()) {
+                helper.fail("Five remaining durability with Unbreaking II must become exactly 15 Axe Energy");
+                return;
+            }
+            if (!menu.getSlot(playerSlot).getItem().isEmpty()
+                    || !menu.getSlot(axeSlot).getItem().isEmpty()
+                    || !core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
+                helper.fail("An accepted axe must be consumed instead of becoming installed equipment");
+                return;
+            }
+
+            ItemStack mendingOnly = new ItemStack(Items.IRON_AXE);
+            mendingOnly.setDamageValue(mendingOnly.getMaxDamage() - 4);
+            mendingOnly.enchant(helper.getLevel().registryAccess().registryOrThrow(Registries.ENCHANTMENT)
+                    .getHolderOrThrow(Enchantments.MENDING), 1);
+            menu.setCarried(mendingOnly);
+            menu.clicked(axeSlot, 0, ClickType.PICKUP, player);
+            if (core.getAxeEnergy() != 19 || !menu.getCarried().isEmpty()
+                    || !menu.getSlot(axeSlot).getItem().isEmpty()) {
+                helper.fail("Mending and unrelated enchantments must not multiply Axe Energy: "
+                        + core.getAxeEnergy());
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void finite_axe_energy_accumulates_and_checked_overflow_preserves_input(GameTestHelper helper) {
+        withCore(helper, (core, player) -> {
+            ItemStack first = new ItemStack(Items.WOODEN_AXE);
+            first.setDamageValue(first.getMaxDamage() - 3);
+            ItemStack second = new ItemStack(Items.STONE_AXE);
+            second.setDamageValue(second.getMaxDamage() - 7);
+            if (!core.addAxeEnergy(first) || !core.addAxeEnergy(second)
+                    || core.getAxeEnergy() != 10 || !first.isEmpty() || !second.isEmpty()) {
+                helper.fail("Multiple finite axes must accumulate atomically to ten Axe Energy");
+                return;
+            }
+
+            var persisted = new CompoundTag();
+            persisted.putLong("axeEnergy", Long.MAX_VALUE - 1);
+            core.loadAdditional(persisted, helper.getLevel().registryAccess());
+            ItemStack rejected = new ItemStack(Items.IRON_AXE);
+            rejected.setDamageValue(rejected.getMaxDamage() - 2);
+            if (core.addAxeEnergy(rejected)) {
+                helper.fail("Checked Axe Energy overflow must reject the complete input");
+                return;
+            }
+            if (core.getAxeEnergy() != Long.MAX_VALUE - 1 || rejected.getCount() != 1) {
+                helper.fail("Overflow rejection must preserve both stored energy and input axe");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void overflowed_legacy_axe_remains_retrievable_from_consumable_slot(GameTestHelper helper) {
+        withCore(helper, (core, player) -> {
+            ItemStack legacyAxe = new ItemStack(Items.IRON_AXE);
+            legacyAxe.setDamageValue(legacyAxe.getMaxDamage() - 2);
+            var machineItems = new ListTag();
+            var axeEntry = new CompoundTag();
+            axeEntry.putByte("Slot", (byte) MachineEnergyTable.AXE_SLOT);
+            machineItems.add(legacyAxe.save(helper.getLevel().registryAccess(), axeEntry));
+            var machines = new CompoundTag();
+            machines.put("Items", machineItems);
+            var persisted = new CompoundTag();
+            persisted.putLong("axeEnergy", Long.MAX_VALUE - 1);
+            persisted.put("machines", machines);
+            core.loadAdditional(persisted, helper.getLevel().registryAccess());
+
+            var menu = new CraftingTerminalMenu(124, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            int axeSlot = CraftingTerminalMenu.MACHINE_SLOT_START + MachineEnergyTable.AXE_SLOT;
+            ItemStack visible = menu.getSlot(axeSlot).getItem();
+            if (visible.getCount() != 1 || !ItemStack.isSameItemSameComponents(visible, legacyAxe)) {
+                helper.fail("Failed legacy migration must expose the complete axe for recovery: " + visible);
+                return;
+            }
+
+            menu.quickMoveStack(player, axeSlot);
+            if (!core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()
+                    || player.getInventory().countItem(Items.IRON_AXE) != 1) {
+                helper.fail("Recovered legacy axe must move from Core storage to the player inventory");
+                return;
+            }
+            if (core.getAxeEnergy() != Long.MAX_VALUE - 1) {
+                helper.fail("Recovering a failed legacy migration must not change stored Axe Energy");
+                return;
+            }
+
+            menu.removed(player);
+            player.getInventory().clearContent();
+            core.loadAdditional(persisted, helper.getLevel().registryAccess());
+            var pickupMenu = new CraftingTerminalMenu(125, player.getInventory(), core);
+            pickupMenu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            pickupMenu.clicked(axeSlot, 0, ClickType.PICKUP, player);
+            ItemStack carried = pickupMenu.getCarried();
+            if (carried.getCount() != 1 || !ItemStack.isSameItemSameComponents(carried, legacyAxe)
+                    || !core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
+                helper.fail("Normal pickup must recover the complete failed legacy axe: " + carried);
+                return;
+            }
+            if (core.getAxeEnergy() != Long.MAX_VALUE - 1) {
+                helper.fail("Normal legacy recovery must preserve stored Axe Energy");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void unbreakable_axe_sets_infinite_and_rejects_further_axes(GameTestHelper helper) {
+        withCore(helper, (core, player) -> {
+            ItemStack unbreakable = new ItemStack(Items.DIAMOND_AXE);
+            unbreakable.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
+            if (!core.addAxeEnergy(unbreakable) || !unbreakable.isEmpty()
+                    || !core.hasInfiniteAxeEnergy()) {
+                helper.fail("Unbreakable axe must be consumed into explicit infinite Axe Energy");
+                return;
+            }
+
+            ItemStack rejected = new ItemStack(Items.IRON_AXE);
+            if (core.addAxeEnergy(rejected) || rejected.getCount() != 1) {
+                helper.fail("Further axes must be rejected without consumption after Axe Energy is infinite");
                 return;
             }
             helper.succeed();

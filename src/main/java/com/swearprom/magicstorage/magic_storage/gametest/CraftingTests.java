@@ -14,6 +14,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.Unbreakable;
 import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CookingBookCategory;
@@ -263,8 +264,16 @@ public class CraftingTests {
                 return;
             }
 
+            var plankDeltas = new java.util.ArrayList<Long>();
+            var stickDeltas = new java.util.ArrayList<Long>();
+            core.addListener((key, delta, amount, actor) -> {
+                if (key.equals(ItemKey.of(new ItemStack(Items.OAK_PLANKS)))) plankDeltas.add(delta);
+                if (key.equals(ItemKey.of(new ItemStack(Items.STICK)))) stickDeltas.add(delta);
+            });
+
             menu.clickMenuButton(player, CraftingTerminalMenu.MAX_CRAFT_BUTTON);
 
+            long consumedPlanks = 2L * Integer.MAX_VALUE + 2L;
             long expectedSticks = 4L * (Integer.MAX_VALUE + 1L);
             if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_PLANKS))) != 0) {
                 helper.fail("Max must consume the complete long-count plank reservation");
@@ -276,6 +285,12 @@ public class CraftingTests {
             }
             if (countInInventory(player, Items.STICK) != 0) {
                 helper.fail("Full player inventory must keep the long-count output in Core");
+                return;
+            }
+            if (!plankDeltas.equals(java.util.List.of(-consumedPlanks))
+                    || !stickDeltas.equals(java.util.List.of(expectedSticks))) {
+                helper.fail("Long-count Max must commit one bulk extraction and one bulk insertion: planks="
+                        + plankDeltas + " sticks=" + stickDeltas);
                 return;
             }
             helper.succeed();
@@ -1876,7 +1891,7 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
-    public static void axe_transformation_requires_installed_tool_and_spends_raw_durability(GameTestHelper helper) {
+    public static void axe_transformation_requires_stored_energy_and_spends_exact_units(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
         level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
@@ -1888,38 +1903,45 @@ public class CraftingTests {
             }
             core.rebuildNetwork(level);
             installAllRecipeStations(core);
-            core.getMachineContainer().setItem(MachineEnergyTable.AXE_SLOT, ItemStack.EMPTY);
             core.insertItem(new ItemStack(Items.OAK_LOG, 2));
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new CraftingTerminalMenu(134, player.getInventory(), core);
 
             menu.lookUpRecipes(level, new ItemStack(Items.STRIPPED_OAK_LOG));
             if (!menu.getCurrentRecipes().isEmpty()) {
-                helper.fail("Axe transformations must stay hidden until an axe is installed");
+                helper.fail("Axe transformations must stay hidden until Axe Energy is stored");
                 return;
             }
 
             ItemStack axe = new ItemStack(Items.IRON_AXE);
             axe.setDamageValue(axe.getMaxDamage() - 1);
-            core.getMachineContainer().setItem(MachineEnergyTable.AXE_SLOT, axe);
+            if (!core.addAxeEnergy(axe) || !axe.isEmpty()) {
+                helper.fail("Test setup could not convert the one-use axe into Axe Energy");
+                return;
+            }
             menu.lookUpRecipes(level, new ItemStack(Items.STRIPPED_OAK_LOG));
             if (menu.getCurrentRecipes().isEmpty()) {
-                helper.fail("An installed axe must expose the oak-log stripping transformation");
+                helper.fail("Stored Axe Energy must expose the oak-log stripping transformation");
                 return;
             }
             CraftingTerminalMenu.CraftPreview preview = menu.computeCraftPreview(core, player);
-            if (preview.craftable() != 1
-                    || preview.ingredients().stream().noneMatch(row -> row.stack().is(Items.IRON_AXE)
-                    && row.available() == 1 && row.required() == 1)) {
-                helper.fail("Preview must treat the axe's one remaining durability as one unit of tool fuel: " + preview);
+            RecipePresentation presentation = menu.getRecipePresentation();
+            RecipePresentation.Resource axeResource = presentation.resources().stream()
+                    .filter(row -> row.kind() == RecipePresentation.ResourceKind.TOOL)
+                    .findFirst().orElse(null);
+            if (preview.craftable() != 1 || axeResource == null
+                    || axeResource.available() != 1 || axeResource.required() != 1) {
+                helper.fail("Preview must expose one stored Axe Energy as one tool resource: "
+                        + preview + " / " + presentation);
                 return;
             }
 
             menu.craftItem(1, player);
             if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_LOG))) != 1
                     || countInInventory(player, Items.STRIPPED_OAK_LOG) != 1
+                    || core.getAxeEnergy() != 0 || core.hasInfiniteAxeEnergy()
                     || !core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
-                helper.fail("One strip must consume one log, produce one stripped log, and break the exhausted axe");
+                helper.fail("One strip must consume one log and exactly one finite Axe Energy");
                 return;
             }
             helper.succeed();
@@ -1939,7 +1961,12 @@ public class CraftingTests {
             }
             core.rebuildNetwork(level);
             installAllRecipeStations(core);
-            core.getMachineContainer().setItem(MachineEnergyTable.AXE_SLOT, new ItemStack(Items.DIAMOND_AXE));
+            ItemStack axe = new ItemStack(Items.DIAMOND_AXE);
+            if (!core.addAxeEnergy(axe)) {
+                helper.fail("Test setup could not store Axe Energy");
+                return;
+            }
+            long energyBefore = core.getAxeEnergy();
             core.insertItem(new ItemStack(Items.OXIDIZED_COPPER));
             core.insertItem(new ItemStack(Items.WAXED_COPPER_BLOCK));
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
@@ -1947,7 +1974,7 @@ public class CraftingTests {
 
             menu.lookUpRecipes(level, new ItemStack(Items.WEATHERED_COPPER));
             if (menu.getCurrentRecipes().isEmpty()) {
-                helper.fail("Installed axe must expose oxidized-copper scraping");
+                helper.fail("Stored Axe Energy must expose oxidized-copper scraping");
                 return;
             }
             menu.craftItem(1, player);
@@ -1962,20 +1989,19 @@ public class CraftingTests {
                 }
             }
             if (waxOffRecipe < 0) {
-                helper.fail("Installed axe must expose wax removal");
+                helper.fail("Stored Axe Energy must expose wax removal");
                 return;
             }
             while (menu.getCurrentRecipeIndex() != waxOffRecipe) menu.nextRecipe();
             menu.craftItem(1, player);
 
-            ItemStack installed = core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT);
             int weathered = countInInventory(player, Items.WEATHERED_COPPER);
             int unwaxed = countInInventory(player, Items.COPPER_BLOCK);
             if (weathered != 1
                     || unwaxed != 1
-                    || installed.getDamageValue() != 2) {
-                helper.fail("Scraping and wax removal must each spend one raw durability: weathered="
-                        + weathered + " unwaxed=" + unwaxed + " axeDamage=" + installed.getDamageValue());
+                    || core.getAxeEnergy() != energyBefore - 2) {
+                helper.fail("Scraping and wax removal must each spend one Axe Energy: weathered="
+                        + weathered + " unwaxed=" + unwaxed + " energy=" + core.getAxeEnergy());
                 return;
             }
             helper.succeed();
@@ -1997,7 +2023,11 @@ public class CraftingTests {
             installAllRecipeStations(core);
             ItemStack axe = new ItemStack(Items.IRON_AXE);
             axe.setDamageValue(17);
-            core.getMachineContainer().setItem(MachineEnergyTable.AXE_SLOT, axe.copy());
+            if (!core.addAxeEnergy(axe)) {
+                helper.fail("Test setup could not store finite Axe Energy");
+                return;
+            }
+            long energyBefore = core.getAxeEnergy();
             core.insertItem(new ItemStack(Items.OAK_LOG, 2));
             Item[] fillerTypes = {
                     Items.STONE, Items.DIRT, Items.GRANITE, Items.DIORITE, Items.ANDESITE,
@@ -2020,7 +2050,6 @@ public class CraftingTests {
             }
 
             menu.craftItem(1, player);
-            ItemStack installed = core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT);
             int dropped = level.getEntitiesOfClass(
                     ItemEntity.class,
                     player.getBoundingBox().inflate(16),
@@ -2029,8 +2058,108 @@ public class CraftingTests {
             if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_LOG))) != 2
                     || core.getItemCount(ItemKey.of(new ItemStack(Items.STRIPPED_OAK_LOG))) != 0
                     || countInInventory(player, Items.STRIPPED_OAK_LOG) != 0
-                    || installed.getDamageValue() != 17 || dropped != 0) {
-                helper.fail("No output capacity must preserve material and axe durability without drops");
+                    || core.getAxeEnergy() != energyBefore || dropped != 0) {
+                helper.fail("No output capacity must preserve material and Axe Energy without drops");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void finite_and_infinite_axe_energy_bound_max_crafting(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            ItemStack finite = new ItemStack(Items.IRON_AXE);
+            finite.setDamageValue(finite.getMaxDamage() - 3);
+            if (!core.addAxeEnergy(finite)) {
+                helper.fail("Could not store three finite Axe Energy");
+                return;
+            }
+            core.insertItem(new ItemStack(Items.OAK_LOG, 10));
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(137, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.STRIPPED_OAK_LOG));
+            menu.clickMenuButton(player, CraftingTerminalMenu.MAX_CRAFT_BUTTON);
+            if (countInInventory(player, Items.STRIPPED_OAK_LOG) != 3
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_LOG))) != 7
+                    || core.getAxeEnergy() != 0) {
+                helper.fail("Max must stop at the exact finite Axe Energy capacity");
+                return;
+            }
+
+            ItemStack infinite = new ItemStack(Items.DIAMOND_AXE);
+            infinite.set(DataComponents.UNBREAKABLE, new Unbreakable(false));
+            if (!core.addAxeEnergy(infinite) || !core.hasInfiniteAxeEnergy()) {
+                helper.fail("Could not enable infinite Axe Energy");
+                return;
+            }
+            core.insertItem(new ItemStack(Items.OAK_LOG, 64));
+            menu.lookUpRecipes(level, new ItemStack(Items.STRIPPED_OAK_LOG));
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            menu.clickMenuButton(player, CraftingTerminalMenu.MAX_CRAFT_BUTTON);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_LOG))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STRIPPED_OAK_LOG))) != 71
+                    || !core.hasInfiniteAxeEnergy()) {
+                helper.fail("Infinite Axe Energy Max must consume every remaining log without decrementing infinity");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void infinite_axe_max_handles_long_max_inventory_as_one_bulk_commit(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            var entry = new net.minecraft.nbt.CompoundTag();
+            entry.put("item", new ItemStack(Items.OAK_LOG).save(level.registryAccess()));
+            entry.putLong("count", Long.MAX_VALUE);
+            var inventory = new net.minecraft.nbt.ListTag();
+            inventory.add(entry);
+            var persisted = new net.minecraft.nbt.CompoundTag();
+            persisted.put("inventory", inventory);
+            persisted.putBoolean("infiniteAxeEnergy", true);
+            core.loadAdditional(persisted, level.registryAccess());
+            core.rebuildNetwork(level);
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(174, player.getInventory(), core);
+            menu.lookUpRecipes(level, new ItemStack(Items.STRIPPED_OAK_LOG));
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            var deltas = new java.util.ArrayList<Long>();
+            core.addListener((key, delta, amount, actor) -> {
+                if (key.equals(ItemKey.of(new ItemStack(Items.OAK_LOG)))
+                        || key.equals(ItemKey.of(new ItemStack(Items.STRIPPED_OAK_LOG)))) {
+                    deltas.add(delta);
+                }
+            });
+
+            menu.clickMenuButton(player, CraftingTerminalMenu.MAX_CRAFT_BUTTON);
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.OAK_LOG))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STRIPPED_OAK_LOG)))
+                    != Long.MAX_VALUE || !core.hasInfiniteAxeEnergy()) {
+                helper.fail("Long.MAX_VALUE Axe Max must fully commit without decrementing infinity");
+                return;
+            }
+            if (!deltas.equals(java.util.List.of(-Long.MAX_VALUE, Long.MAX_VALUE))) {
+                helper.fail("Long.MAX_VALUE Axe Max must emit one extraction and one insertion: " + deltas);
                 return;
             }
             helper.succeed();
@@ -3838,7 +3967,10 @@ public class CraftingTests {
 
                 ItemStack axe = new ItemStack(Items.IRON_AXE);
                 axe.setDamageValue(axe.getMaxDamage() - 5);
-                core.getMachineContainer().setItem(MachineEnergyTable.AXE_SLOT, axe);
+                if (!core.addAxeEnergy(axe)) {
+                    helper.fail("Could not store Axe Energy for presentation test");
+                    return;
+                }
                 menu.lookUpRecipes(level, new ItemStack(Items.STRIPPED_OAK_LOG));
                 RecipeHolder<?> axeRecipe = menu.getCurrentRecipes().stream()
                         .filter(holder -> holder.value() instanceof AxeTransformationRecipe)
@@ -3859,8 +3991,31 @@ public class CraftingTests {
                         || tool == null
                         || !tool.stack().is(Items.IRON_AXE)
                         || tool.available() != 5
-                        || tool.required() != 1) {
+                        || tool.required() != 1
+                        || tool.infinite()) {
                     helper.fail("Axe tool-resource presentation mismatch: " + axePresentation);
+                    return;
+                }
+                if (RecipePresentation.Resource.tool(
+                        new ItemStack(Items.IRON_AXE), Long.MAX_VALUE, 1).infinite()) {
+                    helper.fail("Finite Long.MAX_VALUE tool availability must remain distinct from infinity");
+                    return;
+                }
+
+                ItemStack unbreakable = new ItemStack(Items.DIAMOND_AXE);
+                unbreakable.set(DataComponents.UNBREAKABLE, new Unbreakable(false));
+                if (!core.addAxeEnergy(unbreakable) || !menu.handleRecipeRequest(
+                        level, axeRecipe.id(), 1, CraftingDestination.NONE, player)) {
+                    helper.fail("Could not refresh the synthetic axe recipe with infinite Axe Energy");
+                    return;
+                }
+                RecipePresentation.Resource infiniteTool = menu.getRecipePresentation().resources().stream()
+                        .filter(row -> row.kind() == RecipePresentation.ResourceKind.TOOL)
+                        .findFirst().orElse(null);
+                if (infiniteTool == null || !infiniteTool.infinite()
+                        || infiniteTool.available() != Long.MAX_VALUE || infiniteTool.required() != 1) {
+                    helper.fail("Infinite Axe Energy must remain explicit in recipe presentation: "
+                            + infiniteTool);
                     return;
                 }
                 helper.succeed();
@@ -4090,6 +4245,15 @@ public class CraftingTests {
             }
             return super.insertItem(stack, action, actor);
         }
+
+        @Override
+        public long insertItemCount(ItemKey key, long amount, Action action, Actor actor) {
+            if (rejectCraftOutput && action == Action.EXECUTE
+                    && key.item() == Items.STICK && actor.name().equals("magic_crafting")) {
+                return 0;
+            }
+            return super.insertItemCount(key, amount, action, actor);
+        }
     }
 
     private static final class CountingPreviewCore extends StorageCoreBlockEntity {
@@ -4142,8 +4306,6 @@ public class CraftingTests {
                 MachineEnergyTable.STONECUTTER_SLOT, new ItemStack(Items.STONECUTTER));
         core.getMachineContainer().setItem(
                 MachineEnergyTable.SMITHING_TABLE_SLOT, new ItemStack(Items.SMITHING_TABLE));
-        core.getMachineContainer().setItem(
-                MachineEnergyTable.AXE_SLOT, new ItemStack(Items.IRON_AXE));
     }
 
     private static void withTemporaryRegisteredRecipe(

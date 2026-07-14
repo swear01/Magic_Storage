@@ -23,6 +23,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     private static final String TAG_NETWORK_ID = "networkId";
     private static final String TAG_MACHINES = "machines";
+    private static final String TAG_AXE_ENERGY = "axeEnergy";
+    private static final String TAG_INFINITE_AXE_ENERGY = "infiniteAxeEnergy";
 
     private final Set<BlockPos> connectedBlocks = new HashSet<>();
     private UUID networkId = UUID.randomUUID();
@@ -31,6 +33,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private int totalTypeSlots = 0;
     private int typeCount = 0;
     private long machineRevision;
+    private long axeEnergy;
+    private boolean infiniteAxeEnergy;
 
     // Energy
     private final Map<EnergyType, Long> energy = new HashMap<>();
@@ -43,7 +47,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         @Override
         public boolean canPlaceItem(int slot, ItemStack stack) {
             MachineEnergyTable.Entry entry = MachineEnergyTable.get(slot);
-            return entry != null && entry.accepts(stack);
+            return entry != null && entry.maxInstalledCount() > 0 && entry.accepts(stack);
         }
 
         @Override
@@ -94,6 +98,51 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     public long getMachineRevision() {
         return machineRevision;
+    }
+
+    public long getAxeEnergy() {
+        return axeEnergy;
+    }
+
+    public boolean hasInfiniteAxeEnergy() {
+        return infiniteAxeEnergy;
+    }
+
+    public boolean hasAxeEnergy(long amount) {
+        return amount > 0 && (infiniteAxeEnergy || axeEnergy >= amount);
+    }
+
+    public boolean canAddAxeEnergy(ItemStack stack) {
+        if (stack.isEmpty() || conflicted || infiniteAxeEnergy || !AxeEnergy.accepts(stack)) return false;
+        if (AxeEnergy.isInfinite(stack)) return true;
+        try {
+            long amount = AxeEnergy.finiteValue(stack);
+            return amount > 0 && axeEnergy <= Long.MAX_VALUE - amount;
+        } catch (ArithmeticException e) {
+            return false;
+        }
+    }
+
+    public boolean addAxeEnergy(ItemStack stack) {
+        if (!canAddAxeEnergy(stack)) return false;
+        if (AxeEnergy.isInfinite(stack)) {
+            axeEnergy = 0;
+            infiniteAxeEnergy = true;
+        } else {
+            axeEnergy = Math.addExact(axeEnergy, AxeEnergy.finiteValue(stack));
+        }
+        stack.setCount(0);
+        machineRevision++;
+        setChanged();
+        return true;
+    }
+
+    public boolean consumeAxeEnergy(long amount) {
+        if (!hasAxeEnergy(amount)) return false;
+        if (!infiniteAxeEnergy) axeEnergy -= amount;
+        machineRevision++;
+        setChanged();
+        return true;
     }
 
     public long getEnergy(EnergyType type) {
@@ -229,17 +278,18 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public long insertItem(ItemStack stack, Action action, Actor actor) {
         if (stack.isEmpty() || conflicted) return 0;
         ItemKey key = ItemKey.of(stack);
-        Item primary = key.item();
+        long inserted = insertItemCount(key, stack.getCount(), action, actor);
+        if (action == Action.EXECUTE && inserted > 0) stack.shrink((int) inserted);
+        return inserted;
+    }
 
+    public long insertItemCount(ItemKey key, long amount, Action action, Actor actor) {
+        if (amount <= 0 || conflicted) return 0;
+        Item primary = key.item();
         var variants = inventory.get(primary);
         long existing = variants != null ? variants.getLong(key) : 0;
-        long toInsert = stack.getCount();
-
-        if (existing == 0) {
-            if (typeCount >= totalTypeSlots) return 0;
-        }
-
-        long inserted = Math.min(toInsert, Long.MAX_VALUE - existing);
+        if (existing == 0 && typeCount >= totalTypeSlots) return 0;
+        long inserted = Math.min(amount, Long.MAX_VALUE - existing);
         if (inserted <= 0) return 0;
         if (action == Action.EXECUTE) {
             if (variants == null) {
@@ -250,7 +300,6 @@ public class StorageCoreBlockEntity extends BlockEntity {
             long newAmount = existing + inserted;
             variants.put(key, newAmount);
             cacheDirty = true;
-            stack.shrink((int) inserted);
             setChanged();
             fireChanged(key, inserted, newAmount, actor);
         }
@@ -266,16 +315,22 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public ItemStack extractItem(ItemKey key, long amount, Action action, Actor actor) {
-        if (amount <= 0 || conflicted) return ItemStack.EMPTY;
+        long requested = Math.min(amount, Integer.MAX_VALUE);
+        long extracted = extractItemCount(key, requested, action, actor);
+        if (extracted <= 0) return ItemStack.EMPTY;
+        return key.toStack((int) extracted);
+    }
+
+    public long extractItemCount(ItemKey key, long amount, Action action, Actor actor) {
+        if (amount <= 0 || conflicted) return 0;
         Item primary = key.item();
         var variants = inventory.get(primary);
-        if (variants == null) return ItemStack.EMPTY;
+        if (variants == null) return 0;
 
         long existing = variants.getLong(key);
-        if (existing <= 0) return ItemStack.EMPTY;
+        if (existing <= 0) return 0;
 
-        long toExtract = Math.min(amount, existing);
-        int extracted = (int) Math.min(toExtract, Integer.MAX_VALUE);
+        long extracted = Math.min(amount, existing);
         if (action == Action.EXECUTE) {
             long remaining = existing - extracted;
             if (remaining <= 0) {
@@ -289,10 +344,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             setChanged();
             fireChanged(key, -extracted, Math.max(remaining, 0), actor);
         }
-
-        ItemStack result = key.toStack(extracted);
-        result.setCount(extracted);
-        return result;
+        return extracted;
     }
 
     public ItemStack extractItem(ItemKey key, long amount, boolean simulate) {
@@ -358,8 +410,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         long extracted = 0;
         for (ItemKey key : matches) {
             if (extracted >= amount) break;
-            ItemStack got = extractItem(key, amount - extracted, action, actor);
-            extracted += got.getCount();
+            extracted += extractItemCount(key, amount - extracted, action, actor);
         }
         return extracted;
     }
@@ -414,6 +465,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
             energyTag.putLong(entry.getKey().getId(), entry.getValue());
         }
         tag.put("energy", energyTag);
+        tag.putLong(TAG_AXE_ENERGY, axeEnergy);
+        tag.putBoolean(TAG_INFINITE_AXE_ENERGY, infiniteAxeEnergy);
 
         CompoundTag machinesTag = new CompoundTag();
         ContainerHelper.saveAllItems(machinesTag, machines.getItems(), registries);
@@ -443,10 +496,29 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 energy.put(type, Math.max(0, energyTag.getLong(type.getId())));
             }
         }
+        axeEnergy = Math.max(0, tag.getLong(TAG_AXE_ENERGY));
+        infiniteAxeEnergy = tag.getBoolean(TAG_INFINITE_AXE_ENERGY);
+        if (infiniteAxeEnergy) axeEnergy = 0;
 
         machines.clearContent();
         if (tag.contains(TAG_MACHINES, Tag.TAG_COMPOUND)) {
             ContainerHelper.loadAllItems(tag.getCompound(TAG_MACHINES), machines.getItems(), registries);
+        }
+        Map<Integer, Integer> legacyInstantOverflow = new LinkedHashMap<>();
+        for (int slot = 0; slot < machines.getContainerSize(); slot++) {
+            MachineEnergyTable.Entry entry = MachineEnergyTable.get(slot);
+            ItemStack installed = machines.getItem(slot);
+            if (entry != null && entry.category() == MachineEnergyTable.Category.INSTANT
+                    && installed.getCount() > entry.maxInstalledCount()) {
+                legacyInstantOverflow.put(slot, installed.getCount() - entry.maxInstalledCount());
+            }
+        }
+        ItemStack legacyAxe = machines.getItem(MachineEnergyTable.AXE_SLOT);
+        if (!legacyAxe.isEmpty()) {
+            ItemStack migration = legacyAxe.copy();
+            if (addAxeEnergy(migration)) {
+                machines.setItem(MachineEnergyTable.AXE_SLOT, ItemStack.EMPTY);
+            }
         }
 
         inventory.clear();
@@ -463,6 +535,22 @@ public class StorageCoreBlockEntity extends BlockEntity {
             long existing = variants.getLong(key);
             long merged = existing > Long.MAX_VALUE - count ? Long.MAX_VALUE : existing + count;
             variants.put(key, merged);
+        }
+        for (Map.Entry<Integer, Integer> overflow : legacyInstantOverflow.entrySet()) {
+            ItemStack installed = machines.getItem(overflow.getKey());
+            ItemKey key = ItemKey.of(installed);
+            Item primary = key.item();
+            var variants = inventory.get(primary);
+            long existing = variants != null ? variants.getLong(key) : 0;
+            int recovered = (int) Math.min((long) overflow.getValue(), Long.MAX_VALUE - existing);
+            if (recovered <= 0) continue;
+            if (variants == null) {
+                variants = new Object2LongOpenHashMap<>();
+                inventory.put(primary, variants);
+            }
+            variants.put(key, existing + recovered);
+            installed.shrink(recovered);
+            machines.setChanged();
         }
         typeCount = 0;
         for (var variants : inventory.values()) typeCount += variants.size();

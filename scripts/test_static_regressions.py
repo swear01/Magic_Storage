@@ -338,14 +338,25 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertTrue(expected.issubset(en_us))
         self.assertTrue(expected.issubset(zh_tw))
 
-    def test_fuel_page_names_mixed_machine_station_tool_slots_as_installed_stations(self):
+    def test_fuel_page_distinguishes_stations_from_consumed_axe_energy(self):
         lang = json.loads(
             self.read_required("src/main/resources/assets/magic_storage/lang/en_us.json")
         )
         self.assertEqual(
-            "Installed Stations",
+            "Stations & Axe Energy",
             lang["gui.magic_storage.installed_machines"],
         )
+        self.assertEqual("Axe Energy", lang["gui.magic_storage.axe_energy"])
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        machine_panel = screen[
+            screen.index("private void renderMachinePanel"):
+            screen.index("private void renderFuelPanel")
+        ]
+        self.assertIn("MachineEnergyTable.Category.CONSUMABLE", machine_panel)
+        self.assertIn("menu.hasInfiniteAxeEnergy()", machine_panel)
+        self.assertIn("menu.getAxeEnergyAmount()", machine_panel)
 
     def test_emi_uses_terminal_display_slot_contract_without_54_slot_hardcode(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java")
@@ -980,6 +991,38 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("SELECTION_SLOTS = PRESENTATION_METADATA_SLOT + 1", menu)
         self.assertIn("new SimpleContainer(SELECTION_SLOTS)", menu)
         self.assertIn("new ArrayList<>(2)", menu)
+
+    def test_recipe_resources_keep_explicit_infinity_and_bulk_long_count_commits(self):
+        presentation = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/RecipePresentation.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        core = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
+        )
+        self.assertRegex(presentation, r"record Resource\([\s\S]*boolean infinite")
+        self.assertIn('resource.infinite() ? "∞"', screen)
+        self.assertIn("insertItemCount(", core)
+        self.assertIn("extractItemCount(", core)
+        commit = self.java_block(
+            menu,
+            r"\bprivate\s+boolean\s+commitCraft\s*\(",
+            "CraftingTerminalMenu.commitCraft",
+        )
+        precheck = self.java_block(
+            menu,
+            r"\bprivate\s+static\s+boolean\s+canExtractCoreReservation\s*\(",
+            "CraftingTerminalMenu.canExtractCoreReservation",
+        )
+        self.assertIn("extractItemCount(", commit)
+        self.assertIn("extractItemCount(", precheck)
+        self.assertNotIn("while (remaining > 0)", commit)
+        self.assertNotIn("while (remaining > 0)", precheck)
 
     def test_recipe_workspace_stacks_diagram_above_ledger_and_footer(self):
         layout = self.read_required(

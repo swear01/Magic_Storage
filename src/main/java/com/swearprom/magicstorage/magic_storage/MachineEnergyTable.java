@@ -3,12 +3,17 @@ package com.swearprom.magicstorage.magic_storage;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.neoforged.neoforge.common.ItemAbilities;
 
 import java.util.List;
 import java.util.function.Predicate;
 
 public final class MachineEnergyTable {
+    public enum Category {
+        PROCESS,
+        INSTANT,
+        CONSUMABLE
+    }
+
     public static final int FURNACE_SLOT = 0;
     public static final int BLAST_FURNACE_SLOT = 1;
     public static final int SMOKER_SLOT = 2;
@@ -23,6 +28,7 @@ public final class MachineEnergyTable {
             Item machine,
             EnergyType energyType,
             int energyPerTick,
+            Category category,
             Predicate<ItemStack> matcher
     ) {
         public boolean accepts(ItemStack stack) {
@@ -32,21 +38,26 @@ public final class MachineEnergyTable {
         public boolean generatesEnergy() {
             return energyType != null && energyPerTick > 0;
         }
+
+        public int maxInstalledCount() {
+            return switch (category) {
+                case PROCESS -> 64;
+                case INSTANT -> 1;
+                case CONSUMABLE -> 0;
+            };
+        }
     }
 
     private static final List<Entry> ENTRIES = List.of(
-            exact(Items.FURNACE, EnergyType.SMELTING_ENERGY, 1),
-            exact(Items.BLAST_FURNACE, EnergyType.BLASTING_ENERGY, 1),
-            exact(Items.SMOKER, EnergyType.SMOKING_ENERGY, 1),
-            exact(Items.CAMPFIRE, EnergyType.CAMPFIRE_ENERGY, 1),
-            exact(Items.BREWING_STAND, EnergyType.BREW_ENERGY, 1),
-            exact(Items.CRAFTING_TABLE, null, 0),
-            exact(Items.STONECUTTER, null, 0),
-            exact(Items.SMITHING_TABLE, null, 0),
-            new Entry(Items.IRON_AXE, null, 0,
-                    stack -> stack.canPerformAction(ItemAbilities.AXE_STRIP)
-                            || stack.canPerformAction(ItemAbilities.AXE_SCRAPE)
-                            || stack.canPerformAction(ItemAbilities.AXE_WAX_OFF))
+            exact(Items.FURNACE, EnergyType.SMELTING_ENERGY, 1, Category.PROCESS),
+            exact(Items.BLAST_FURNACE, EnergyType.BLASTING_ENERGY, 1, Category.PROCESS),
+            exact(Items.SMOKER, EnergyType.SMOKING_ENERGY, 1, Category.PROCESS),
+            exact(Items.CAMPFIRE, EnergyType.CAMPFIRE_ENERGY, 1, Category.PROCESS),
+            exact(Items.BREWING_STAND, EnergyType.BREW_ENERGY, 1, Category.PROCESS),
+            exact(Items.CRAFTING_TABLE, null, 0, Category.INSTANT),
+            exact(Items.STONECUTTER, null, 0, Category.INSTANT),
+            exact(Items.SMITHING_TABLE, null, 0, Category.INSTANT),
+            new Entry(Items.IRON_AXE, null, 0, Category.CONSUMABLE, AxeEnergy::accepts)
     );
 
     private MachineEnergyTable() {
@@ -73,10 +84,16 @@ public final class MachineEnergyTable {
 
     public static boolean isInstalled(StorageCoreBlockEntity core, int slot) {
         Entry entry = get(slot);
-        return core != null && entry != null && entry.accepts(core.getMachineContainer().getItem(slot));
+        return core != null && entry != null && entry.maxInstalledCount() > 0
+                && entry.accepts(core.getMachineContainer().getItem(slot));
     }
 
-    private static Entry exact(Item item, EnergyType energyType, int energyPerTick) {
-        return new Entry(item, energyType, energyPerTick, stack -> stack.is(item));
+    private static Entry exact(
+            Item item,
+            EnergyType energyType,
+            int energyPerTick,
+            Category category
+    ) {
+        return new Entry(item, energyType, energyPerTick, category, stack -> stack.is(item));
     }
 }

@@ -137,6 +137,8 @@
 
 ## Task 6: Station categories and Axe Energy storage
 
+> Status: complete. Initial RED produced 66 expected missing-category/Axe-Energy/persistence/menu compile errors, one focused Fuel UI static failure, and two focused GUI-lab/checklist failures. Review RED then exposed a hidden failed-migration axe, legacy instant overstack, ambiguous infinite presentation, and chunk-loop risk. GREEN is compileJava, build, SelfTest 222949/222949, GameTest 251/251, Python 99/99, runData without drift, and runClient dry-run. Five process descriptors remain stackable, three instant stations are max-one with upgrade recovery, the ninth descriptor is a consuming transient input or failed-migration recovery view, Core persists finite-or-explicit-infinite Axe Energy, and Max uses atomic per-key long-count mutations.
+
 **Files:**
 
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/MachineEnergyTable.java`
@@ -145,16 +147,25 @@
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/AxeTransformationCatalog.java`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/gametest/FuelPageTests.java`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/gametest/CraftingTests.java`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/gametest/PersistenceTests.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/gametest/TerminalFlowTests.java`
 - Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/SelfTest.java`
+- Modify: `src/main/resources/assets/magic_storage/lang/en_us.json`
+- Modify: `src/main/resources/assets/magic_storage/lang/zh_tw.json`
+- Modify: `scripts/prepare_prism_gui_world.py`
+- Modify: `scripts/run_prism_gui_session.py`
+- Modify: `scripts/test_prepare_prism_gui_world.py`
+- Modify: `scripts/test_run_prism_gui_session.py`
+- Modify: `scripts/test_static_regressions.py`
 - Modify: `docs/overview.md`
 - Modify: `docs/notes.md`
 
-**RED:** Add tests proving process machines stack and contribute per installed block; instant stations accept one and reject a second without consuming it; axes cannot remain installed or be extracted; finite conversion is remaining durability multiplied by vanilla Unbreaking level plus one; Mending and unrelated enchantments add nothing; multiple finite axes accumulate; checked overflow rejects without consumption; Unbreakable sets a persistent explicit infinite flag; infinite recipes never decrement; further axes reject; and the old slot-8 axe clears only after successful migration. Include finite/infinite recipe capacity, rollback, save/load, and menu parity cases. Run `./gradlew runGameTestServer` and confirm the installed-tool model fails.
+**RED:** Add tests proving process machines stack and contribute per installed block; instant stations accept one and reject a second without consuming it; legacy stacked instant stations recover extras; axes cannot remain installed; finite conversion is remaining durability multiplied by vanilla Unbreaking level plus one; Mending and unrelated enchantments add nothing; multiple finite axes accumulate; checked overflow rejects without consumption; Unbreakable sets a persistent explicit infinite flag; finite `Long.MAX_VALUE` stays distinct from infinity; infinite recipes never decrement; further axes reject; and the old slot-8 axe clears only after successful migration or remains visible/retrievable after failure. Include finite/infinite recipe capacity, single-mutation `Long.MAX_VALUE` Max, rollback, save/load, and menu parity cases. Run `./gradlew runGameTestServer` and confirm the installed-tool/chunk-loop model fails.
 
-**GREEN:** Classify descriptors as process or instant, enforce stack limits server-side, store Axe Energy and the explicit infinite flag in Core NBT, atomically convert accepted axes, migrate legacy slot 8, and make synthetic axe planning/commit reserve Axe Energy instead of mutating an item. Run `./gradlew runGameTestServer`.
+**GREEN:** Classify descriptors as process or instant, enforce stack limits server-side, recover legacy instant-station extras, store Axe Energy and the explicit infinite flag in Core NBT, atomically convert accepted axes, expose a failed legacy slot-8 migration for recovery, sync explicit tool infinity, and make synthetic axe planning/commit reserve Axe Energy through per-key long-count mutations instead of mutating an item or chunk-looping. Run `./gradlew runGameTestServer`.
 
 **Commit:** `feat: replace installed axes with persistent axe energy`
 

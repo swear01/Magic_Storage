@@ -366,6 +366,11 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                         formatAmount(menu.getEnergyAmount(entry.energyType())),
                         leftPos + cell.x() + cell.width() / 2,
                         topPos + cell.bottom() - font.lineHeight - 1, 0xFF202020);
+            } else if (entry.category() == MachineEnergyTable.Category.CONSUMABLE) {
+                drawCenteredNoShadow(graphics,
+                        menu.hasInfiniteAxeEnergy() ? "∞" : formatAmount(menu.getAxeEnergyAmount()),
+                        leftPos + cell.x() + cell.width() / 2,
+                        topPos + cell.bottom() - font.lineHeight - 1, 0xFF202020);
             }
         }
     }
@@ -535,12 +540,14 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         ItemStack icon = resource.kind() == RecipePresentation.ResourceKind.ENERGY
                 ? resource.energyType().representativeStack() : resource.stack();
         graphics.renderItem(icon, x + 1, iconY);
-        String amount = formatAmount(resource.available()) + "/" + formatAmount(resource.required());
+        String available = resource.infinite() ? "∞" : formatAmount(resource.available());
+        String amount = available + "/" + formatAmount(resource.required());
         int textX = x + 18;
         String visible = font.plainSubstrByWidth(amount, Math.max(0, cell.width() - 20));
         graphics.drawString(font, visible, textX,
                 y + Math.max(0, (cell.height() - font.lineHeight) / 2),
-                resource.available() >= resource.required() ? 0xFF63B563 : 0xFFE06060, false);
+                resource.infinite() || resource.available() >= resource.required()
+                        ? 0xFF63B563 : 0xFFE06060, false);
     }
 
     @Override
@@ -601,6 +608,11 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 tooltip.add(Component.translatable("tooltip.magic_storage.machine_rate", rate));
                 tooltip.add(Component.translatable("tooltip.magic_storage.energy_stored",
                         menu.getEnergyAmount(entry.energyType())));
+            } else if (entry.category() == MachineEnergyTable.Category.CONSUMABLE) {
+                tooltip.set(0, Component.translatable("gui.magic_storage.axe_energy"));
+                Object amount = menu.hasInfiniteAxeEnergy() ? "∞" : menu.getAxeEnergyAmount();
+                tooltip.add(Component.translatable("tooltip.magic_storage.energy_stored",
+                        amount));
             }
             graphics.renderComponentTooltip(font, tooltip, mouseX, mouseY);
             return;

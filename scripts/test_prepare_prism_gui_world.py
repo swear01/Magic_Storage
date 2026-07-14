@@ -175,6 +175,14 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertIn("item replace entity @s inventory.0 with magic_storage:remote_terminal 1", player_ready)
             self.assertIn("item replace entity @s inventory.3 with minecraft:furnace 3", player_ready)
             self.assertIn("item replace entity @s inventory.14 with minecraft:iron_axe 1", player_ready)
+            self.assertIn(
+                'item replace entity @s inventory.18 with minecraft:iron_axe[minecraft:damage=100,minecraft:enchantments={levels:{"minecraft:unbreaking":2}}] 1',
+                player_ready,
+            )
+            self.assertIn(
+                "item replace entity @s inventory.19 with minecraft:iron_axe[minecraft:unbreakable={}] 1",
+                player_ready,
+            )
             self.assertFalse(any(line.startswith("give @s") for line in player_ready.splitlines()))
 
             view = (datapack / "data/magic_storage_gui_test/function/view_storage_terminal.mcfunction").read_text()

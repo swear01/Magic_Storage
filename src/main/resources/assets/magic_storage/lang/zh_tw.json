@@ -1,5 +1,7 @@
 {
   "gui.magic_storage.output_destination": "合成輸出",
   "gui.magic_storage.output_destination.player": "玩家",
-  "gui.magic_storage.output_destination.storage": "儲存空間"
+  "gui.magic_storage.output_destination.storage": "儲存空間",
+  "gui.magic_storage.installed_machines": "工作站與斧能量",
+  "gui.magic_storage.axe_energy": "斧能量"
 }

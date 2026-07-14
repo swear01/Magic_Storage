@@ -77,15 +77,15 @@ The Core is created with the same persistent NBT schema used by `StorageCoreBloc
 
 These cover long-count rendering, sorting/searching, player/Core ingredient aggregation, crafting, stonecutting, and Smithing Transform without filling the player inventory.
 
-### Installed stations and energy
+### Stations and energy
 
-The baseline installs Crafting Table in machine slot 5, Stonecutter in slot 6, Smithing Table in slot 7, and an undamaged Iron Axe in slot 8. Furnace, Blast Furnace, Smoker, Campfire, and Brewing Stand slots are empty. Every energy pool starts at zero.
+The baseline writes Crafting Table in machine slot 5, Stonecutter in slot 6, Smithing Table in slot 7, and an undamaged Iron Axe in legacy slot 8. On Core load, the first three remain installed max-one instant stations while the legacy axe is atomically converted into finite Axe Energy and slot 8 clears. Furnace, Blast Furnace, Smoker, Campfire, and Brewing Stand slots are empty. Every process/Fuel energy pool starts at zero.
 
-This exposes instant/station/tool recipes immediately while preserving the invariant that empty process-machine slots generate no energy. The player test kit supplies all process machines and fuels for explicit installation tests.
+This exposes instant-station and axe recipes immediately while exercising real legacy migration and preserving the invariant that empty process-machine slots generate no energy. The player test kit supplies all process machines and fuels for explicit installation tests.
 
 ### Player kit
 
-Hotbar slots contain semantic navigation items in fixed positions. Main-inventory slots contain three Furnaces; one Blast Furnace, Smoker, Campfire, and Brewing Stand; fuels; logs; station/tool replacements; Smithing inputs; Cobblestone; and a Remote Terminal. `item replace` is used instead of `give`, so slot identity is deterministic.
+Hotbar slots contain semantic navigation items in fixed positions. Main-inventory slots contain three Furnaces; one Blast Furnace, Smoker, Campfire, and Brewing Stand; fuels; logs; station replacements; Smithing inputs; Cobblestone; a Remote Terminal; one plain Iron Axe; one damaged Unbreaking II Iron Axe; and one Unbreakable Iron Axe. `item replace` is used instead of `give`, so slot identity is deterministic and finite, enchantment-scaled, and infinite Axe Energy paths are all available without manual commands.
 
 ## Bootstrap and reset
 
@@ -105,7 +105,7 @@ The generated manifest records:
 - platform bounds and named zones;
 - every active/gallery block and view stand/face coordinate;
 - hotbar mapping;
-- Core stored resources, installed station slots, and zero-energy profile;
+- Core stored resources, installed station slots, legacy axe migration, and zero process/Fuel-energy profile;
 - fixed player kit;
 - bootstrap delay and reset function;
 - fullscreen gate and offline launch command.

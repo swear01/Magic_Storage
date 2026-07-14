@@ -113,9 +113,9 @@ Finite axe value is:
 
 Mending adds no value because the stored reserve has no XP repair process. Other enchantments do not change axe uses. Addition is checked before consumption; overflow rejects the axe instead of saturating and losing value.
 
-An item carrying the Unbreakable component sets an explicit infinite Axe Energy flag. Infinite is not encoded as `Long.MAX_VALUE`: axe recipes do not decrement it, the UI displays an infinity marker, and it persists in Core NBT. Once infinite, further axes are rejected without consumption.
+An item carrying the Unbreakable component sets an explicit infinite Axe Energy flag. Infinite is not encoded as `Long.MAX_VALUE`: axe recipes do not decrement it, it persists in Core NBT, and recipe metadata carries a separate infinity bit so the UI displays `∞` without confusing a finite `Long.MAX_VALUE` reserve. Once infinite, further axes are rejected without consumption.
 
-The old persisted axe station slot is migrated once. A valid finite or Unbreakable axe is converted with the same rules and cleared only after the new reserve is stored. Existing process/instant stations retain their identities and contents.
+The old persisted axe station slot is migrated once. A valid finite or Unbreakable axe is converted with the same rules and cleared only after the new reserve is stored. If conversion fails, the original item remains persisted and the Axe Energy slot exposes it for recovery. Existing process stations retain their identities and contents; legacy stacked instant stations keep one installed and recover representable extras into Core storage.
 
 ## Fuel target selector and station hit boxes
 
@@ -146,8 +146,8 @@ Required coverage includes:
 - shared Name/Quantity/Mod/ID ordering and deterministic ties;
 - shaped, shapeless, cooking, stonecutting, smithing, and axe presentation metadata plus exact output count;
 - EMI-present public-widget path, no-EMI native path, known unsupported-recipe native path, and no broad exception fallback;
-- Player/Core destination capacity, remainders, direct craft, Max, exact EMI requests, rollback, and cross-`Integer.MAX_VALUE` reservations;
-- process stack rates, instant station max-one, finite/multiple/Unbreaking/overflow axes, infinite axes, save/load, and old-slot migration;
+- Player/Core destination capacity, remainders, direct craft, Max, exact EMI requests, rollback, single-mutation long-count commits, and `Long.MAX_VALUE` reservations;
+- process stack rates, instant station max-one plus legacy-overstack recovery, finite/multiple/Unbreaking/overflow axes, explicit finite-vs-infinite presentation, save/load, and recoverable old-slot migration;
 - exact station hover bounds, scalable popup geometry/input, and no rail overlap;
 - one count scale, slot-local text bounds, 16x16 referenced textures, semantic asset families, and no generation artifacts in runtime resources.
 

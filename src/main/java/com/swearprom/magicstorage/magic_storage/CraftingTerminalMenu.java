@@ -63,7 +63,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             Map<ItemKey, Long> consumedItems,
             List<Map<ItemKey, Long>> allocations
     ) {}
-    private record ToolUsePlan(ItemKey before, ItemStack after) {}
+    private record ToolUsePlan(long amount) {}
     private record DeliveryPlan(
             List<ItemStack> playerInventory,
             ItemStack carried,
@@ -203,7 +203,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private static final int INGREDIENT_AVAILABLE_DATA_START = ENERGY_DATA_START + ENERGY_DATA_SLOTS;
     private static final int PROCESS_REQUIRED_DATA_START = INGREDIENT_AVAILABLE_DATA_START + MAX_INGREDIENTS * 4;
     private static final int FUEL_REQUIRED_DATA_START = PROCESS_REQUIRED_DATA_START + 4;
-    private static final int CRAFTING_DATA_SLOTS = FUEL_REQUIRED_DATA_START + 4;
+    private static final int AXE_ENERGY_DATA_START = FUEL_REQUIRED_DATA_START + 4;
+    private static final int AXE_INFINITE_DATA_SLOT = AXE_ENERGY_DATA_START + 4;
+    private static final int CRAFTING_DATA_SLOTS = AXE_INFINITE_DATA_SLOT + 1;
     private static final List<RecipeType<?>> SUPPORTED_RECIPE_TYPES = List.of(
             RecipeType.CRAFTING,
             RecipeType.SMELTING,
@@ -221,6 +223,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private ResourceLocation selectedRecipeId;
     private SimpleContainer selectionContainer;
     private SimpleContainer fuelContainer;
+    private SimpleContainer axeInputContainer;
     private Container machineContainer;
     private final List<RecipeHolder<?>> currentRecipes = new ArrayList<>();
     private final CraftableRecipeCatalog craftableRecipeCatalog = new CraftableRecipeCatalog();
@@ -240,7 +243,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private final long[] ingredientAvailable = new long[MAX_INGREDIENTS];
     private long processRequired;
     private long fuelRequired;
+    private long axeEnergyAmount;
+    private boolean infiniteAxeEnergy;
     private boolean processingFuelInput;
+    private boolean processingAxeInput;
     private int lastPlayerInventoryFingerprint;
     private long lastTopologyRevision;
     private long lastMachineRevision;
@@ -320,7 +326,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return getLongPart(processRequired, index - PROCESS_REQUIRED_DATA_START);
         }
         if (index >= FUEL_REQUIRED_DATA_START && index < CRAFTING_DATA_SLOTS) {
-            return getLongPart(fuelRequired, index - FUEL_REQUIRED_DATA_START);
+            if (index < AXE_ENERGY_DATA_START) {
+                return getLongPart(fuelRequired, index - FUEL_REQUIRED_DATA_START);
+            }
+            if (index < AXE_INFINITE_DATA_SLOT) {
+                return getLongPart(axeEnergyAmount, index - AXE_ENERGY_DATA_START);
+            }
+            return infiniteAxeEnergy ? 1 : 0;
         }
         return 0;
     }
@@ -344,8 +356,16 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             processRequired = setLongPart(processRequired, index - PROCESS_REQUIRED_DATA_START, value);
             return;
         }
-        if (index >= FUEL_REQUIRED_DATA_START && index < CRAFTING_DATA_SLOTS) {
+        if (index >= FUEL_REQUIRED_DATA_START && index < AXE_ENERGY_DATA_START) {
             fuelRequired = setLongPart(fuelRequired, index - FUEL_REQUIRED_DATA_START, value);
+            return;
+        }
+        if (index >= AXE_ENERGY_DATA_START && index < AXE_INFINITE_DATA_SLOT) {
+            axeEnergyAmount = setLongPart(axeEnergyAmount, index - AXE_ENERGY_DATA_START, value);
+            return;
+        }
+        if (index == AXE_INFINITE_DATA_SLOT) {
+            infiniteAxeEnergy = value != 0;
         }
     }
 
@@ -422,10 +442,49 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         machineContainer = core != null
                 ? core.getMachineContainer()
                 : new SimpleContainer(MACHINE_SLOT_COUNT);
+        axeInputContainer = new SimpleContainer(1) {
+            @Override
+            public void setChanged() {
+                super.setChanged();
+                onAxeInputChanged();
+            }
+        };
         for (int machineSlot = 0; machineSlot < MACHINE_SLOT_COUNT; machineSlot++) {
             int mappedSlot = machineSlot;
-            this.addSlot(new Slot(machineContainer, mappedSlot,
+            MachineEnergyTable.Entry descriptor = MachineEnergyTable.get(mappedSlot);
+            boolean consumable = descriptor != null
+                    && descriptor.category() == MachineEnergyTable.Category.CONSUMABLE;
+            Container slotContainer = consumable ? axeInputContainer : machineContainer;
+            int containerSlot = consumable ? 0 : mappedSlot;
+            this.addSlot(new Slot(slotContainer, containerSlot,
                     MACHINE_SLOT_X + mappedSlot * MACHINE_SLOT_GAP, MACHINE_SLOT_Y) {
+                private boolean hasRetainedLegacyInput() {
+                    return consumable && !machineContainer.getItem(mappedSlot).isEmpty();
+                }
+
+                @Override
+                public ItemStack getItem() {
+                    return hasRetainedLegacyInput()
+                            ? machineContainer.getItem(mappedSlot).copy()
+                            : super.getItem();
+                }
+
+                @Override
+                public ItemStack remove(int amount) {
+                    return hasRetainedLegacyInput()
+                            ? machineContainer.removeItem(mappedSlot, amount)
+                            : super.remove(amount);
+                }
+
+                @Override
+                public void set(ItemStack stack) {
+                    if (hasRetainedLegacyInput()) {
+                        machineContainer.setItem(mappedSlot, stack);
+                    } else {
+                        super.set(stack);
+                    }
+                }
+
                 @Override
                 public boolean isActive() {
                     return page == CraftingTerminalPage.FUEL;
@@ -436,8 +495,22 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                     if (page != CraftingTerminalPage.FUEL) return false;
                     StorageCoreBlockEntity currentCore = getCore(playerInv.player.level());
                     MachineEnergyTable.Entry entry = MachineEnergyTable.get(mappedSlot);
-                    return currentCore != null && !currentCore.isConflicted()
-                            && entry != null && entry.accepts(stack);
+                    if (currentCore == null || currentCore.isConflicted()
+                            || entry == null || !entry.accepts(stack)) return false;
+                    if (hasRetainedLegacyInput()) return false;
+                    return entry.category() == MachineEnergyTable.Category.CONSUMABLE
+                            ? currentCore.canAddAxeEnergy(stack)
+                            : entry.maxInstalledCount() > 0;
+                }
+
+                @Override
+                public int getMaxStackSize(ItemStack stack) {
+                    MachineEnergyTable.Entry entry = MachineEnergyTable.get(mappedSlot);
+                    if (entry == null) return 0;
+                    if (entry.category() == MachineEnergyTable.Category.CONSUMABLE) {
+                        return Math.min(64, stack.getMaxStackSize());
+                    }
+                    return Math.min(entry.maxInstalledCount(), stack.getMaxStackSize());
                 }
 
                 @Override
@@ -515,7 +588,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 throw new IllegalStateException("Recipe presentation tool resource is missing");
             }
             resources.add(RecipePresentation.Resource.tool(
-                    tool, metadata.toolAvailable(), metadata.toolRequired()));
+                    tool, metadata.toolAvailable(), metadata.toolRequired(), metadata.toolInfinite()));
         }
         return new RecipePresentation(
                 metadata,
@@ -594,6 +667,14 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return energyAmounts[type.ordinal()];
     }
 
+    public long getAxeEnergyAmount() {
+        return axeEnergyAmount;
+    }
+
+    public boolean hasInfiniteAxeEnergy() {
+        return infiniteAxeEnergy;
+    }
+
     static int fuelTargetButtonId(EnergyType target) {
         int index = FUEL_TARGETS.indexOf(target);
         if (index < 0) throw new IllegalArgumentException("Not a fuel target: " + target);
@@ -631,6 +712,26 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (!stack.isEmpty()) {
             convertFuelStack(core, stack, getSlot(FUEL_INPUT_SLOT), player);
         }
+    }
+
+    private void onAxeInputChanged() {
+        if (processingAxeInput || axeInputContainer == null || playerInventory == null
+                || page != CraftingTerminalPage.FUEL) return;
+        Player player = playerInventory.player;
+        if (player.level().isClientSide()) return;
+        StorageCoreBlockEntity core = getCore(player.level());
+        if (core == null) return;
+        ItemStack stack = axeInputContainer.getItem(0);
+        if (stack.isEmpty() || !core.addAxeEnergy(stack)) return;
+
+        processingAxeInput = true;
+        try {
+            axeInputContainer.removeItemNoUpdate(0);
+            axeInputContainer.setChanged();
+        } finally {
+            processingAxeInput = false;
+        }
+        refreshEnergyAmounts(core);
     }
 
     private boolean convertFuelStack(
@@ -740,6 +841,15 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 if (machineSlot >= 0) {
                     if (core == null || core.isConflicted()) return ItemStack.EMPTY;
                     ItemStack stack = slot.getItem();
+                    MachineEnergyTable.Entry entry = MachineEnergyTable.get(machineSlot);
+                    if (entry != null && entry.category() == MachineEnergyTable.Category.CONSUMABLE) {
+                        if (!core.addAxeEnergy(stack)) return ItemStack.EMPTY;
+                        if (stack.isEmpty()) slot.set(ItemStack.EMPTY);
+                        else slot.setChanged();
+                        refreshEnergyAmounts(core);
+                        broadcastChanges();
+                        return original;
+                    }
                     if (!moveItemStackTo(stack,
                             MACHINE_SLOT_START + machineSlot,
                             MACHINE_SLOT_START + machineSlot + 1,
@@ -1101,12 +1211,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             }
             high = Math.min(high, available / need.count());
         }
-        if (recipe instanceof AxeTransformationRecipe axeRecipe) {
-            ItemStack tool = AxeTransformationCatalog.installedTool(core);
-            long durability = tool.canPerformAction(axeRecipe.ability())
-                    ? AxeTransformationCatalog.remainingDurability(tool)
-                    : 0;
-            high = Math.min(high, durability);
+        if (recipe instanceof AxeTransformationRecipe) {
+            long available = core.hasInfiniteAxeEnergy() ? Long.MAX_VALUE : core.getAxeEnergy();
+            high = Math.min(high, available);
         }
         EnergyCost cost = RecipeEnergyTable.getCost(recipe);
         if (cost != null) {
@@ -1242,15 +1349,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 if (!items.isEmpty() && missing.size() < MAX_INGREDIENTS) missing.add(items.getFirst().copy());
             }
         }
-        if (recipe instanceof AxeTransformationRecipe axeRecipe) {
-            ItemStack tool = AxeTransformationCatalog.installedTool(core);
-            long durability = tool.canPerformAction(axeRecipe.ability())
-                    ? AxeTransformationCatalog.remainingDurability(tool)
-                    : 0;
-            max = Math.min(max, durability);
-            if (!tool.isEmpty() && ingredientPreviews.size() < MAX_INGREDIENTS) {
-                ingredientPreviews.add(new IngredientPreview(tool.copyWithCount(1), durability, 1));
-            }
+        if (recipe instanceof AxeTransformationRecipe) {
+            long available = core.hasInfiniteAxeEnergy() ? Long.MAX_VALUE : core.getAxeEnergy();
+            max = Math.min(max, available);
         }
 
         EnergyCost cost = RecipeEnergyTable.getCost(recipe);
@@ -1359,14 +1460,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
         long toolAvailable = 0;
         long toolRequired = 0;
-        if (recipe instanceof AxeTransformationRecipe axeRecipe) {
-            ItemStack tool = AxeTransformationCatalog.installedTool(core);
-            if (tool.isEmpty() || !tool.canPerformAction(axeRecipe.ability())) {
-                throw new IllegalStateException("Selected axe recipe has no compatible tool");
-            }
-            toolAvailable = AxeTransformationCatalog.remainingDurability(tool);
+        boolean toolInfinite = false;
+        if (recipe instanceof AxeTransformationRecipe) {
+            toolInfinite = core.hasInfiniteAxeEnergy();
+            toolAvailable = toolInfinite ? Long.MAX_VALUE : core.getAxeEnergy();
+            if (toolAvailable <= 0) throw new IllegalStateException("Selected axe recipe has no Axe Energy");
             toolRequired = 1;
-            selectionContainer.setItem(PRESENTATION_TOOL_SLOT, tool.copyWithCount(1));
+            selectionContainer.setItem(PRESENTATION_TOOL_SLOT, AxeEnergy.representativeStack());
         }
 
         RecipePresentation.Metadata metadata = new RecipePresentation.Metadata(
@@ -1377,7 +1477,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 recipe instanceof ShapelessRecipe,
                 itemResourceCount,
                 toolAvailable,
-                toolRequired);
+                toolRequired,
+                toolInfinite);
         selectionContainer.setItem(
                 PRESENTATION_METADATA_SLOT, RecipePresentation.metadataCarrier(metadata));
     }
@@ -1472,9 +1573,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             StorageCoreBlockEntity core
     ) {
         if (recipe instanceof AxeTransformationRecipe) {
-            ItemStack tool = AxeTransformationCatalog.installedTool(core);
-            if (tool.isEmpty()) throw new IllegalStateException("Axe presentation has no installed tool");
-            return tool.copyWithCount(1);
+            if (!core.hasAxeEnergy(1)) throw new IllegalStateException("Axe presentation has no Axe Energy");
+            return AxeEnergy.representativeStack();
         }
         int stationSlot = CraftingStationTable.requiredSlot(recipe.getType());
         MachineEnergyTable.Entry station = MachineEnergyTable.get(stationSlot);
@@ -1604,8 +1704,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             Player player
     ) {
         if (crafts <= 0) return null;
-        ToolUsePlan toolUse = recipe instanceof AxeTransformationRecipe axeRecipe
-                ? planAxeUse(core, axeRecipe, crafts)
+        ToolUsePlan toolUse = recipe instanceof AxeTransformationRecipe
+                ? planAxeUse(core, crafts)
                 : null;
         if (recipe instanceof AxeTransformationRecipe && toolUse == null) return null;
         List<ItemStack> inventory = new ArrayList<>(PLAYER_INVENTORY_SLOTS);
@@ -1677,20 +1777,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     private static ToolUsePlan planAxeUse(
             StorageCoreBlockEntity core,
-            AxeTransformationRecipe recipe,
             long crafts
     ) {
-        ItemStack tool = AxeTransformationCatalog.installedTool(core);
-        int remaining = AxeTransformationCatalog.remainingDurability(tool);
-        if (crafts <= 0 || crafts > remaining || !tool.canPerformAction(recipe.ability())) return null;
-        int damage = Math.toIntExact(crafts);
-        ItemStack after = tool.copy();
-        if (crafts == remaining) {
-            after = ItemStack.EMPTY;
-        } else {
-            after.setDamageValue(Math.addExact(after.getDamageValue(), damage));
-        }
-        return new ToolUsePlan(ItemKey.of(tool), after);
+        return core.hasAxeEnergy(crafts) ? new ToolUsePlan(crafts) : null;
     }
 
     private static Map<ItemKey, Long> planPrimaryOutputs(
@@ -1841,10 +1930,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         core.beginMutationBatch();
         try {
             ToolUsePlan toolUse = delivery.toolUse();
-            if (toolUse != null) {
-                ItemStack currentTool = core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT);
-                if (currentTool.isEmpty() || !ItemKey.of(currentTool).equals(toolUse.before())) return false;
-            }
+            if (toolUse != null && !core.hasAxeEnergy(toolUse.amount())) return false;
             for (Map.Entry<Integer, PlayerReservation> entry : plan.playerReservations().entrySet()) {
                 ItemStack stack = player.getInventory().getItem(entry.getKey());
                 PlayerReservation reservation = entry.getValue();
@@ -1858,21 +1944,16 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 }
             }
 
-            List<ItemStack> extractedFromCore = new ArrayList<>();
+            Map<ItemKey, Long> extractedFromCore = new LinkedHashMap<>();
             for (Map.Entry<ItemKey, Long> entry : plan.coreReservations().entrySet()) {
-                long remaining = entry.getValue();
-                while (remaining > 0) {
-                    int chunk = (int) Math.min(remaining, Integer.MAX_VALUE);
-                    ItemStack extracted = core.extractItem(
-                            entry.getKey(), chunk, Action.EXECUTE, Actor.magicCrafting());
-                    if (extracted.getCount() != chunk) {
-                        if (!extracted.isEmpty()) extractedFromCore.add(extracted);
-                        rollbackCoreExtractions(core, extractedFromCore);
-                        return false;
-                    }
-                    extractedFromCore.add(extracted);
-                    remaining -= chunk;
+                long extracted = core.extractItemCount(
+                        entry.getKey(), entry.getValue(), Action.EXECUTE, Actor.magicCrafting());
+                if (extracted != entry.getValue()) {
+                    if (extracted > 0) extractedFromCore.put(entry.getKey(), extracted);
+                    rollbackCoreExtractions(core, extractedFromCore);
+                    return false;
                 }
+                extractedFromCore.put(entry.getKey(), extracted);
             }
             Map<ItemKey, Long> insertedOutputs = new LinkedHashMap<>();
             for (Map.Entry<ItemKey, Long> entry : delivery.coreOutputs().entrySet()) {
@@ -1890,9 +1971,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 rollbackCoreExtractions(core, extractedFromCore);
                 return false;
             }
-            if (toolUse != null) {
-                core.getMachineContainer().setItem(
-                        MachineEnergyTable.AXE_SLOT, toolUse.after().copy());
+            if (toolUse != null && !core.consumeAxeEnergy(toolUse.amount())) {
+                rollbackCoreOutputs(core, insertedOutputs);
+                rollbackCoreExtractions(core, extractedFromCore);
+                return false;
             }
             for (int slot = 0; slot < delivery.playerInventory().size(); slot++) {
                 player.getInventory().setItem(slot, delivery.playerInventory().get(slot).copy());
@@ -1911,49 +1993,29 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             long amount
     ) {
         if (amount <= 0 || core.getItemCount(key) < amount) return false;
-        long remaining = amount;
-        while (remaining > 0) {
-            int chunk = (int) Math.min(remaining, Integer.MAX_VALUE);
-            ItemStack simulated = core.extractItem(
-                    key, chunk, Action.SIMULATE, Actor.magicCrafting());
-            if (simulated.getCount() != chunk) return false;
-            remaining -= chunk;
-        }
-        return true;
+        return core.extractItemCount(key, amount, Action.SIMULATE, Actor.magicCrafting()) == amount;
     }
 
-    private void rollbackCoreExtractions(StorageCoreBlockEntity core, List<ItemStack> extractedStacks) {
-        for (ItemStack extracted : extractedStacks) {
-            int expected = extracted.getCount();
-            long restored = core.insertItem(extracted, Action.EXECUTE, Actor.magicCrafting());
-            if (restored != expected || !extracted.isEmpty()) {
+    private void rollbackCoreExtractions(StorageCoreBlockEntity core, Map<ItemKey, Long> extractedStacks) {
+        for (Map.Entry<ItemKey, Long> extracted : extractedStacks.entrySet()) {
+            long restored = core.insertItemCount(
+                    extracted.getKey(), extracted.getValue(), Action.EXECUTE, Actor.magicCrafting());
+            if (restored != extracted.getValue()) {
                 throw new IllegalStateException("Failed to roll back crafting ingredient extraction");
             }
         }
     }
 
     private long insertCoreOutput(StorageCoreBlockEntity core, ItemKey key, long amount) {
-        long inserted = 0;
-        while (inserted < amount) {
-            int chunk = (int) Math.min(amount - inserted, Integer.MAX_VALUE);
-            ItemStack stack = key.toStack(chunk);
-            long accepted = core.insertItem(stack, Action.EXECUTE, Actor.magicCrafting());
-            inserted += accepted;
-            if (accepted != chunk || !stack.isEmpty()) break;
-        }
-        return inserted;
+        return core.insertItemCount(key, amount, Action.EXECUTE, Actor.magicCrafting());
     }
 
     private void rollbackCoreOutputs(StorageCoreBlockEntity core, Map<ItemKey, Long> insertedOutputs) {
         for (Map.Entry<ItemKey, Long> entry : insertedOutputs.entrySet()) {
-            long remaining = entry.getValue();
-            while (remaining > 0) {
-                ItemStack extracted = core.extractItem(
-                        entry.getKey(), remaining, Action.EXECUTE, Actor.magicCrafting());
-                if (extracted.isEmpty()) {
-                    throw new IllegalStateException("Failed to roll back crafted output insertion");
-                }
-                remaining -= extracted.getCount();
+            long extracted = core.extractItemCount(
+                    entry.getKey(), entry.getValue(), Action.EXECUTE, Actor.magicCrafting());
+            if (extracted != entry.getValue()) {
+                throw new IllegalStateException("Failed to roll back crafted output insertion");
             }
         }
     }
@@ -2164,6 +2226,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
             if (core != null && (topologyChanged || machinesChanged
                     || playerInventoryChanged && usePlayerInventory)) {
+                if (machinesChanged) refreshEnergyAmounts(core);
                 if (topologyChanged || machinesChanged || page == CraftingTerminalPage.CRAFTABLE) {
                     refreshDisplayItems(core);
                 }
@@ -2188,6 +2251,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         for (EnergyType type : EnergyType.values()) {
             energyAmounts[type.ordinal()] = core.getEnergy(type);
         }
+        axeEnergyAmount = core.getAxeEnergy();
+        infiniteAxeEnergy = core.hasInfiniteAxeEnergy();
     }
 
     @Override
@@ -2245,7 +2310,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     private boolean switchPage(Player player, CraftingTerminalPage nextPage) {
         if (page == nextPage) return true;
-        if (page == CraftingTerminalPage.FUEL) returnFuelInput(player);
+        if (page == CraftingTerminalPage.FUEL) returnTransientInputs(player);
         page = nextPage;
         scrollOffset = 0;
         StorageCoreBlockEntity core = getCore(player.level());
@@ -2258,13 +2323,18 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     @Override
     public void removed(Player player) {
-        if (!player.level().isClientSide()) returnFuelInput(player);
+        if (!player.level().isClientSide()) returnTransientInputs(player);
         super.removed(player);
     }
 
-    private void returnFuelInput(Player player) {
-        if (fuelContainer == null) return;
-        ItemStack leftover = fuelContainer.removeItemNoUpdate(0);
+    private void returnTransientInputs(Player player) {
+        returnTransientInput(player, fuelContainer);
+        returnTransientInput(player, axeInputContainer);
+    }
+
+    private static void returnTransientInput(Player player, SimpleContainer container) {
+        if (container == null) return;
+        ItemStack leftover = container.removeItemNoUpdate(0);
         if (leftover.isEmpty()) return;
         if (!player.isAlive() || player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
                 && serverPlayer.hasDisconnected()) {

@@ -9,6 +9,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.Unbreakable;
 import net.minecraft.world.item.crafting.BlastingRecipe;
 import net.minecraft.world.item.crafting.CampfireCookingRecipe;
 import net.minecraft.world.item.crafting.CookingBookCategory;
@@ -17,7 +18,6 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.item.crafting.SmeltingRecipe;
 import net.minecraft.world.item.crafting.SmokingRecipe;
-import net.neoforged.neoforge.common.ItemAbilities;
 
 import java.util.HashSet;
 import java.util.ArrayList;
@@ -31,7 +31,7 @@ class SelfTest {
     static void runAll() {
         testItemKey();
         testAxeSyntheticDiscovery();
-        testAxeCatalogCacheKey();
+        testAxeEnergyContract();
         testFuelTable();
         testFuelAutoPriority();
         testRecipeEnergyTable();
@@ -86,31 +86,24 @@ class SelfTest {
                 !AxeTransformationCatalog.isSyntheticDiscoveryAllowed(arbitraryModBlock));
     }
 
-    private static void testAxeCatalogCacheKey() {
+    private static void testAxeEnergyContract() {
         ItemStack pristine = new ItemStack(Items.IRON_AXE);
         ItemStack damaged = pristine.copy();
         damaged.setDamageValue(17);
         ItemStack broken = pristine.copy();
         broken.setDamageValue(broken.getMaxDamage());
 
-        assertTrue("axe catalog cache ignores tool damage",
-                AxeTransformationCatalog.toolCacheKey(pristine)
-                        .equals(AxeTransformationCatalog.toolCacheKey(damaged))
-                        && AxeTransformationCatalog.toolCacheKey(pristine)
-                        .equals(AxeTransformationCatalog.toolCacheKey(broken)));
-        assertTrue("axe durability validation keeps exact installed damage",
-                AxeTransformationCatalog.remainingDurability(pristine) == pristine.getMaxDamage()
-                        && AxeTransformationCatalog.remainingDurability(damaged) == damaged.getMaxDamage() - 17
-                        && AxeTransformationCatalog.remainingDurability(broken) == 0);
-
-        ItemStack named = pristine.copy();
-        named.set(DataComponents.CUSTOM_NAME, Component.literal("Audit Axe"));
-        assertTrue("axe catalog cache preserves non-damage components",
-                !AxeTransformationCatalog.toolCacheKey(pristine)
-                        .equals(AxeTransformationCatalog.toolCacheKey(named)));
-        assertTrue("axe tool action validation keeps the exact installed item",
-                pristine.canPerformAction(ItemAbilities.AXE_STRIP)
-                        && !new ItemStack(Items.IRON_PICKAXE).canPerformAction(ItemAbilities.AXE_STRIP));
+        assertTrue("Axe Energy keeps exact remaining durability",
+                AxeEnergy.remainingDurability(pristine) == pristine.getMaxDamage()
+                        && AxeEnergy.remainingDurability(damaged) == damaged.getMaxDamage() - 17
+                        && AxeEnergy.remainingDurability(broken) == 0);
+        assertTrue("Axe Energy accepts axe actions and rejects unrelated tools",
+                AxeEnergy.accepts(pristine) && !AxeEnergy.accepts(new ItemStack(Items.IRON_PICKAXE)));
+        assertTrue("Unbreaking multiplier is exact level plus one",
+                AxeEnergy.scaledFiniteValue(5, 2, 1) == 15);
+        ItemStack unbreakable = pristine.copy();
+        unbreakable.set(DataComponents.UNBREAKABLE, new Unbreakable(false));
+        assertTrue("explicit Unbreakable becomes infinite Axe Energy", AxeEnergy.isInfinite(unbreakable));
     }
 
     private static void testEnergyCost() {
@@ -242,7 +235,7 @@ class SelfTest {
                 EnergyType.BLAZE_FUEL.representativeStack().is(Items.BLAZE_ROD));
         assertTrue("Bottle Energy uses glass bottle as its representative item",
                 EnergyType.BOTTLE_FUEL.representativeStack().is(Items.GLASS_BOTTLE));
-        assertTrue("9 installed machine and tool mappings", MachineEnergyTable.size() == 9);
+        assertTrue("9 station and consumable mappings", MachineEnergyTable.size() == 9);
         assertTrue("Furnace maps to smelting", MachineEnergyTable.get(0).machine() == Items.FURNACE
                 && MachineEnergyTable.get(0).energyType() == EnergyType.SMELTING_ENERGY);
         assertTrue("Blast Furnace maps to blasting", MachineEnergyTable.get(1).machine() == Items.BLAST_FURNACE
@@ -263,6 +256,18 @@ class SelfTest {
                 MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT).accepts(new ItemStack(Items.DIAMOND_AXE))
                         && !MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT)
                                 .accepts(new ItemStack(Items.DIAMOND_PICKAXE)));
+        assertTrue("process machines stack",
+                MachineEnergyTable.get(MachineEnergyTable.FURNACE_SLOT).category()
+                        == MachineEnergyTable.Category.PROCESS
+                        && MachineEnergyTable.get(MachineEnergyTable.FURNACE_SLOT).maxInstalledCount() == 64);
+        assertTrue("instant stations install exactly one",
+                MachineEnergyTable.get(MachineEnergyTable.CRAFTING_TABLE_SLOT).category()
+                        == MachineEnergyTable.Category.INSTANT
+                        && MachineEnergyTable.get(MachineEnergyTable.CRAFTING_TABLE_SLOT).maxInstalledCount() == 1);
+        assertTrue("axes are consumable energy input, not installed stations",
+                MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT).category()
+                        == MachineEnergyTable.Category.CONSUMABLE
+                        && MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT).maxInstalledCount() == 0);
         assertTrue("machine rate is one per installed block", MachineEnergyTable.get(0).energyPerTick() == 1);
     }
 

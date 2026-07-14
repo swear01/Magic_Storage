@@ -2301,6 +2301,12 @@ public class TerminalFlowTests {
             var be = level.getBlockEntity(corePos);
             if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
             core.rebuildNetwork(level);
+            ItemStack syncedAxe = new ItemStack(Items.IRON_AXE);
+            syncedAxe.setDamageValue(syncedAxe.getMaxDamage() - 37);
+            if (!core.addAxeEnergy(syncedAxe)) {
+                helper.fail("Could not seed finite Axe Energy for menu parity test");
+                return;
+            }
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var serverMenu = new CraftingTerminalMenu(34, player.getInventory(), core);
             var byteBuf = new net.minecraft.network.RegistryFriendlyByteBuf(
@@ -2319,7 +2325,7 @@ public class TerminalFlowTests {
             int serverCount = serverData.size();
             int bufCount = clientData.size();
             if (serverCount != bufCount) { helper.fail("crafting data-slot count mismatch: server=" + serverCount + " buf=" + bufCount); return; }
-            if (serverCount != 95) { helper.fail("crafting menu should sync base 11 + crafting/fuel/resource/output 84 data slots, got " + serverCount); return; }
+            if (serverCount != 100) { helper.fail("crafting menu should sync base 11 + crafting/fuel/resource/output/Axe Energy 89 data slots, got " + serverCount); return; }
             for (int i = 0; i < serverData.size(); i++) {
                 var wire = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
                 var packet = new net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket(
@@ -2330,6 +2336,10 @@ public class TerminalFlowTests {
             }
             if (bufMenu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
                 helper.fail("Client menu did not receive the server-owned Storage output destination");
+                return;
+            }
+            if (bufMenu.getAxeEnergyAmount() != 37 || bufMenu.hasInfiniteAxeEnergy()) {
+                helper.fail("Client menu did not receive exact finite Axe Energy state");
                 return;
             }
             if (serverMenu.slots.size() != 149 || bufMenu.slots.size() != 149) {

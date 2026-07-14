@@ -348,13 +348,17 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "process-machine slots",
                 "currently registered reserve",
                 "scroll its panel",
-                "Installed Stations",
+                "Stations & Axe Energy",
                 "two flow rows",
                 "lower-right Fuel control panel",
                 "Crafting Table",
                 "Stonecutter",
                 "Smithing Table",
-                "axe",
+                "accept only one",
+                "Axe Energy",
+                "consumed immediately",
+                "Unbreaking",
+                "infinity marker",
                 "Smithing Transform",
                 "strip",
                 "16×16",
@@ -385,6 +389,8 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 self.assertIn(expected, checklist)
             self.assertNotIn("Cooking Energy", checklist)
             self.assertNotIn("Installed Machines", checklist)
+            self.assertNotIn("reinstalled axe", checklist)
+            self.assertNotIn("lowers its raw durability", checklist)
             self.assertNotIn("Compact Grid", checklist)
             self.assertNotIn("all five", checklist)
             self.assertNotIn("all eight", checklist)

@@ -26,6 +26,8 @@ public final class RecipePresentation {
             "magic_storage:recipe_presentation_tool_available";
     private static final String TOOL_REQUIRED_KEY =
             "magic_storage:recipe_presentation_tool_required";
+    private static final String TOOL_INFINITE_KEY =
+            "magic_storage:recipe_presentation_tool_infinite";
 
     public enum ResourceKind {
         ITEM,
@@ -38,7 +40,8 @@ public final class RecipePresentation {
             ItemStack stack,
             EnergyType energyType,
             long available,
-            long required
+            long required,
+            boolean infinite
     ) {
         public Resource {
             Objects.requireNonNull(kind, "kind");
@@ -54,6 +57,9 @@ public final class RecipePresentation {
             } else if (energyType != null || stack.isEmpty()) {
                 throw new IllegalArgumentException("Item/tool resources require only an item stack");
             }
+            if (infinite && kind != ResourceKind.TOOL) {
+                throw new IllegalArgumentException("Only tool resources can be infinite");
+            }
         }
 
         @Override
@@ -62,15 +68,19 @@ public final class RecipePresentation {
         }
 
         public static Resource item(ItemStack stack, long available, long required) {
-            return new Resource(ResourceKind.ITEM, stack, null, available, required);
+            return new Resource(ResourceKind.ITEM, stack, null, available, required, false);
         }
 
         public static Resource energy(EnergyType type, long available, long required) {
-            return new Resource(ResourceKind.ENERGY, ItemStack.EMPTY, type, available, required);
+            return new Resource(ResourceKind.ENERGY, ItemStack.EMPTY, type, available, required, false);
         }
 
         public static Resource tool(ItemStack stack, long available, long required) {
-            return new Resource(ResourceKind.TOOL, stack, null, available, required);
+            return tool(stack, available, required, false);
+        }
+
+        public static Resource tool(ItemStack stack, long available, long required, boolean infinite) {
+            return new Resource(ResourceKind.TOOL, stack, null, available, required, infinite);
         }
     }
 
@@ -82,7 +92,8 @@ public final class RecipePresentation {
             boolean shapeless,
             int itemResourceCount,
             long toolAvailable,
-            long toolRequired
+            long toolRequired,
+            boolean toolInfinite
     ) {
         Metadata {
             Objects.requireNonNull(recipeId, "recipeId");
@@ -101,6 +112,9 @@ public final class RecipePresentation {
             }
             if ((toolRequired == 0) != (toolAvailable == 0)) {
                 throw new IllegalArgumentException("Tool availability and requirement must be present together");
+            }
+            if (toolInfinite && (toolRequired == 0 || toolAvailable != Long.MAX_VALUE)) {
+                throw new IllegalArgumentException("Infinite tool metadata requires an explicit available tool row");
             }
         }
     }
@@ -218,6 +232,7 @@ public final class RecipePresentation {
             tag.putInt(ITEM_RESOURCE_COUNT_KEY, metadata.itemResourceCount());
             tag.putLong(TOOL_AVAILABLE_KEY, metadata.toolAvailable());
             tag.putLong(TOOL_REQUIRED_KEY, metadata.toolRequired());
+            tag.putBoolean(TOOL_INFINITE_KEY, metadata.toolInfinite());
         });
         return carrier;
     }
@@ -238,6 +253,7 @@ public final class RecipePresentation {
         requireType(tag, ITEM_RESOURCE_COUNT_KEY, Tag.TAG_INT);
         requireType(tag, TOOL_AVAILABLE_KEY, Tag.TAG_LONG);
         requireType(tag, TOOL_REQUIRED_KEY, Tag.TAG_LONG);
+        requireType(tag, TOOL_INFINITE_KEY, Tag.TAG_BYTE);
         return new Metadata(
                 ResourceLocation.parse(tag.getString(ID_KEY)),
                 RecipePresentationKind.fromOrdinal(tag.getInt(KIND_KEY)),
@@ -246,7 +262,8 @@ public final class RecipePresentation {
                 tag.getBoolean(SHAPELESS_KEY),
                 tag.getInt(ITEM_RESOURCE_COUNT_KEY),
                 tag.getLong(TOOL_AVAILABLE_KEY),
-                tag.getLong(TOOL_REQUIRED_KEY));
+                tag.getLong(TOOL_REQUIRED_KEY),
+                tag.getBoolean(TOOL_INFINITE_KEY));
     }
 
     private static void requireType(CompoundTag tag, String key, int type) {

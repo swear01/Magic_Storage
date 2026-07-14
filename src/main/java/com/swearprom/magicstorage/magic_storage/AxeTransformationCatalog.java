@@ -2,7 +2,6 @@ package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
@@ -31,15 +30,13 @@ final class AxeTransformationCatalog {
             ItemAbilities.AXE_WAX_OFF
     );
 
-    private ItemKey cachedTool;
+    private boolean initialized;
     private List<RecipeHolder<?>> cachedRecipes = List.of();
     private Map<ResourceLocation, RecipeHolder<?>> cachedById = Map.of();
 
     List<RecipeHolder<?>> recipes(Level level, StorageCoreBlockEntity core) {
-        ItemStack tool = installedTool(core);
-        if (remainingDurability(tool) <= 0) return List.of();
-        ItemKey key = toolCacheKey(tool);
-        if (!key.equals(cachedTool)) rebuild(level, core.getBlockPos(), tool, key);
+        if (core == null || !core.hasAxeEnergy(1)) return List.of();
+        if (!initialized) rebuild(level, core.getBlockPos(), AxeEnergy.representativeStack());
         return cachedRecipes;
     }
 
@@ -48,27 +45,11 @@ final class AxeTransformationCatalog {
         return cachedById.get(id);
     }
 
-    static ItemStack installedTool(StorageCoreBlockEntity core) {
-        if (core == null) return ItemStack.EMPTY;
-        return core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT);
-    }
-
-    static int remainingDurability(ItemStack tool) {
-        if (tool.isEmpty() || tool.getMaxDamage() <= 0) return 0;
-        return Math.max(0, tool.getMaxDamage() - tool.getDamageValue());
-    }
-
     static boolean isSyntheticDiscoveryAllowed(ResourceLocation blockId) {
         return blockId != null && "minecraft".equals(blockId.getNamespace());
     }
 
-    static ItemKey toolCacheKey(ItemStack tool) {
-        ItemStack normalized = tool.copy();
-        normalized.remove(DataComponents.DAMAGE);
-        return ItemKey.of(normalized);
-    }
-
-    private void rebuild(Level level, BlockPos pos, ItemStack tool, ItemKey key) {
+    private void rebuild(Level level, BlockPos pos, ItemStack tool) {
         List<RecipeHolder<?>> recipes = new ArrayList<>();
         Map<ResourceLocation, RecipeHolder<?>> byId = new HashMap<>();
         ToolContext context = new ToolContext(level, tool, pos);
@@ -96,7 +77,7 @@ final class AxeTransformationCatalog {
             }
         }
         recipes.sort(Comparator.comparing(holder -> holder.id().toString()));
-        cachedTool = key;
+        initialized = true;
         cachedRecipes = List.copyOf(recipes);
         cachedById = Map.copyOf(byId);
     }

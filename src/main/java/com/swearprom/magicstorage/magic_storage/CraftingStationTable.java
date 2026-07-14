@@ -1,6 +1,5 @@
 package com.swearprom.magicstorage.magic_storage;
 
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
 
@@ -9,12 +8,7 @@ final class CraftingStationTable {
     }
 
     static boolean isAvailable(StorageCoreBlockEntity core, Recipe<?> recipe) {
-        if (recipe instanceof AxeTransformationRecipe axeRecipe) {
-            ItemStack tool = AxeTransformationCatalog.installedTool(core);
-            return MachineEnergyTable.isInstalled(core, MachineEnergyTable.AXE_SLOT)
-                    && AxeTransformationCatalog.remainingDurability(tool) > 0
-                    && tool.canPerformAction(axeRecipe.ability());
-        }
+        if (recipe instanceof AxeTransformationRecipe) return core != null && core.hasAxeEnergy(1);
         int slot = requiredSlot(recipe.getType());
         return slot >= 0 && MachineEnergyTable.isInstalled(core, slot);
     }

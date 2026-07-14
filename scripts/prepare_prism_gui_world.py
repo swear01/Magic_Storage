@@ -152,6 +152,16 @@ PLAYER_KIT = {
         {"slot": "inventory.15", "item": "minecraft:netherite_upgrade_smithing_template", "count": 1},
         {"slot": "inventory.16", "item": "minecraft:diamond_sword", "count": 1},
         {"slot": "inventory.17", "item": "minecraft:netherite_ingot", "count": 4},
+        {
+            "slot": "inventory.18",
+            "item": 'minecraft:iron_axe[minecraft:damage=100,minecraft:enchantments={levels:{"minecraft:unbreaking":2}}]',
+            "count": 1,
+        },
+        {
+            "slot": "inventory.19",
+            "item": "minecraft:iron_axe[minecraft:unbreakable={}]",
+            "count": 1,
+        },
     ],
 }
 
