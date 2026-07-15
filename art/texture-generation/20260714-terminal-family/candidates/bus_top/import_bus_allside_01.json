@@ -1,0 +1,30 @@
+{
+  "created_at_utc": "20260714T081536Z",
+  "type": "block",
+  "subject": "all-side passive import bus face",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "Front-on flat Minecraft 16x16 machine face, dark graphite shared casing, strong cyan four-way inward flow arrows converging into a central socket, accepts items from every side, perfectly mirrored around vertical half-pixel axis, centered, readable at 16 pixels, no text, no perspective.",
+  "size": 16,
+  "seed": 71423,
+  "reference_image": "selected/chassis.png",
+  "img2img": true,
+  "input": {
+    "prompt": "Front-on flat Minecraft 16x16 machine face, dark graphite shared casing, strong cyan four-way inward flow arrows converging into a central socket, accepts items from every side, perfectly mirrored around vertical half-pixel axis, centered, readable at 16 pixels, no text, no perspective.",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 1,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": false,
+    "seed": 71423,
+    "input_image": "[data:uri omitted]",
+    "strength": 0.62
+  },
+  "final_png": "candidates/bus_top/import_bus_allside_01.png",
+  "preview_png": "candidates/bus_top/import_bus_allside_01.preview.png",
+  "raw_png": "candidates/bus_top/import_bus_allside_01.raw.png"
+}

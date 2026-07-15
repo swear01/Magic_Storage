@@ -22,17 +22,103 @@ PALETTE_HEX = [
     "#C083FF",
     "#FF8A24",
     "#FFC060",
+    "#B46A3C",
+    "#E4E8F2",
+    "#4BC6A8",
+    "#5B5264",
 ]
 PALETTE = [tuple(bytes.fromhex(color[1:])) for color in PALETTE_HEX]
 VOID, SHADOW, DARK, MID, CASING, EDGE, HIGHLIGHT, LIGHT = PALETTE[:8]
-CYAN, BLUE, PURPLE, LIGHT_PURPLE, ORANGE, LIGHT_ORANGE = PALETTE[8:]
+CYAN, BLUE, PURPLE, LIGHT_PURPLE, ORANGE, LIGHT_ORANGE = PALETTE[8:14]
+COPPER, QUARTZ, PRISMARINE, NETHERITE = PALETTE[14:]
 CHASSIS_POINTS = sorted({
     (x, y)
     for y in range(16)
     for x in range(16)
     if x in (0, 1, 14, 15) or y in (0, 1, 14, 15)
 } | {(2, 2), (13, 2), (2, 13), (13, 13)})
-TIER_POSITIONS = [(x, 13) for x in range(5, 11)]
+TIER_ORNAMENTS = [
+    {
+        "role": "copper_bound_cell",
+        "accents": ["#B46A3C"],
+        "points": [(x, y, COPPER) for x, y in (
+            (6, 4), (9, 4), (6, 5), (9, 5),
+            (6, 10), (9, 10), (6, 11), (9, 11),
+        )],
+    },
+    {
+        "role": "iron_braced_double_node",
+        "accents": ["#AAB6CC"],
+        "points": [(x, y, LIGHT) for x, y in (
+            (4, 4), (11, 4), (4, 6), (11, 6),
+            (4, 9), (11, 9), (4, 11), (11, 11),
+            (6, 7), (9, 7), (6, 8), (9, 8),
+        )],
+    },
+    {
+        "role": "gold_lapis_lattice",
+        "accents": ["#FFC060", "#2EA8FF"],
+        "points": [
+            *[(x, y, LIGHT_ORANGE) for x, y in (
+                (4, 4), (11, 4), (5, 5), (10, 5),
+                (5, 10), (10, 10), (4, 11), (11, 11),
+            )],
+            *[(x, y, BLUE) for x, y in (
+                (6, 4), (9, 4), (4, 7), (11, 7),
+                (4, 8), (11, 8), (6, 11), (9, 11),
+            )],
+        ],
+    },
+    {
+        "role": "diamond_quartz_cross_frame",
+        "accents": ["#E4E8F2", "#3FDCE5"],
+        "points": [
+            *[(x, y, QUARTZ) for x, y in (
+                (5, 4), (6, 4), (9, 4), (10, 4),
+                (4, 5), (11, 5), (4, 6), (11, 6),
+                (4, 9), (11, 9), (4, 10), (11, 10),
+                (5, 11), (6, 11), (9, 11), (10, 11),
+            )],
+            *[(x, y, CYAN) for x, y in (
+                (7, 6), (8, 6), (7, 9), (8, 9),
+            )],
+        ],
+    },
+    {
+        "role": "prismarine_ender_halo",
+        "accents": ["#4BC6A8", "#9A5CE8"],
+        "points": [
+            *[(x, y, PRISMARINE) for x, y in (
+                (6, 4), (7, 4), (8, 4), (9, 4),
+                (4, 6), (11, 6), (4, 7), (11, 7),
+                (4, 8), (11, 8), (4, 9), (11, 9),
+                (6, 11), (7, 11), (8, 11), (9, 11),
+            )],
+            *[(x, y, PURPLE) for x, y in (
+                (5, 5), (10, 5), (6, 6), (9, 6),
+                (6, 9), (9, 9), (5, 10), (10, 10),
+            )],
+        ],
+    },
+    {
+        "role": "netherite_amethyst_crown_circuit",
+        "accents": ["#5B5264", "#C083FF"],
+        "points": [
+            *[(x, y, NETHERITE) for x, y in (
+                (6, 3), (7, 3), (8, 3), (9, 3),
+                (5, 4), (10, 4), (4, 5), (11, 5),
+                (3, 7), (12, 7), (3, 8), (12, 8),
+                (5, 11), (10, 11),
+            )],
+            *[(x, y, LIGHT_PURPLE) for x, y in (
+                (6, 4), (9, 4), (6, 5), (9, 5),
+                (5, 6), (10, 6), (6, 7), (9, 7),
+                (6, 8), (9, 8), (5, 9), (10, 9),
+                (7, 10), (8, 10),
+            )],
+        ],
+    },
+]
 SELECTED = ROOT / "selected"
 METADATA = ROOT / "metadata"
 
@@ -56,6 +142,12 @@ def apply_chassis(image, chassis):
         image.putpixel(point, chassis.getpixel(point))
 
 
+def mirror_x(image):
+    for y in range(16):
+        for x in range(8):
+            image.putpixel((15 - x, y), image.getpixel((x, y)))
+
+
 def panel(draw):
     draw.rectangle((3, 3, 12, 12), fill=EDGE)
     draw.rectangle((4, 4, 11, 11), fill=SHADOW)
@@ -64,66 +156,110 @@ def panel(draw):
 def core(image):
     draw = ImageDraw.Draw(image)
     panel(draw)
-    for x, y in ((7, 4), (8, 4), (6, 5), (7, 5), (8, 5), (9, 5),
-                 (5, 6), (6, 6), (7, 6), (8, 6), (9, 6), (10, 6),
-                 (5, 7), (6, 7), (7, 7), (8, 7), (9, 7), (10, 7),
-                 (5, 8), (6, 8), (7, 8), (8, 8), (9, 8), (10, 8),
-                 (6, 9), (7, 9), (8, 9), (9, 9), (7, 10), (8, 10)):
-        image.putpixel((x, y), PURPLE)
-    for point in ((7, 5), (8, 5), (7, 6), (8, 6), (6, 7), (7, 7),
-                  (8, 7), (9, 7), (7, 8), (8, 8), (7, 9), (8, 9)):
-        image.putpixel(point, CYAN)
-    image.putpixel((7, 6), LIGHT_PURPLE)
+    for y, left in ((4, 7), (5, 6), (6, 5), (7, 4), (8, 4), (9, 5), (10, 6), (11, 7)):
+        draw.line((left, y, 15 - left, y), fill=PURPLE)
+    draw.rectangle((6, 6, 9, 9), fill=CYAN)
+    draw.rectangle((6, 7, 9, 8), fill=PURPLE)
+    draw.rectangle((7, 7, 8, 8), fill=LIGHT_PURPLE)
 
 
 def storage_terminal(image):
     draw = ImageDraw.Draw(image)
     panel(draw)
-    draw.rectangle((4, 4, 11, 10), fill=DARK)
-    for left, top, color in ((5, 5, CYAN), (8, 5, BLUE), (5, 8, BLUE), (8, 8, CYAN)):
-        draw.rectangle((left, top, left + 1, top + 1), fill=color)
-    draw.point((10, 12), fill=PURPLE)
+    draw.rectangle((4, 4, 11, 11), fill=DARK)
+    for left, top, color in ((4, 4, CYAN), (9, 4, BLUE), (4, 9, BLUE), (9, 9, CYAN)):
+        draw.rectangle((left, top, left + 2, top + 2), fill=color)
+    draw.rectangle((7, 7, 8, 8), fill=PURPLE)
 
 
 def crafting_terminal(image):
     draw = ImageDraw.Draw(image)
     panel(draw)
     draw.rectangle((4, 4, 11, 11), fill=DARK)
-    for y in (5, 7, 9):
-        for x in (5, 7, 9):
-            draw.point((x, y), fill=PURPLE if (x, y) == (7, 7) else CYAN)
-    draw.point((8, 7), fill=LIGHT_PURPLE)
-    draw.line((10, 7, 11, 7), fill=BLUE)
+    for row, y in enumerate((4, 7, 10)):
+        for column, x in enumerate((4, 7, 10)):
+            color = PURPLE if (row, column) == (1, 1) else CYAN
+            draw.rectangle((x, y, x + 1, y + 1), fill=color)
+    draw.rectangle((6, 7, 9, 8), fill=PURPLE)
+    draw.rectangle((7, 7, 8, 8), fill=LIGHT_PURPLE)
 
 
 def storage_unit(image, tier):
     draw = ImageDraw.Draw(image)
     panel(draw)
-    draw.rectangle((5, 3, 10, 11), fill=EDGE)
-    draw.rectangle((6, 4, 9, 10), fill=DARK)
-    draw.rectangle((6, 7, 9, 10), fill=PURPLE)
-    draw.rectangle((7, 5, 8, 9), fill=CYAN)
-    draw.point((8, 5), fill=LIGHT_PURPLE)
-    for index, point in enumerate(TIER_POSITIONS):
-        image.putpixel(point, CYAN if index < tier else MID)
+    draw.rectangle((3, 3, 12, 12), fill=EDGE)
+    draw.rectangle((4, 4, 11, 11), fill=DARK)
+    draw.rectangle((6, 6, 9, 9), fill=SHADOW)
+    draw.rectangle((7, 7, 8, 8), fill=CASING)
+    for x, y, color in TIER_ORNAMENTS[tier - 1]["points"]:
+        image.putpixel((x, y), color)
 
 
-def bus_top(image):
+def connected_sheet(source):
+    states = [
+        (False, False, False, False, False),
+        (True, True, True, True, False),
+        (True, False, True, False, False),
+        (False, True, False, True, False),
+        (True, True, True, True, True),
+    ]
+    sheet = Image.new("RGBA", (80, 16), (0, 0, 0, 0))
+    for index, (top, right, bottom, left, preserve_corners) in enumerate(states):
+        tile = source.copy()
+        draw = ImageDraw.Draw(tile)
+        edge_start = 2 if preserve_corners else 0
+        edge_end = 13 if preserve_corners else 15
+        if top:
+            draw.rectangle((edge_start, 0, edge_end, 1), fill=SHADOW)
+            draw.rectangle((7, 0, 8, 1), fill=CYAN)
+        if right:
+            draw.rectangle((14, edge_start, 15, edge_end), fill=SHADOW)
+            draw.rectangle((14, 7, 15, 8), fill=CYAN)
+        if bottom:
+            draw.rectangle((edge_start, 14, edge_end, 15), fill=SHADOW)
+            draw.rectangle((7, 14, 8, 15), fill=CYAN)
+        if left:
+            draw.rectangle((0, edge_start, 1, edge_end), fill=SHADOW)
+            draw.rectangle((0, 7, 1, 8), fill=CYAN)
+        sheet.alpha_composite(tile, (index * 16, 0))
+    return sheet
+
+
+def bus_top(image, inward):
     draw = ImageDraw.Draw(image)
     panel(draw)
-    draw.line((7, 4, 7, 11), fill=CYAN)
-    draw.line((4, 7, 11, 7), fill=CYAN)
+    color = BLUE if inward else ORANGE
+    bright = CYAN if inward else LIGHT_ORANGE
     draw.rectangle((7, 7, 8, 8), fill=PURPLE)
-    draw.point((8, 7), fill=LIGHT_PURPLE)
+    draw.line((7, 3, 7, 6), fill=color)
+    draw.line((8, 3, 8, 6), fill=color)
+    draw.line((3, 7, 6, 7), fill=color)
+    draw.line((3, 8, 6, 8), fill=color)
+    if inward:
+        for point in ((6, 6), (9, 6), (6, 9), (9, 9)):
+            draw.point(point, fill=bright)
+    else:
+        for point in ((3, 6), (12, 6), (3, 9), (12, 9)):
+            draw.point(point, fill=bright)
+    draw.rectangle((7, 7, 8, 8), fill=PURPLE)
+    draw.rectangle((7, 7, 8, 8), fill=LIGHT_PURPLE)
 
 
-def bus_side(image):
+def bus_side(image, inward):
     draw = ImageDraw.Draw(image)
     panel(draw)
+    color = BLUE if inward else ORANGE
+    bright = CYAN if inward else LIGHT_ORANGE
     draw.rectangle((3, 6, 12, 9), fill=DARK)
-    draw.line((3, 7, 12, 7), fill=CYAN)
+    draw.line((3, 7, 12, 7), fill=color)
+    draw.line((3, 8, 12, 8), fill=color)
     draw.rectangle((7, 6, 8, 8), fill=PURPLE)
-    draw.point((8, 7), fill=LIGHT_PURPLE)
+    if inward:
+        draw.line((4, 6, 6, 6), fill=bright)
+        draw.line((9, 6, 11, 6), fill=bright)
+    else:
+        draw.line((3, 9, 5, 9), fill=bright)
+        draw.line((10, 9, 12, 9), fill=bright)
 
 
 def directional_bus(image, inward):
@@ -163,7 +299,7 @@ def remote(image):
     draw.line((8, 12, 11, 12), fill=CYAN)
 
 
-def normalize_metadata(group, candidate):
+def normalize_metadata(group, candidate, metadata_name=None):
     source = ROOT / f"candidates/{group}/{candidate}.json"
     original = json.loads(source.read_text())
     output = {
@@ -183,7 +319,7 @@ def normalize_metadata(group, candidate):
         "selected_candidate": f"candidates/{group}/{candidate}.png",
         "postprocess": "nearest shared palette, shared chassis mask, semantic pixel cleanup",
     }
-    path = METADATA / f"{group}.json"
+    path = METADATA / f"{metadata_name or group}.json"
     path.write_text(json.dumps(output, indent=2) + "\n")
     return path.relative_to(ROOT).as_posix()
 
@@ -224,8 +360,8 @@ def control_atlas():
     descending |= {(x, 4) for x in range(7, 10)} | {(x, 8) for x in range(7, 12)}
     descending |= {(x, 12) for x in range(7, 13)}
     points(1, descending)
-    name = {(3, y) for y in range(5, 13)} | {(10, y) for y in range(5, 13)}
-    name |= {(x, 4) for x in range(4, 10)} | {(x, 8) for x in range(3, 11)}
+    name = {(4, y) for y in range(5, 13)} | {(11, y) for y in range(5, 13)}
+    name |= {(x, 4) for x in range(5, 11)} | {(x, 8) for x in range(4, 12)}
     points(2, name)
     quantity = {(x, y) for x in (3, 4) for y in range(10, 13)}
     quantity |= {(x, y) for x in (7, 8) for y in range(7, 13)}
@@ -255,11 +391,28 @@ def control_atlas():
     return path
 
 
+def control_contact_sheet(path):
+    scale = 12
+    cell = 16 * scale
+    label_height = 36
+    source = Image.open(path).convert("RGBA")
+    sheet = Image.new("RGBA", (16 * cell, cell + label_height), (53, 56, 65, 255))
+    draw = ImageDraw.Draw(sheet)
+    for index in range(16):
+        icon = source.crop((index * 16, 0, index * 16 + 16, 16))
+        icon = icon.resize((cell, cell), Image.Resampling.NEAREST)
+        sheet.alpha_composite(icon, (index * cell, 0))
+        draw.line((index * cell, 0, index * cell, sheet.height), fill=(70, 74, 84, 255))
+        draw.text((index * cell + 2, cell + 4), str(index), fill=(155, 160, 172, 255))
+    sheet.save(ROOT / "selected-terminal-controls.png")
+
+
 def save_member(name, source, transform):
     image = quantized(source)
     chassis = Image.open(SELECTED / "chassis.png").convert("RGBA")
     apply_chassis(image, chassis)
     transform(image)
+    mirror_x(image)
     path = SELECTED / f"{name}.png"
     image.save(path)
     return path
@@ -283,10 +436,39 @@ def contact_sheet(paths):
     sheet.save(ROOT / "selected-contact-sheet.png")
 
 
+def connected_contact_sheet(paths):
+    scale = 4
+    cell_width = 80 * scale
+    cell_height = 16 * scale
+    label_height = 24
+    columns = 2
+    rows = (len(paths) + columns - 1) // columns
+    sheet = Image.new(
+        "RGBA",
+        (columns * (cell_width + 18), rows * (cell_height + label_height)),
+        (234, 234, 234, 255),
+    )
+    draw = ImageDraw.Draw(sheet)
+    for index, path in enumerate(paths):
+        left = (index % columns) * (cell_width + 18)
+        top = (index // columns) * (cell_height + label_height)
+        image = Image.open(path).convert("RGBA").resize(
+            (cell_width, cell_height),
+            Image.Resampling.NEAREST,
+        )
+        sheet.alpha_composite(image, (left, top))
+        draw.rectangle((left, top, left + cell_width - 1, top + cell_height - 1), outline=(55, 55, 55, 255))
+        draw.text((left + 2, top + cell_height + 4), path.stem, fill=(25, 25, 25, 255))
+    sheet.save(ROOT / "selected-connected-contact-sheet.png")
+
+
 def main():
     SELECTED.mkdir(parents=True, exist_ok=True)
     METADATA.mkdir(parents=True, exist_ok=True)
     normalize_candidate_metadata()
+    chassis = quantized("candidates/chassis/shared_chassis_04.png")
+    mirror_x(chassis)
+    chassis.save(SELECTED / "chassis.png")
     member_paths = {}
     member_paths["storage_core"] = save_member(
         "storage_core", "candidates/storage_core/storage_core_02.png", core)
@@ -297,14 +479,21 @@ def main():
     for tier in range(1, 7):
         member_paths[f"storage_unit_t{tier}"] = save_member(
             f"storage_unit_t{tier}",
-            "candidates/storage_unit_base/storage_unit_base_02.png",
+            "candidates/storage_unit_base/storage_unit_base_03.png",
             lambda image, tier=tier: storage_unit(image, tier),
         )
-    for prefix in ("import", "export"):
-        member_paths[f"{prefix}_bus_top"] = save_member(
-            f"{prefix}_bus_top", "candidates/bus_top/bus_top_01.png", bus_top)
-        member_paths[f"{prefix}_bus_side"] = save_member(
-            f"{prefix}_bus_side", "candidates/bus_side/bus_side_01.png", bus_side)
+    member_paths["import_bus_top"] = save_member(
+        "import_bus_top", "candidates/bus_top/import_bus_allside_01.png",
+        lambda image: bus_top(image, True))
+    member_paths["import_bus_side"] = save_member(
+        "import_bus_side", "candidates/bus_top/import_bus_allside_01.png",
+        lambda image: bus_side(image, True))
+    member_paths["export_bus_top"] = save_member(
+        "export_bus_top", "candidates/bus_top/export_bus_conduit_01.png",
+        lambda image: bus_top(image, False))
+    member_paths["export_bus_side"] = save_member(
+        "export_bus_side", "candidates/bus_top/export_bus_conduit_01.png",
+        lambda image: bus_side(image, False))
     member_paths["import_bus_front"] = save_member(
         "import_bus_front", "candidates/import_bus_front/import_bus_front_01.png",
         lambda image: directional_bus(image, True))
@@ -315,19 +504,23 @@ def main():
     remote(remote_image)
     member_paths["remote_terminal"] = SELECTED / "remote_terminal.png"
     remote_image.save(member_paths["remote_terminal"])
-    control_atlas()
+    control_source = control_atlas()
+    control_contact_sheet(control_source)
 
     metadata = {
         "storage_core": normalize_metadata("storage_core", "storage_core_02"),
         "storage_terminal": normalize_metadata("storage_terminal", "storage_terminal_02"),
         "crafting_terminal": normalize_metadata("crafting_terminal", "crafting_terminal_01"),
-        "storage_unit": normalize_metadata("storage_unit_base", "storage_unit_base_02"),
-        "bus_top": normalize_metadata("bus_top", "bus_top_01"),
-        "bus_side": normalize_metadata("bus_side", "bus_side_01"),
+        "storage_unit": normalize_metadata("storage_unit_base", "storage_unit_base_03"),
+        "import_bus_allside": normalize_metadata(
+            "bus_top", "import_bus_allside_01", "import_bus_allside"),
+        "export_bus_conduit": normalize_metadata(
+            "bus_top", "export_bus_conduit_01", "export_bus_conduit"),
         "import_bus_front": normalize_metadata("import_bus_front", "import_bus_front_01"),
         "export_bus_front": normalize_metadata("export_bus_front", "export_bus_front_01"),
         "remote_terminal": normalize_metadata("remote_terminal", "remote_terminal_02"),
     }
+    normalize_metadata("bus_top", "bus_top_01")
     roles = {
         "storage_core": "core_rune_crystal",
         "storage_terminal": "storage_item_grid",
@@ -346,10 +539,10 @@ def main():
         "storage_terminal": metadata["storage_terminal"],
         "crafting_terminal": metadata["crafting_terminal"],
         **{f"storage_unit_t{tier}": metadata["storage_unit"] for tier in range(1, 7)},
-        "import_bus_top": metadata["bus_top"],
-        "export_bus_top": metadata["bus_top"],
-        "import_bus_side": metadata["bus_side"],
-        "export_bus_side": metadata["bus_side"],
+        "import_bus_top": metadata["import_bus_allside"],
+        "export_bus_top": metadata["export_bus_conduit"],
+        "import_bus_side": metadata["import_bus_allside"],
+        "export_bus_side": metadata["export_bus_conduit"],
         "import_bus_front": metadata["import_bus_front"],
         "export_bus_front": metadata["export_bus_front"],
         "remote_terminal": metadata["remote_terminal"],
@@ -367,16 +560,61 @@ def main():
             "metadata": metadata_for[name],
             "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         }
+        if category == "block":
+            members[texture_id]["symmetry_axes"] = ["x"]
+        runtime_path = PROJECT / runtime
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_path.write_bytes(source.read_bytes())
+    control_runtime = PROJECT / "src/main/resources/assets/magic_storage/textures/gui/terminal_controls.png"
+    control_runtime.write_bytes(control_source.read_bytes())
+    connected_names = [
+        "storage_core",
+        *[f"storage_unit_t{tier}" for tier in range(1, 7)],
+        "storage_terminal",
+        "crafting_terminal",
+        "import_bus_top",
+        "import_bus_side",
+        "export_bus_top",
+        "export_bus_side",
+    ]
+    connected_members = {}
+    connected_paths = []
+    for name in connected_names:
+        source = member_paths[name]
+        selected_connected = SELECTED / f"{name}_connected.png"
+        connected_sheet(Image.open(source).convert("RGBA")).save(selected_connected)
+        connected_paths.append(selected_connected)
+        runtime = f"src/main/resources/assets/magic_storage/textures/block/{name}_connected.png"
+        runtime_path = PROJECT / runtime
+        runtime_path.write_bytes(selected_connected.read_bytes())
+        metadata_path = runtime_path.with_suffix(".png.mcmeta")
+        metadata_path.write_text(json.dumps({
+            "fusion": {
+                "type": "connecting",
+                "layout": "pieced",
+            }
+        }, indent=2) + "\n")
+        texture_id = f"magic_storage:block/{name}_connected"
+        connected_members[texture_id] = {
+            "base": f"magic_storage:block/{name}",
+            "runtime": runtime,
+            "source": selected_connected.relative_to(ROOT).as_posix(),
+            "metadata": metadata_path.relative_to(PROJECT).as_posix(),
+            "layout": "pieced",
+            "tiles": 5,
+            "sha256": hashlib.sha256(selected_connected.read_bytes()).hexdigest(),
+        }
     icons = [
         "SORT_ASCENDING", "SORT_DESCENDING", "SORT_NAME", "SORT_QUANTITY", "SORT_MOD",
         "SORT_ID", "SEARCH", "SEARCH_TAG", "SEARCH_MOD", "PREVIOUS", "NEXT",
     ]
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "model": "retro-diffusion/rd-fast",
         "runtime_size": [16, 16],
         "settings": {
             "seed": 71421,
+            "revision_seeds": [71422, 71423, 71424],
             "block_img2img_strength": 0.38,
             "item_img2img_strength": 0.68,
             "style": "mc_texture/mc_item",
@@ -388,12 +626,17 @@ def main():
             "selected_candidate": "candidates/chassis/shared_chassis_04.png",
             "points": [list(point) for point in CHASSIS_POINTS],
         },
-        "tier_bar": {
-            "positions": [list(point) for point in TIER_POSITIONS],
-            "active": "#3FDCE5",
-            "inactive": "#2A303D",
-        },
+        "tier_ornaments": [
+            {
+                "tier": tier,
+                "role": ornament["role"],
+                "accents": ornament["accents"],
+                "detail_points": [[x, y] for x, y, _ in ornament["points"]],
+            }
+            for tier, ornament in enumerate(TIER_ORNAMENTS, 1)
+        ],
         "members": members,
+        "connected_textures": connected_members,
         "control_atlas": {
             "runtime": "src/main/resources/assets/magic_storage/textures/gui/terminal_controls.png",
             "source": "selected/terminal_controls.png",
@@ -404,10 +647,16 @@ def main():
             ],
             "sha256": hashlib.sha256((SELECTED / "terminal_controls.png").read_bytes()).hexdigest(),
         },
-        "contact_sheets": ["chassis-contact-sheet.png", "candidate-contact-sheet.png", "selected-contact-sheet.png"],
+        "contact_sheets": [
+            "chassis-contact-sheet.png",
+            "candidate-contact-sheet.png",
+            "selected-contact-sheet.png",
+            "selected-connected-contact-sheet.png",
+        ],
     }
     (ROOT / "selection.json").write_text(json.dumps(manifest, indent=2) + "\n")
     contact_sheet([member_paths[name] for name in roles])
+    connected_contact_sheet(connected_paths)
 
 
 if __name__ == "__main__":

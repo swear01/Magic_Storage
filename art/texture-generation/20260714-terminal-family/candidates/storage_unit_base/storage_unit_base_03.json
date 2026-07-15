@@ -1,0 +1,30 @@
+{
+  "created_at_utc": "20260714T081524Z",
+  "type": "block",
+  "subject": "symmetric modular storage unit face",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "Front-on flat Minecraft 16x16 machine face, dark graphite shared casing, bold centered six-level storage drawer or capacity meter, cyan and violet magic accents, perfectly mirrored around the vertical half-pixel axis, even-grid centered, highly readable role silhouette, no text, no perspective, no scenery.",
+  "size": 16,
+  "seed": 71422,
+  "reference_image": "selected/chassis.png",
+  "img2img": true,
+  "input": {
+    "prompt": "Front-on flat Minecraft 16x16 machine face, dark graphite shared casing, bold centered six-level storage drawer or capacity meter, cyan and violet magic accents, perfectly mirrored around the vertical half-pixel axis, even-grid centered, highly readable role silhouette, no text, no perspective, no scenery.",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 1,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": false,
+    "seed": 71422,
+    "input_image": "[data:uri omitted]",
+    "strength": 0.62
+  },
+  "final_png": "candidates/storage_unit_base/storage_unit_base_03.png",
+  "preview_png": "candidates/storage_unit_base/storage_unit_base_03.preview.png",
+  "raw_png": "candidates/storage_unit_base/storage_unit_base_03.raw.png"
+}

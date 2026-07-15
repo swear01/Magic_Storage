@@ -1,0 +1,26 @@
+{
+  "created_at_utc": "20260714T121940Z",
+  "type": "item",
+  "subject": "one open-ended crescent wrench tool, clearly visible U-shaped iron jaws at upper right, long straight copper handle toward lower left, tiny centered amethyst pivot, crisp high-contrast Minecraft vanilla 16x16 pixel item sprite, simple silhouette, transparent background, no hammer head, no axe blade, no text, no frame, no hand",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_item",
+  "tileable": false,
+  "prompt": "one open-ended crescent wrench tool, clearly visible U-shaped iron jaws at upper right, long straight copper handle toward lower left, tiny centered amethyst pivot, crisp high-contrast Minecraft vanilla 16x16 pixel item sprite, simple silhouette, transparent background, no hammer head, no axe blade, no text, no frame, no hand",
+  "size": 16,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "one open-ended crescent wrench tool, clearly visible U-shaped iron jaws at upper right, long straight copper handle toward lower left, tiny centered amethyst pivot, crisp high-contrast Minecraft vanilla 16x16 pixel item sprite, simple silhouette, transparent background, no hammer head, no axe blade, no text, no frame, no hand",
+    "style": "mc_item",
+    "width": 16,
+    "height": 16,
+    "num_images": 1,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": true,
+    "bypass_prompt_expansion": false
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260714-wrench/candidates/wrench_02.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260714-wrench/candidates/wrench_02.preview.png",
+  "raw_png": null
+}

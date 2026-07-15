@@ -1,1 +1,6 @@
-{"parent":"magic_storage:block/crafting_terminal"}
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "magic_storage:block/crafting_terminal"
+  }
+}

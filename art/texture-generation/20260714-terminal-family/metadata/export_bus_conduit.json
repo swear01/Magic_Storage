@@ -1,0 +1,30 @@
+{
+  "created_at_utc": "20260714T081546Z",
+  "type": "block",
+  "subject": "export bus conduit face",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "Front-on flat Minecraft 16x16 machine face, dark graphite shared casing, strong orange conduit and four-way outward flow arrows leaving a central socket, export identity, perfectly mirrored around vertical half-pixel axis, centered, readable at 16 pixels, no text, no perspective.",
+  "size": 16,
+  "seed": 71424,
+  "reference_image": "selected/chassis.png",
+  "img2img": true,
+  "input": {
+    "prompt": "Front-on flat Minecraft 16x16 machine face, dark graphite shared casing, strong orange conduit and four-way outward flow arrows leaving a central socket, export identity, perfectly mirrored around vertical half-pixel axis, centered, readable at 16 pixels, no text, no perspective.",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 1,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": false,
+    "seed": 71424,
+    "input_image": "[data:uri omitted]",
+    "strength": 0.62
+  },
+  "prediction": "candidates/bus_top/export_bus_conduit_01.raw.png",
+  "selected_candidate": "candidates/bus_top/export_bus_conduit_01.png",
+  "postprocess": "nearest shared palette, shared chassis mask, semantic pixel cleanup"
+}

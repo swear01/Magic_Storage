@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "model": "retro-diffusion/rd-fast",
   "runtime_size": [
     16,
@@ -7,6 +7,11 @@
   ],
   "settings": {
     "seed": 71421,
+    "revision_seeds": [
+      71422,
+      71423,
+      71424
+    ],
     "block_img2img_strength": 0.38,
     "item_img2img_strength": 0.68,
     "style": "mc_texture/mc_item"
@@ -25,7 +30,11 @@
     "#9A5CE8",
     "#C083FF",
     "#FF8A24",
-    "#FFC060"
+    "#FFC060",
+    "#B46A3C",
+    "#E4E8F2",
+    "#4BC6A8",
+    "#5B5264"
   ],
   "chassis": {
     "source": "selected/chassis.png",
@@ -498,148 +507,774 @@
       ]
     ]
   },
-  "tier_bar": {
-    "positions": [
-      [
-        5,
-        13
+  "tier_ornaments": [
+    {
+      "tier": 1,
+      "role": "copper_bound_cell",
+      "accents": [
+        "#B46A3C"
       ],
-      [
-        6,
-        13
-      ],
-      [
-        7,
-        13
-      ],
-      [
-        8,
-        13
-      ],
-      [
-        9,
-        13
-      ],
-      [
-        10,
-        13
+      "detail_points": [
+        [
+          6,
+          4
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          9,
+          5
+        ],
+        [
+          6,
+          10
+        ],
+        [
+          9,
+          10
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          9,
+          11
+        ]
       ]
-    ],
-    "active": "#3FDCE5",
-    "inactive": "#2A303D"
-  },
+    },
+    {
+      "tier": 2,
+      "role": "iron_braced_double_node",
+      "accents": [
+        "#AAB6CC"
+      ],
+      "detail_points": [
+        [
+          4,
+          4
+        ],
+        [
+          11,
+          4
+        ],
+        [
+          4,
+          6
+        ],
+        [
+          11,
+          6
+        ],
+        [
+          4,
+          9
+        ],
+        [
+          11,
+          9
+        ],
+        [
+          4,
+          11
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          9,
+          7
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          9,
+          8
+        ]
+      ]
+    },
+    {
+      "tier": 3,
+      "role": "gold_lapis_lattice",
+      "accents": [
+        "#FFC060",
+        "#2EA8FF"
+      ],
+      "detail_points": [
+        [
+          4,
+          4
+        ],
+        [
+          11,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          10,
+          5
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          4,
+          11
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          11,
+          7
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          11,
+          8
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          9,
+          11
+        ]
+      ]
+    },
+    {
+      "tier": 4,
+      "role": "diamond_quartz_cross_frame",
+      "accents": [
+        "#E4E8F2",
+        "#3FDCE5"
+      ],
+      "detail_points": [
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          10,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          11,
+          5
+        ],
+        [
+          4,
+          6
+        ],
+        [
+          11,
+          6
+        ],
+        [
+          4,
+          9
+        ],
+        [
+          11,
+          9
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          11,
+          10
+        ],
+        [
+          5,
+          11
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          9,
+          11
+        ],
+        [
+          10,
+          11
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          7,
+          9
+        ],
+        [
+          8,
+          9
+        ]
+      ]
+    },
+    {
+      "tier": 5,
+      "role": "prismarine_ender_halo",
+      "accents": [
+        "#4BC6A8",
+        "#9A5CE8"
+      ],
+      "detail_points": [
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          4
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          4,
+          6
+        ],
+        [
+          11,
+          6
+        ],
+        [
+          4,
+          7
+        ],
+        [
+          11,
+          7
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          11,
+          8
+        ],
+        [
+          4,
+          9
+        ],
+        [
+          11,
+          9
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          7,
+          11
+        ],
+        [
+          8,
+          11
+        ],
+        [
+          9,
+          11
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          10,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          9,
+          6
+        ],
+        [
+          6,
+          9
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          10,
+          10
+        ]
+      ]
+    },
+    {
+      "tier": 6,
+      "role": "netherite_amethyst_crown_circuit",
+      "accents": [
+        "#5B5264",
+        "#C083FF"
+      ],
+      "detail_points": [
+        [
+          6,
+          3
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          9,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          10,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          11,
+          5
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          12,
+          7
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          12,
+          8
+        ],
+        [
+          5,
+          11
+        ],
+        [
+          10,
+          11
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          9,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          10,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          9,
+          7
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          9,
+          8
+        ],
+        [
+          5,
+          9
+        ],
+        [
+          10,
+          9
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          10
+        ]
+      ]
+    }
+  ],
   "members": {
     "magic_storage:block/storage_core": {
       "role": "core_rune_crystal",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_core.png",
       "source": "selected/storage_core.png",
       "metadata": "metadata/storage_core.json",
-      "sha256": "5c4c9322f10a4a6273d31d7415eca07bc0cc4ed8e57993cc2447114ac614ab36"
+      "sha256": "31a49c64a0d397d2668cc594ac1d8a0ddb8371d4243f4cce7622c678b5ab5059",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/storage_terminal": {
       "role": "storage_item_grid",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_terminal.png",
       "source": "selected/storage_terminal.png",
       "metadata": "metadata/storage_terminal.json",
-      "sha256": "1371fe8fdc2f3bd59fe4219e350ec9eabd097f4a43ebfe31457eb924c4f1a78a"
+      "sha256": "57bec00c61b5868bd1bd933b82069bb307d605cdace0fc9b9c1d55fdefd71ce0",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/crafting_terminal": {
       "role": "crafting_grid_mark",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/crafting_terminal.png",
       "source": "selected/crafting_terminal.png",
       "metadata": "metadata/crafting_terminal.json",
-      "sha256": "9aab75cf445c49535191b20c685d4351d8b4ce9ee222c47f0185d7a59220f76f"
+      "sha256": "1d26e5e433bc8dfb93ea823b076644a43a4d226730c451362f4fe4c2c8f08014",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/storage_unit_t1": {
       "role": "storage_cell_tier_1",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t1.png",
       "source": "selected/storage_unit_t1.png",
       "metadata": "metadata/storage_unit_base.json",
-      "sha256": "5abbdad9f8a39299cb080d5ff33ef1ae22e313b9cd35b84050c46e50cbaeb253"
+      "sha256": "4722f9d518353528247c601a6ce61f54a54dad3d4e153601eb956d42ae191f4b",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/storage_unit_t2": {
       "role": "storage_cell_tier_2",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t2.png",
       "source": "selected/storage_unit_t2.png",
       "metadata": "metadata/storage_unit_base.json",
-      "sha256": "63328b1d0bce62201b3efc08d992b608c64c2b6d72ff7732bfee42499d3ceefc"
+      "sha256": "46bac55958ce6353a08829e1731e6bb36c0a95abd4eaa03351d40b0960408757",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/storage_unit_t3": {
       "role": "storage_cell_tier_3",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t3.png",
       "source": "selected/storage_unit_t3.png",
       "metadata": "metadata/storage_unit_base.json",
-      "sha256": "a4e7674dfb84b7fdf4575235dce077b8a8a477e8c9d14ae0d0fe7f6ab12787db"
+      "sha256": "deb38068ce29fc4023b8abe7652f1a55e895e34946e4af3cbfa153fc1e949fb9",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/storage_unit_t4": {
       "role": "storage_cell_tier_4",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t4.png",
       "source": "selected/storage_unit_t4.png",
       "metadata": "metadata/storage_unit_base.json",
-      "sha256": "b76263d47d12649eda6b807e7911d51dd06fea8f4b9ffee47da9eca35034389f"
+      "sha256": "1123b5cddd8aa3c82fe101380138a8148fbbecd9a6550829c025a86e262f41e1",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/storage_unit_t5": {
       "role": "storage_cell_tier_5",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t5.png",
       "source": "selected/storage_unit_t5.png",
       "metadata": "metadata/storage_unit_base.json",
-      "sha256": "d33db0a3c5a510bc304800a037a0d049f2bf50aceff94bbfe6d5628859b80c49"
+      "sha256": "8c8b606c6949396981a87596e5b3b4f9457fb56adf157b08541d305460953176",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/storage_unit_t6": {
       "role": "storage_cell_tier_6",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/storage_unit_t6.png",
       "source": "selected/storage_unit_t6.png",
       "metadata": "metadata/storage_unit_base.json",
-      "sha256": "3e90243674e8c22962e3b38ee1ae38d7c19304a2acb3768f13f9c04f0becbc0e"
+      "sha256": "503d3344022976f863718cfa1dcaf1e18dc6d60cb7e45a82cfb1ce1645f83604",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/import_bus_top": {
       "role": "import_casing_top",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/import_bus_top.png",
       "source": "selected/import_bus_top.png",
-      "metadata": "metadata/bus_top.json",
-      "sha256": "d9bef922c62d52008822268d221637d655d028490dd775df2758f7c681ace999"
+      "metadata": "metadata/import_bus_allside.json",
+      "sha256": "ee0fd13ba7fd57a6b4e69db49caf4942b7fdac3a5ed6ed6c8c6c8578183002dd",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/import_bus_side": {
       "role": "import_casing_side",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/import_bus_side.png",
       "source": "selected/import_bus_side.png",
-      "metadata": "metadata/bus_side.json",
-      "sha256": "84a915fd762d8deb7a9b14602c2e7840bdedc132e77b8c486a9c216f7eab2931"
+      "metadata": "metadata/import_bus_allside.json",
+      "sha256": "fb22bf411889726152146320ed7778d723fe22a51c910e34e57b0325515ad62e",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/import_bus_front": {
       "role": "import_inward_arrow",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/import_bus_front.png",
       "source": "selected/import_bus_front.png",
       "metadata": "metadata/import_bus_front.json",
-      "sha256": "ae59c360350c466f8a92586c5d1eb82d3aba7c1fdce1e65235ced43384839e05"
+      "sha256": "2b58636723e298642350d851b5863bbfd7925c8635e4ee38426774ca4b96b2d9",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/export_bus_top": {
       "role": "export_casing_top",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/export_bus_top.png",
       "source": "selected/export_bus_top.png",
-      "metadata": "metadata/bus_top.json",
-      "sha256": "d9bef922c62d52008822268d221637d655d028490dd775df2758f7c681ace999"
+      "metadata": "metadata/export_bus_conduit.json",
+      "sha256": "2f6d1d675aeec0adacf3d32546d81f14b104363a30234c3c39f7763f73e829ba",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/export_bus_side": {
       "role": "export_casing_side",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/export_bus_side.png",
       "source": "selected/export_bus_side.png",
-      "metadata": "metadata/bus_side.json",
-      "sha256": "84a915fd762d8deb7a9b14602c2e7840bdedc132e77b8c486a9c216f7eab2931"
+      "metadata": "metadata/export_bus_conduit.json",
+      "sha256": "221b4bf80fcc0d4cad6c1195673ce89cb1ab8d6920d9d472cc17649bf2aa1eef",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:block/export_bus_front": {
       "role": "export_outward_arrow",
       "runtime": "src/main/resources/assets/magic_storage/textures/block/export_bus_front.png",
       "source": "selected/export_bus_front.png",
       "metadata": "metadata/export_bus_front.json",
-      "sha256": "f148af23077b0c14231a8e9309d232bea5a72b329daebc031444be76153cf827"
+      "sha256": "97eb82b21a90c3bb7689e74433faf5ace739643c307cf5fe78b65dbef02afb5e",
+      "symmetry_axes": [
+        "x"
+      ]
     },
     "magic_storage:item/remote_terminal": {
       "role": "remote_display",
       "runtime": "src/main/resources/assets/magic_storage/textures/item/remote_terminal.png",
       "source": "selected/remote_terminal.png",
       "metadata": "metadata/remote_terminal.json",
-      "sha256": "68539d7d4e454a5a438c5a14efc0d969f1c23ddf34a2ea27750b7a678f30789f"
+      "sha256": "4c4430418900969ed136888caf93ff8a048f103bf2cf34b4239c3fef63fa9dea"
+    }
+  },
+  "connected_textures": {
+    "magic_storage:block/storage_core_connected": {
+      "base": "magic_storage:block/storage_core",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_core_connected.png",
+      "source": "selected/storage_core_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_core_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "ebc50fbbc690fe99bc9aba3428c9ed2da69bd3454546f0250629160095314608"
+    },
+    "magic_storage:block/storage_unit_t1_connected": {
+      "base": "magic_storage:block/storage_unit_t1",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t1_connected.png",
+      "source": "selected/storage_unit_t1_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t1_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "c6d68359df365b091d23abe939682f18b3cbe2426d8f4b38dd3ff01e945c18b6"
+    },
+    "magic_storage:block/storage_unit_t2_connected": {
+      "base": "magic_storage:block/storage_unit_t2",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t2_connected.png",
+      "source": "selected/storage_unit_t2_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t2_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "42e5c5fe4ed03a9008e0bb49d6e267d601d9b45a3163d855abbc74a3e0820d37"
+    },
+    "magic_storage:block/storage_unit_t3_connected": {
+      "base": "magic_storage:block/storage_unit_t3",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t3_connected.png",
+      "source": "selected/storage_unit_t3_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t3_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "c8aaa751632154050c10a0972c6826583a6c806f76c59f9d303a9af0b96c420f"
+    },
+    "magic_storage:block/storage_unit_t4_connected": {
+      "base": "magic_storage:block/storage_unit_t4",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t4_connected.png",
+      "source": "selected/storage_unit_t4_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t4_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "e2619c4e667b07d858aa5b3c208d7257f4403177771ee06561af10f5f3a53891"
+    },
+    "magic_storage:block/storage_unit_t5_connected": {
+      "base": "magic_storage:block/storage_unit_t5",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t5_connected.png",
+      "source": "selected/storage_unit_t5_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t5_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "18f7dd408db0870fcd4058139e6fe2c7ae9bcf9c08da6c892d1b1376a7875ee3"
+    },
+    "magic_storage:block/storage_unit_t6_connected": {
+      "base": "magic_storage:block/storage_unit_t6",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t6_connected.png",
+      "source": "selected/storage_unit_t6_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_unit_t6_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "c30c97e1070279d128bafbf01cd7092ecb51247d56091eb4b46594b9174ff782"
+    },
+    "magic_storage:block/storage_terminal_connected": {
+      "base": "magic_storage:block/storage_terminal",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_terminal_connected.png",
+      "source": "selected/storage_terminal_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_terminal_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "66af525bb9f039f94108cbacbd6efd99edbfe09f82e3fb7f4bd36b315fe75160"
+    },
+    "magic_storage:block/crafting_terminal_connected": {
+      "base": "magic_storage:block/crafting_terminal",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/crafting_terminal_connected.png",
+      "source": "selected/crafting_terminal_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/crafting_terminal_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "d1fd1a3976e1516c78c529a40e92e61bc50dfdd27736769b201d108d9f304d34"
+    },
+    "magic_storage:block/import_bus_top_connected": {
+      "base": "magic_storage:block/import_bus_top",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/import_bus_top_connected.png",
+      "source": "selected/import_bus_top_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/import_bus_top_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "056a289c4338be773b7fb8355edbca5563e06a3b8457e98eb468bc3c581c1551"
+    },
+    "magic_storage:block/import_bus_side_connected": {
+      "base": "magic_storage:block/import_bus_side",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/import_bus_side_connected.png",
+      "source": "selected/import_bus_side_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/import_bus_side_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "5b768394a2f672945c6cfa1e1be39672436ea419f139a869ed0bfb92f7515bb5"
+    },
+    "magic_storage:block/export_bus_top_connected": {
+      "base": "magic_storage:block/export_bus_top",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/export_bus_top_connected.png",
+      "source": "selected/export_bus_top_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/export_bus_top_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "b9873bd4e8885e3aef5b09b5a30d08bb2ad5a7f6032c6083dd6fbf7a6c3e20ac"
+    },
+    "magic_storage:block/export_bus_side_connected": {
+      "base": "magic_storage:block/export_bus_side",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/export_bus_side_connected.png",
+      "source": "selected/export_bus_side_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/export_bus_side_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "d4aaadb52392309aa233c137e654efc7e0998e1c1d41c7598f8406304a12488c"
     }
   },
   "control_atlas": {
@@ -692,11 +1327,12 @@
         "atlas_index": 10
       }
     ],
-    "sha256": "da494050df97215de4ab37a6af0019815b1208d973676c4aae5e11f91eaf6c88"
+    "sha256": "3239d31eb5fe4878828d61d426de06029a99f1df02a8f2d062f5be6bdffa92d0"
   },
   "contact_sheets": [
     "chassis-contact-sheet.png",
     "candidate-contact-sheet.png",
-    "selected-contact-sheet.png"
+    "selected-contact-sheet.png",
+    "selected-connected-contact-sheet.png"
   ]
 }

@@ -17,7 +17,7 @@ sourceSets.main.resources {
     exclude("src/generated/**/.cache")
 }
 sourceSets {
-    clientRuntime
+    fusionRuntime
 }
 
 base {
@@ -28,7 +28,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 neoForge {
     version = project.neo_version
-    addModdingDependenciesTo sourceSets.clientRuntime
+    addModdingDependenciesTo sourceSets.fusionRuntime
 
     parchment {
         mappingsVersion = project.parchment_mappings_version
@@ -38,7 +38,7 @@ neoForge {
     runs {
         client {
             client()
-            sourceSet = sourceSets.clientRuntime
+            sourceSet = sourceSets.fusionRuntime
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
@@ -55,7 +55,7 @@ neoForge {
 
         data {
             data()
-            sourceSet = sourceSets.clientRuntime
+            sourceSet = sourceSets.fusionRuntime
             programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
         }
 
@@ -73,8 +73,8 @@ neoForge {
 }
 
 configurations {
-    clientRuntimeImplementation.extendsFrom implementation
-    clientRuntimeRuntimeOnly.extendsFrom runtimeOnly
+    fusionRuntimeImplementation.extendsFrom implementation
+    fusionRuntimeRuntimeOnly.extendsFrom runtimeOnly
     emiRuntime {
         canBeConsumed = false
         canBeResolved = true
@@ -83,6 +83,17 @@ configurations {
 }
 
 repositories {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
     maven {
         url = 'https://maven.blamejared.com'
     }
@@ -96,8 +107,9 @@ dependencies {
     compileOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
     runtimeOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
     compileOnly "dev.emi:emi-neoforge:${emi_version}:api"
-    clientRuntimeRuntimeOnly "dev.emi:emi-neoforge:${emi_version}"
+    fusionRuntimeRuntimeOnly "dev.emi:emi-neoforge:${emi_version}"
     emiRuntime "dev.emi:emi-neoforge:${emi_version}"
+    fusionRuntimeRuntimeOnly "maven.modrinth:fusion-connected-textures:h2GrA0Ku"
 }
 
 tasks.register("stageEmiRuntime", Copy) {

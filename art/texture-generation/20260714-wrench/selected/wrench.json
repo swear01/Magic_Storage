@@ -1,0 +1,26 @@
+{
+  "created_at_utc": "20260714T122037Z",
+  "type": "item",
+  "subject": "one unmistakable combination wrench spanner, open crescent jaw on one end and small ring end on the other, iron body with copper grip and one amethyst pixel accent, diagonal centered Minecraft vanilla item sprite, crisp chunky 16x16 pixel silhouette, transparent background, no hammer, no axe, no pickaxe, no scene, no text",
+  "model": "retro-diffusion/rd-plus",
+  "style": "mc_item",
+  "tileable": false,
+  "prompt": "one unmistakable combination wrench spanner, open crescent jaw on one end and small ring end on the other, iron body with copper grip and one amethyst pixel accent, diagonal centered Minecraft vanilla item sprite, crisp chunky 16x16 pixel silhouette, transparent background, no hammer, no axe, no pickaxe, no scene, no text",
+  "size": 16,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "one unmistakable combination wrench spanner, open crescent jaw on one end and small ring end on the other, iron body with copper grip and one amethyst pixel accent, diagonal centered Minecraft vanilla item sprite, crisp chunky 16x16 pixel silhouette, transparent background, no hammer, no axe, no pickaxe, no scene, no text",
+    "style": "mc_item",
+    "width": 16,
+    "height": 16,
+    "num_images": 1,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": true,
+    "bypass_prompt_expansion": false
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260714-wrench/candidates/wrench_04.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260714-wrench/candidates/wrench_04.preview.png",
+  "raw_png": null
+}

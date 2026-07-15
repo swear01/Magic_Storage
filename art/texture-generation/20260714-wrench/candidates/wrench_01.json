@@ -1,0 +1,26 @@
+{
+  "created_at_utc": "20260714T121705Z",
+  "type": "item",
+  "subject": "single centered magical storage wrench, open crescent jaws made from iron at the top, amethyst crystal joint, copper-wrapped handle, dark cyan and purple accents matching a refined Minecraft technology mod, readable symmetric silhouette, no text, no frame, no hand",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_item",
+  "tileable": false,
+  "prompt": "single centered magical storage wrench, open crescent jaws made from iron at the top, amethyst crystal joint, copper-wrapped handle, dark cyan and purple accents matching a refined Minecraft technology mod, readable symmetric silhouette, no text, no frame, no hand",
+  "size": 16,
+  "reference_image": null,
+  "img2img": false,
+  "input": {
+    "prompt": "single centered magical storage wrench, open crescent jaws made from iron at the top, amethyst crystal joint, copper-wrapped handle, dark cyan and purple accents matching a refined Minecraft technology mod, readable symmetric silhouette, no text, no frame, no hand",
+    "style": "mc_item",
+    "width": 16,
+    "height": 16,
+    "num_images": 1,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": true,
+    "bypass_prompt_expansion": false
+  },
+  "final_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260714-wrench/candidates/wrench_01.png",
+  "preview_png": "/Users/swear/Documents/diy_minecraft_mods/Magic_Storage/art/texture-generation/20260714-wrench/candidates/wrench_01.preview.png",
+  "raw_png": null
+}
