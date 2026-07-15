@@ -1,6 +1,6 @@
 {
   "name": "Getting Started",
-  "description": "The basics of Magic Storage - setting up your first network.",
+  "description": "Build a first network, test it, and move it safely.",
   "icon": "magic_storage:storage_core",
   "sortnum": 0
 }

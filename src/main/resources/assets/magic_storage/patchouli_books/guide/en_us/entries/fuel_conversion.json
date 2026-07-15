@@ -1,23 +1,24 @@
 {
-  "name": "Fuel Conversion",
+  "name": "Fuel and Axe Energy",
   "category": "magic_storage:energy",
-  "icon": "minecraft:coal_block",
+  "icon": "minecraft:coal",
+  "sortnum": 1,
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "Open the Crafting Terminal's $(thing)Fuel page$() with the third page button on the left rail. The rail then contains only the three page tabs. Use the $(thing)Fuel Target$() selector in the Energy Reserves header to choose Auto, Fuel, Brew Energy, or Bottle Energy; click to move forward, or Shift-click/scroll over it to move backward. Then place fuel in the dedicated input or Shift-click it."
+      "text": "In Consumables, choose Fuel Target and place an item in the input. The $(thing)Auto target$() chooses between Fuel and Brew Energy; you may select either pool directly. Changing page or closing the terminal never consumes an item that was not accepted."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Installed Stations:$() Nine exact slots use two flow rows: Furnace, Blast Furnace, Smoker, Campfire, Brewing Stand, Crafting Table, Stonecutter, Smithing Table, and one compatible axe. The first five generate energy at their stack count per tick; the final four only unlock recipes/actions. All stay installed across page changes and menu close and can be Shift-clicked back."
+      "text": "$(thing)Runtime Fuel:$() any item with a positive current $(thing)runtime burn time$() is accepted, including logs, datapack fuels, and compatible modded fuels. Each item adds that many Fuel ticks. Container items return normally, and an overflowing conversion leaves the input untouched."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Runtime Fuel:$() Any item with a positive current runtime burn time is accepted. Each item adds exactly that many Fuel ticks, so logs, datapack fuels, and compatible modded fuels work without a Magic Storage whitelist. Container remainders such as the empty Lava Bucket are returned, and overflow rejects the whole conversion."
+      "text": "$(thing)Brew Energy:$() Blaze Rod adds 1,200 and Blaze Powder adds 600. Auto first chooses the compatible pool with fewer accepted item sources, then the lower stored amount, then a stable order. A Blaze Rod therefore chooses Brew Energy when both pools are otherwise tied."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Brew Energy:$() Blaze Rod $(thing)1,200$(); Blaze Powder $(thing)600$().$(br)$(thing)Bottle Energy:$() Glass Bottle or Potion $(thing)1$().$(br2)Auto prefers the compatible pool with fewer distinct suppliers, then lower stored total, then stable order. A Blaze Rod therefore fills Brew Energy under Auto. The Storage page stores machines and fuel normally."
+      "text": "$(thing)Axe Energy:$() an accepted axe is consumed. Finite value comes from remaining $(thing)durability$() × ($(thing)Unbreaking$() level + 1) × stack count; Mending adds nothing. An $(thing)Unbreakable$() axe supplies infinity. Supported strip, scrape, and wax-off recipes spend one Axe Energy each."
     }
   ]
 }

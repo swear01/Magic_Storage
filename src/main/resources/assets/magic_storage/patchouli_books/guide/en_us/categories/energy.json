@@ -1,6 +1,6 @@
 {
-  "name": "Energy System",
-  "description": "Crafting Energy pools and fuel conversion.",
-  "icon": "minecraft:coal",
+  "name": "Fuel and Stations",
+  "description": "Manage consumables, timed machines, instant stations, and Axe Energy.",
+  "icon": "minecraft:furnace",
   "sortnum": 3
 }

@@ -1,0 +1,24 @@
+{
+  "name": "Terminal Controls",
+  "category": "magic_storage:terminals",
+  "icon": "minecraft:redstone",
+  "sortnum": 2,
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "Value selectors share one control grammar: $(thing)left-click$() goes to the next value, $(thing)right-click$() goes to the previous value, wheel down or up moves next or previous while hovered, and $(thing)middle-click$() resets the selector."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Reset defaults are Name sort, Ascending order, normal name search, $(thing)Auto target$(), and Player craft output. Use Player Inventory is a separate on/off choice for recipe ingredients and returns to its usual default when reset."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Sorting offers $(thing)Name, Quantity, Mod, and ID$(). Search offers normal names, #tag, and @mod. Use the exact tooltip amount when compact grid labels look similar at very large quantities."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "A colored light means a true on/off control such as Use Player Inventory. Sort, search, Fuel Target, and Craft Output are selected values, so they use labels or icons instead. The active page uses a neutral selected-tab frame."
+    }
+  ]
+}

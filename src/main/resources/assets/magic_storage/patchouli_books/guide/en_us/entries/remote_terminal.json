@@ -1,24 +1,29 @@
 {
   "name": "Remote Terminal",
-  "category": "magic_storage:terminals",
+  "category": "magic_storage:automation",
   "icon": "magic_storage:remote_terminal",
+  "sortnum": 2,
   "pages": [
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:remote_terminal",
-      "text": "The $(thing)Remote Terminal$() is the Tier 3 terminal - an $(thing)item$() (not a block) that opens a full Crafting Terminal interface from anywhere!"
+      "text": "The Remote Terminal is a handheld Crafting Terminal for reaching one bound Core without returning to the terminal block."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Binding:$()$(br)1. Craft and hold a Remote Terminal.$(br)2. $(thing)Shift + right-click$() on your Storage Core.$(br)3. The terminal records that exact Core's persistent identity. Its tooltip shows the Core's position.$(br2)To rebind, shift-right-click the intended Core again."
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Using:$() Right-click while holding the bound Remote Terminal to open the Crafting Terminal menu from anywhere.$(br2)$(thing)Requirements:$()$(br)$(li)You must be in the $(thing)same dimension$() as the bound Core.$(li)The Core's $(thing)chunk must be loaded$() (use chunk loaders).$(li)The exact bound Core must still exist. Replacing it at the same coordinates requires rebinding."
+      "text": "To bind, hold the Remote Terminal and Shift-right-click the intended Storage Core. The tooltip records its position. Repeat the same action on another Core whenever you want to rebind."
     },
     {
       "type": "patchouli:text",
-      "text": "The Remote Terminal provides the $(thing)full Crafting Terminal$() experience remotely. You can browse items, craft, toggle filters, and manage your storage - all without walking back to base.$(br2)A must-have for explorers and builders!"
+      "text": "Right-click the bound item to open the full Crafting Terminal. You must remain in the $(thing)same dimension$(), the Core's chunk must be loaded, and the connected network needed for access must still be present."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "The binding follows that exact Core. If the Core is destroyed and a different one is placed at the same coordinates, bind again. A closed or unloaded route is not forced open by the Remote Terminal."
     }
   ]
 }

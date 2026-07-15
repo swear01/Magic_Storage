@@ -1,19 +1,28 @@
 {
-  "name": "Connecting Blocks",
+  "name": "Connections and Safe Moving",
   "category": "magic_storage:getting_started",
   "icon": "minecraft:chain",
+  "sortnum": 2,
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "All Magic Storage blocks must connect by $(thing)direct adjacency$() - they must share a face (up, down, north, south, east, or west).$(br2)Cables or conduits are $(thing)not needed$(). Simply place blocks next to each other."
+      "text": "Every Core, Storage Unit, Terminal, and Bus joins through direct face adjacency. Cables are unnecessary. A line, wall, compact cube, or branching shape all work as long as there is an unbroken face-to-face route back to the Core."
     },
     {
       "type": "patchouli:text",
-      "text": "When you place a new network block, the Core attempts a $(thing)small incremental add$() for that block. When a block is broken or the topology is uncertain, the Core falls back to a full $(thing)BFS (Breadth-First Search)$() rebuild from the Core. The safety scan is capped to avoid runaway searches.$(br2)If the network touches more than one Core, the network becomes $(thing)conflicted$() and stops accepting items until the extra Core is removed."
+      "text": "Keep the Core and the blocks needed for an action in loaded chunks. If a terminal or bus stops responding after distant chunks unload, return to the network or use your pack's chunk-loading method. Also confirm that no second Core touches the same network."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Pro tips:$()$(br2)$(li)You can build in any shape you like - lines, cubes, or sprawling webs.$(li)All network blocks (Units, Terminals, Buses) must be in loaded chunks for reliable operation.$(li)Breaking the Storage Core detaches the network. Break it with the correct tool and keep the dropped Core item: that item carries the saved inventory and energy and can be placed at the same position or moved elsewhere."
+      "text": "Use Magic Storage's wrench or any compatible wrench in your main hand. $(thing)Right-click$() a directional Import or Export Bus to rotate it around the clicked face. Ordinary right-click on a Core, Unit, or Terminal does not invent a direction."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "$(thing)Sneak-right-click$() any network block with a compatible wrench to dismantle it safely. The Core item carries its stored items, energy, identity, and installed stations. Inventory overflow is left at the block instead of being lost. Keep that dropped Core item safe before rebuilding elsewhere."
     }
   ]
 }

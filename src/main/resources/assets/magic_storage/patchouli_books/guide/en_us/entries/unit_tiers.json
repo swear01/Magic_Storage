@@ -1,20 +1,37 @@
 {
-  "name": "Storage Units",
+  "name": "Storage Units and Tiers",
   "category": "magic_storage:storage_system",
   "icon": "magic_storage:storage_unit_t1",
+  "sortnum": 1,
   "pages": [
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:storage_unit_t1",
-      "text": "$(item:magic_storage:storage_unit_t1) expand your network's capacity for storing $(thing)different item types$(). Each Unit contributes type slots based on its tier."
+      "text": "Storage Units add $(thing)type capacity$(): room for more distinct item identities. They do not cap the quantity stored for a type that already fits."
     },
     {
       "type": "patchouli:text",
-      "text": "Storage Units do $(thing)not$() limit item quantity - they only limit how many $(thing)different types$() of items you can store. Once a type is registered, you can store unlimited amounts of that item.$(br2)Items with different $(thing)NBT data$() (damage, enchantments, etc.) count as separate types."
+      "text": "A plain item, a damaged item, and versions with different enchantments or other properties can use separate type slots. If an existing type already has a slot, adding more of that exact type does not consume another slot."
     },
     {
       "type": "patchouli:text",
-      "text": "When a Storage Unit is broken, it drops itself at the same tier. The network's available type capacity decreases immediately, but stored items stay in the Core and are not deleted.$(br2)Add enough Units before inserting any new item types."
+      "text": "Each Storage Unit $(thing)drops itself$() at the same tier. When one is removed, the network's $(thing)available type capacity decreases$(), but $(thing)stored items stay in the Core$(). Add capacity before inserting a brand-new type."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "The ornament shows progression: T1 has a copper-bound cell; T2 iron braces; T3 a gold and lapis lattice; T4 a diamond and quartz cross; T5 a prismarine and ender halo; T6 a netherite and amethyst crown. T4 is the first Nether upgrade; T4-T6 are optional capacity and prestige."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
     }
   ]
 }

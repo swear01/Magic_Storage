@@ -1,23 +1,24 @@
 {
-  "name": "Energy Overview",
+  "name": "Fuel Workspace",
   "category": "magic_storage:energy",
   "icon": "minecraft:furnace",
+  "sortnum": 0,
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "The Storage Core currently maintains $(thing)8 energy pools$(). Energy powers smelting, blasting, smoking, and campfire cooking through the Crafting Terminal. Brewing process energy plus Brew and Bottle fuel reserves can be stockpiled, but brewing execution is not implemented yet."
+      "text": "Open the Crafting Terminal's third page. $(thing)Consumables$(), $(thing)Timed Stations$(), and $(thing)Instant Stations$() fill the area down to Inventory. Each group can use multiple rows and pages independently when more entries are added."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Installed process stations:$()$(br)$(li)Furnace → Smelting Energy$(li)Blast Furnace → Blasting Energy$(li)Smoker → Smoking Energy$(li)Campfire → Campfire Energy$(li)Brewing Stand → Brewing Energy$(br2)An empty slot generates nothing. A stack of N energy machines produces exactly N matching energy per tick. Crafting Table, Stonecutter, Smithing Table, and axe slots unlock recipes/actions but produce no energy."
+      "text": "Timed Stations are Furnace, Blast Furnace, Smoker, Campfire, and Brewing Stand. Installed stack count controls how quickly each matching process reserve grows. Removing a machine stops new generation but keeps the energy already accumulated."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Fuel-conversion pools:$()$(br)$(li)$(thing)Fuel$() - every stack whose current NeoForge runtime burn time is positive, including logs and modded fuels$(li)$(thing)Brew Energy$() - Blaze Rods/Powder$(li)$(thing)Bottle Energy$() - Glass Bottles/Potions$(br2)These labels do not change the save-compatible internal pool IDs."
+      "text": "Instant Stations are Crafting Table, Stonecutter, and Smithing Table. Each accepts at most one, can be removed, and unlocks matching recipes without showing a made-up energy amount. Stored types over total type capacity is shown separately to the right of Inventory."
     },
     {
       "type": "patchouli:text",
-      "text": "All energy and installed station/tool stacks live in the Storage Core's $(thing)NBT data$() and survive saves and the data-carrying Core drop. Removing a process machine stops future generation but keeps stored energy.$(br2)The Crafting Terminal $(thing)Fuel page$() displays all currently registered totals live; scroll inside a panel when its page indicator appears. See $(l:magic_storage:fuel_conversion)Fuel Conversion$() and $(l:magic_storage:recipe_costs)Recipe Costs$()."
+      "text": "Consumables holds Fuel Target, the input, Fuel, Brew Energy, and Axe Energy. Cooking uses both its matching timed reserve and Fuel. Follow $(l:magic_storage:fuel_conversion)Fuel and Axe Energy$() for values, then check $(l:magic_storage:recipe_costs)Recipe Costs and Support$()."
     }
   ]
 }

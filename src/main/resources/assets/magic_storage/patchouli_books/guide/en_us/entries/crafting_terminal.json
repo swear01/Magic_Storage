@@ -2,31 +2,36 @@
   "name": "Crafting Terminal",
   "category": "magic_storage:terminals",
   "icon": "magic_storage:crafting_terminal",
+  "sortnum": 1,
   "pages": [
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:crafting_terminal",
-      "text": "The $(thing)Crafting Terminal$() is the Tier 2 terminal. It automatically chooses a narrow stacked or side-by-side workspace while keeping the frame and left rail centered with visible margins. Use the Storage, Craftable, and Fuel tabs for stored items, currently executable recipes, and machine/fuel management."
+      "text": "The Crafting Terminal combines item access with three workspaces: the $(thing)Storage tab$() for stored items, the $(thing)Craftable tab$() for recipes ready now, and the $(thing)Fuel tab$() for resources and stations."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)How to craft:$()$(br)1. Install the matching station/tool on Fuel: Crafting Table, cooking machine, Stonecutter, Smithing Table, or axe.$(br)2. Select an output in Storage or Craftable. The server-synced input → output panel shows Ready/Missing and every item/process/Fuel/tool requirement as Available / Required.$(br)3. Use $(thing)×1$(), $(thing)×8$(), $(thing)×64$(), or $(thing)Max$(). Exact buttons dim when unavailable; Max rechecks the current maximum."
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Craftable and EMI:$() The Craftable tab catalogs supported server recipes, so an output can appear at zero stored count when it is currently executable; for example, logs plus Smelting Energy and Fuel expose Charcoal. Synthetic entries select recipes but cannot be extracted.$(br2)EMI sends the exact backing recipe, amount, and cursor/inventory destination for one-level server-authoritative crafting. It does not recursively craft intermediates."
+      "text": "Install the matching station on the Fuel tab, then select an output in Storage or Craftable. The preview shows the exact recipe, ingredients, station, process energy, Fuel, or Axe Energy needed. A neutral message appears when no supported recipe is available."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Adaptive left rail:$() Storage/Craftable/Fuel form the first group; on item pages a visible gap separates them from sorting, search, and player-inventory controls. On Fuel, only those three page tabs remain; the current Fuel Target lives in the Energy Reserves header instead of ambiguous arrow buttons. Name, Tag, and Mod search use magnifier, #, and @ icons. Item component variants always remain distinct.$(br2)Large network amounts use compact units and automatically shrink while staying right-aligned inside their own slot."
+      "text": "Use the shared ×1, ×8, ×64, or Max strip. Fixed amounts dim when the full batch cannot be made. Max checks ingredients, energy, and destination room together and chooses the largest complete amount that currently fits."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Fuel page:$() Installed Stations uses two adaptive flow rows. Machine and reserve tiles spread across the complete panel width and scroll only when they exceed capacity; the lower-right control panel contains Fuel Target and Fuel input instead of dead space. Coal, Blaze Rod, and Glass Bottle identify reserve types. Current stored types / total type capacity appears above the player inventory."
+      "text": "Craft Output defaults to Player: results fill your inventory first and overflow returns to the Core. Choose Storage to send the complete batch to the Core. If every result and container remainder cannot fit, nothing is consumed."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Safe output:$() Inventory crafting fills the visible player inventory first and returns overflow to the Storage Core. If neither destination can hold every result and container remainder, the server rejects the whole craft before consuming materials, energy, or tool durability. Requested output is never dropped or silently lost."
+      "text": "EMI is the required client recipe viewer and may request the exact recipe shown by the terminal, sending its result to the chosen cursor or inventory destination. This remains one-level magic crafting: missing intermediates are not crafted recursively."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Craftable may show an output with zero stored quantity when its recipe can run now. Such an entry selects a recipe but is not a stored stack to extract. See $(l:magic_storage:recipe_costs)Recipe Costs and Support$() for station and recipe limits."
     }
   ]
 }

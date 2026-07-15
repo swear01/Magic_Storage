@@ -2,19 +2,28 @@
   "name": "Storage Core",
   "category": "magic_storage:storage_system",
   "icon": "magic_storage:storage_core",
+  "sortnum": 0,
   "pages": [
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:storage_core",
-      "text": "The $(item:magic_storage:storage_core) is the heart of every Magic Storage network. It holds all stored item data, tracks connected blocks, and manages energy pools.$(br2)$(thing)One Core per network only.$()"
+      "text": "The Storage Core is the heart of one network. It owns the stored items and shared energy, while attached Units provide type capacity and Terminals provide access."
     },
     {
       "type": "patchouli:text",
-      "text": "The Core stores network items as $(thing)ItemKey$() entries - each unique component variant uses one type slot with long-count capacity.$(br2)It also owns all $(l:magic_storage:energy_overview)energy pools$() and nine persistent station/tool equipment slots. Equipment does not consume Storage Unit type capacity."
+      "text": "The same Core item keeps its contents through saves and every supported break path. A packed Core uses a one-time server recovery token; place that exact item to restore its inventory, energy, machines, and identity."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Breaking the Core:$() With the correct tool, its drop carries inventory, energy, installed stations/tools, and Core identity. Replacing that same item restores them anywhere.$(br2)A blank Core never inherits previous data. If the data-carrying drop is destroyed, its contents cannot be recovered.$(br2)$(thing)Strength:$() 3.0 | $(thing)Blast Resistance:$() 6.0$(br)$(thing)Requires correct tool$() for drops."
+      "text": "If your still-unplaced packed Core item is lost, run $(thing)/magic_storage recover_core$() to reissue your latest unclaimed Core. A duplicate token cannot duplicate contents. Data lost before this recovery system existed cannot be reconstructed."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Removing Storage Units never deletes items already held by the Core, but it can leave too little room for new types. Before moving a busy network, pick up the data-carrying Core safely and make sure you can identify it among blank Cores."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
     }
   ]
 }

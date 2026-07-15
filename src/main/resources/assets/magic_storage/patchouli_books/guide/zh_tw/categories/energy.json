@@ -1,0 +1,6 @@
+{
+  "name": "燃料與工作站",
+  "description": "管理消耗品、計時機器、即時工作站，以及斧頭能量。",
+  "icon": "minecraft:furnace",
+  "sortnum": 3
+}

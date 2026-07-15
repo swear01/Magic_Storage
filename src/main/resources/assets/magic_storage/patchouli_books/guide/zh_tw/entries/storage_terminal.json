@@ -1,0 +1,29 @@
+{
+  "name": "儲存終端機",
+  "category": "magic_storage:terminals",
+  "icon": "magic_storage:storage_terminal",
+  "sortnum": 0,
+  "pages": [
+    {
+      "type": "patchouli:spotlight",
+      "item": "magic_storage:storage_terminal",
+      "text": "儲存終端機是直接管理物品的介面。視窗變高時網格會增加，顯示種類超出空間時可捲動瀏覽。"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "完整合成排列請見$(l:magic_storage:recipes)配方總覽$()。"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "左鍵點網路物品可取一疊，右鍵取一半，Shift 點擊可移到背包。捲動網格或拖曳捲軸可瀏覽；Shift 點擊背包中的物品可將整疊送入網路。"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "搜尋欄預設比對名稱，也可切換成 #標籤 或 @模組 搜尋。把游標停在結果上可看完整資訊與精確儲存量；網格中的縮寫數字不會取代提示中的精確值。"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "可依名稱、數量、模組或 ID 排序，並選擇遞增或遞減。屬性不同的變體會保持分開。要使用配方與燃料分頁，請升級為$(l:magic_storage:crafting_terminal)合成終端機$()。"
+    }
+  ]
+}

@@ -2,23 +2,28 @@
   "name": "Storage Terminal",
   "category": "magic_storage:terminals",
   "icon": "magic_storage:storage_terminal",
+  "sortnum": 0,
   "pages": [
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:storage_terminal",
-      "text": "The $(thing)Storage Terminal$() is your primary interface to the network. It displays a dynamic grid of stored items, from $(thing)3 to 9 rows$() depending on window height, with a scroll bar for browsing."
+      "text": "The Storage Terminal is the direct item interface. Its grid grows with the window and scrolls when the network has more visible types than fit."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Taking items:$()$(br)$(li)$(thing)Left-click$() a stack to pick up the full stack.$(li)$(thing)Right-click$() to pick up half the stack.$(li)$(thing)Shift-click$() to move the full stack to your inventory.$(li)$(thing)Scroll wheel$() or drag the scroll bar to browse all items."
+      "text": "See $(l:magic_storage:recipes)Recipe Catalog$() for the exact crafting layout."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Putting items:$()$(br)$(li)$(thing)Shift-click$() items from your inventory to insert them into the network.$(br2)$(thing)Search bar:$() Type at the top to filter displayed items. Search is case-insensitive and supports normal text, $(thing)#tag$(), and $(thing)@mod$() modes via the search-mode button.$(br2)$(thing)Tooltips:$() Hover over any visible item to see its full name and count."
+      "text": "Left-click a network item to take a stack, right-click to take half, and Shift-click to move a stack to your inventory. Scroll the grid or drag its bar to browse. Shift-click an inventory stack to insert it into the network."
     },
     {
       "type": "patchouli:text",
-      "text": "The Storage Terminal is $(thing)Tier 1$() - it handles basic item transfer but does not include crafting features.$(br2)For crafting capabilities, upgrade to the $(l:magic_storage:crafting_terminal)$(thing)Crafting Terminal$()$(). For remote access, check out the $(l:magic_storage:remote_terminal)$(thing)Remote Terminal$()$()."
+      "text": "The search field matches names by default. Switch search mode for #tag or @mod queries. Hover a result for its exact stored amount and full details; compact numbers in the grid never replace the exact tooltip value."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Sort by Name, Quantity, Mod, or ID and choose ascending or descending order. Variants with different properties stay separate. For recipes and the Fuel page, upgrade to the $(l:magic_storage:crafting_terminal)Crafting Terminal$()."
     }
   ]
 }

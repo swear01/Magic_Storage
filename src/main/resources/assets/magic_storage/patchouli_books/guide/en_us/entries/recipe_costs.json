@@ -1,23 +1,24 @@
 {
-  "name": "Recipe Energy Costs",
+  "name": "Recipe Costs and Support",
   "category": "magic_storage:energy",
   "icon": "minecraft:blast_furnace",
+  "sortnum": 2,
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "Cooking recipes use the concrete recipe's current datapack $(thing)cooking time$() when crafted through the Crafting Terminal. The cost is resolved again on the server for every preview and execution."
+      "text": "Smelting, blasting, smoking, and campfire recipes use the recipe's current cooking time. Each craft spends that amount from both the matching timed reserve and Fuel, so datapack changes to cooking time are reflected automatically."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Recipe-derived cost:$()$(br2)Smelting, Blasting, Smoking, and Campfire Cooking each consume their exact cooking time from both the matching installed-machine process pool and $(thing)Fuel$(). No fixed 200/100/600 table or fallback value is used."
+      "text": "Furnace supplies Smelting, Blast Furnace supplies Blasting, Smoker supplies Smoking, and Campfire supplies Campfire Cooking. Brewing Stand can accumulate Brewing energy, but brewing execution is not currently available."
     },
     {
       "type": "patchouli:text",
-      "text": "$(thing)Free recipes (0 energy):$()$(br)$(li)Crafting Table recipes$(li)Stonecutting recipes$(li)Exact Smithing Transform recipes$(li)Vanilla block axe strip, scrape, and wax-off transformations$(br2)Each requires its matching installed station/tool. Smithing matches and preserves exact base components. Axe actions spend one raw durability per craft. Mod block hooks, Smithing Trim, dynamic/context recipes, and Brewing execution remain unsupported."
+      "text": "Crafting Table, Stonecutter, and exact Smithing Transform recipes need their matching Instant Station but spend no process energy. Built-in axe stripping, scraping, and wax removal need Axe Energy instead."
     },
     {
       "type": "patchouli:text",
-      "text": "When you click a craft button, the server simulates joint material reservations, destination capacity, and both required energy pools before committing. If anything is missing, the craft is cancelled without partial consumption.$(br2)Install matching machines to build process energy, then add enough Fuel for the recipe's exact cooking time."
+      "text": "An $(thing)unsupported recipe$() shows a neutral message rather than guessing. Special or context-dependent recipes, Smithing Trim, arbitrary modded block axe actions, and brewing execution are not available. When a supported preview is ready, ingredients, resources, and output room are all checked before crafting."
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "Terminals",
-  "description": "Access your items and craft them instantly.",
+  "description": "Browse, search, sort, and craft from the network.",
   "icon": "magic_storage:crafting_terminal",
   "sortnum": 2
 }

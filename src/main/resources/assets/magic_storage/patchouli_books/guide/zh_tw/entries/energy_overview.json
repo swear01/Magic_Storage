@@ -1,0 +1,24 @@
+{
+  "name": "燃料工作區",
+  "category": "magic_storage:energy",
+  "icon": "minecraft:furnace",
+  "sortnum": 0,
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "打開合成終端機第三頁。$(thing)消耗品$()、$(thing)計時工作站$()與$(thing)即時工作站$()會填滿到物品欄之前的空間；未來加入更多項目時，各區可獨立使用多列與分頁。"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "計時工作站包含熔爐、高爐、煙燻爐、營火與釀造台。安裝堆疊數量決定對應製程能量累積速度；取下機器會停止新增，但已累積能量會保留。"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "即時工作站包含工作台、切石機與鍛造台。每種最多安裝一個，可隨時取回；它們只解鎖相符配方，不顯示虛假的能量數字。已用種類／總種類容量會獨立顯示在物品欄右方。"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "消耗品區包含燃料目標、輸入格、燃料、釀造能量與斧頭能量。烹煮同時使用相符的計時能量與燃料。數值請見$(l:magic_storage:fuel_conversion)燃料與斧頭能量$()，配方需求請見$(l:magic_storage:recipe_costs)配方花費與支援$()。"
+    }
+  ]
+}
