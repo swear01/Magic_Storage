@@ -1,6 +1,9 @@
+import hashlib
 import importlib.util
 import json
 import signal
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,7 +42,22 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "lakes": False,
                 "structure_overrides": [],
             },
-            "fullscreen_gate": {"required": True, "when": "after_world_ready_before_first_gui_action"},
+            "fullscreen_gate": {
+                "required": True,
+                "when": "after_world_ready_before_first_gui_action",
+                "launch_mode": "minecraft_macos_borderless_fullscreen",
+                "automatic": True,
+                "accepted_methods": ["minecraft_f11_borderless"],
+                "forbidden_methods": ["macos_native_fullscreen", "combined_native_and_minecraft_fullscreen"],
+            },
+            "desktop_display_mode": {
+                "width": 1470,
+                "height": 956,
+                "pixel_width": 2940,
+                "pixel_height": 1912,
+                "refresh_rate": 60,
+                "depth": 24,
+            },
         }
 
     def configure_matching_deployment(self, mod, root: Path, minecraft_dir: Path) -> None:
@@ -50,6 +68,10 @@ class RunPrismGuiSessionTests(unittest.TestCase):
         jar_bytes = b"matching build"
         (project_dir / "build" / "libs" / "magic_storage-0.1.7.jar").write_bytes(jar_bytes)
         (minecraft_dir / "mods" / "magic_storage-0.1.7.jar").write_bytes(jar_bytes)
+        fusion_bytes = b"matching Fusion test artifact"
+        mod.FUSION_FILENAME = "fusion-1.2.12-neoforge-mc1.21.1.jar"
+        mod.FUSION_SHA512 = hashlib.sha512(fusion_bytes).hexdigest()
+        (minecraft_dir / "mods" / mod.FUSION_FILENAME).write_bytes(fusion_bytes)
         mod.DEFAULT_PROJECT_DIR = project_dir
 
     def process_snapshots(self, minecraft_dir: Path):
@@ -58,7 +80,6 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             "-l dev -w MagicStorageGuiTest -o MagicStorageBot"
         )
         baseline = {
-            100: (1, runner_prism),
             110: (1, "/usr/bin/python3 unrelated.py"),
         }
         current = {
@@ -83,6 +104,8 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             mod.snapshot_processes = lambda: {}
             launched = []
             configured = []
+            cleaned = []
+            verified_modes = []
 
             result = mod.run_session(
                 scenario_name="terminal-left-rail",
@@ -90,16 +113,20 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 instance_dir=root / "instances" / "dev",
                 run_root=root / "gui-runs",
                 prepare_world_func=self.fake_prepare,
+                cleanup_existing_func=lambda *args: cleaned.append(args),
                 configure_instance_func=lambda instance_dir: configured.append(instance_dir) or True,
                 launcher=lambda command: launched.append(command),
                 wait_for_log_func=lambda **kwargs: "SelfTest: 104 passed\nMS_GUI_TEST_READY\n",
+                display_mode_verifier=lambda manifest: verified_modes.append(manifest["desktop_display_mode"]),
                 timestamp_func=lambda: "20260711-010203",
             )
 
             self.assertTrue(result.manual_gui_required)
+            self.assertEqual(1, len(cleaned))
+            self.assertEqual([1470], [mode["width"] for mode in verified_modes])
             self.assertEqual([(root / "instances" / "dev").resolve()], configured)
             self.assertEqual(
-                "Minecraft is ready in the fixed test world. Please take over for the fullscreen visual checks.",
+                "Minecraft is ready in the fixed test world. Please take over for the fullscreen visual checks; close with F11, wait for the normal window, then Command-Q.",
                 result.manual_handoff_message,
             )
             self.assertEqual(["open", "-a", "Prism Launcher", "--args", "-l", "dev", "-w", "MagicStorageGuiTest", "-o", "MagicStorageBot"], launched[0])
@@ -111,7 +138,19 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             self.assertIn("hotbar `2`", checklist)
             self.assertIn("Manual GUI required: yes", checklist)
             self.assertIn("Visual verification owner: user", checklist)
+            self.assertIn("automatically starts in borderless Minecraft F11 fullscreen", checklist)
+            self.assertIn("never attaches the GLFW window to the monitor", checklist)
+            self.assertIn("Do not use the macOS green fullscreen button", checklist)
+            self.assertIn("press F11 once", checklist)
+            self.assertIn("wait until the normal window is visible", checklist)
+            self.assertIn("then press Command-Q", checklist)
+            self.assertIn("Do not press Command-Q while Minecraft F11 fullscreen is still active", checklist)
+            self.assertIn("shutdown watchdog", checklist)
+            self.assertNotIn("native fullscreen or F11 fullscreen", checklist)
             self.assertIn("Stop automation here and hand control to the user", checklist)
+            self.assertIn("known offline profile-properties 401", checklist)
+            self.assertIn("no non-whitelisted", checklist)
+            self.assertNotIn("no advanced_container_set_data, ERROR, FATAL, or Caused by", checklist)
             self.assertNotIn("Computer Use bundle id", checklist)
             session = json.loads((result.run_dir / "session.json").read_text())
             self.assertEqual("terminal-left-rail", session["scenario"])
@@ -120,6 +159,12 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             self.assertEqual(result.manual_handoff_message, session["manual_handoff_message"])
             self.assertTrue(session["launch_profile"]["computer_use_wrapper_disabled"])
             self.assertTrue(session["launch_profile"]["error_console_disabled"])
+            self.assertEqual("minecraft_f11_borderless", session["launch_profile"]["fullscreen_mode"])
+            self.assertTrue(session["launch_profile"]["automatic_fullscreen"])
+            self.assertEqual(1470, session["launch_profile"]["desktop_display_mode"]["width"])
+            self.assertEqual("f11_then_command_q", session["shutdown_profile"]["safe_sequence"])
+            self.assertTrue(session["shutdown_profile"]["watchdog_enabled"])
+            self.assertEqual(5, session["shutdown_profile"]["stall_timeout_seconds"])
             self.assertNotIn("computer_use_wrapper", session)
             self.assertEqual("after_world_ready_before_first_gui_action", session["manifest"]["fullscreen_gate"]["when"])
             self.assertIn("SelfTest: 104 passed", (result.run_dir / "log-excerpt.log").read_text())
@@ -142,6 +187,7 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 configure_instance_func=lambda instance_dir: True,
                 launcher=lambda command: None,
                 wait_for_log_func=lambda **kwargs: wait_calls.append(kwargs) or "SelfTest: 104 passed\nMS_GUI_TEST_READY\n",
+                display_mode_verifier=lambda manifest: None,
                 timestamp_func=lambda: "20260711-010203",
             )
 
@@ -214,6 +260,56 @@ class RunPrismGuiSessionTests(unittest.TestCase):
 
             self.assertEqual([], launched)
 
+    def test_run_session_rejects_missing_exact_fusion_before_launch(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            minecraft_dir = root / "minecraft"
+            (minecraft_dir / "logs").mkdir(parents=True)
+            self.configure_matching_deployment(mod, root, minecraft_dir)
+            (minecraft_dir / "mods" / mod.FUSION_FILENAME).unlink()
+            launched = []
+
+            with self.assertRaisesRegex(RuntimeError, r"exactly one Fusion jar.*deploy_prism_dev\.py"):
+                mod.run_session(
+                    scenario_name="boot-smoke",
+                    minecraft_dir=minecraft_dir,
+                    instance_dir=root / "instances" / "dev",
+                    run_root=root / "gui-runs",
+                    prepare_world_func=self.fake_prepare,
+                    configure_instance_func=lambda instance_dir: True,
+                    launcher=lambda command: launched.append(command),
+                    wait_for_log_func=lambda **kwargs: "SelfTest: 104 passed\nMS_GUI_TEST_READY\n",
+                    timestamp_func=lambda: "20260714-010101",
+                )
+
+            self.assertEqual([], launched)
+
+    def test_run_session_rejects_wrong_fusion_bytes_before_launch(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            minecraft_dir = root / "minecraft"
+            (minecraft_dir / "logs").mkdir(parents=True)
+            self.configure_matching_deployment(mod, root, minecraft_dir)
+            (minecraft_dir / "mods" / mod.FUSION_FILENAME).write_bytes(b"wrong Fusion bytes")
+            launched = []
+
+            with self.assertRaisesRegex(RuntimeError, r"Fusion jar contents differ.*deploy_prism_dev\.py"):
+                mod.run_session(
+                    scenario_name="boot-smoke",
+                    minecraft_dir=minecraft_dir,
+                    instance_dir=root / "instances" / "dev",
+                    run_root=root / "gui-runs",
+                    prepare_world_func=self.fake_prepare,
+                    configure_instance_func=lambda instance_dir: True,
+                    launcher=lambda command: launched.append(command),
+                    wait_for_log_func=lambda **kwargs: "SelfTest: 104 passed\nMS_GUI_TEST_READY\n",
+                    timestamp_func=lambda: "20260714-010102",
+                )
+
+            self.assertEqual([], launched)
+
     def test_boot_smoke_success_cleans_only_new_runner_processes(self):
         mod = self.load_script()
         with tempfile.TemporaryDirectory() as tmp:
@@ -222,7 +318,7 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             (minecraft_dir / "logs").mkdir(parents=True)
             self.configure_matching_deployment(mod, root, minecraft_dir)
             baseline, current = self.process_snapshots(minecraft_dir)
-            snapshots = iter([baseline, current])
+            snapshots = iter([baseline, baseline, current])
             terminated = []
             mod.snapshot_processes = lambda: next(snapshots)
             mod.terminate_processes = lambda pids: terminated.append(pids)
@@ -236,6 +332,7 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 configure_instance_func=lambda instance_dir: True,
                 launcher=lambda command: None,
                 wait_for_log_func=lambda **kwargs: "SelfTest: 104 passed\nMS_GUI_TEST_READY\n",
+                display_mode_verifier=lambda manifest: None,
                 timestamp_func=lambda: "20260712-030405",
             )
 
@@ -249,7 +346,7 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             (minecraft_dir / "logs").mkdir(parents=True)
             self.configure_matching_deployment(mod, root, minecraft_dir)
             baseline, current = self.process_snapshots(minecraft_dir)
-            snapshots = iter([baseline, current])
+            snapshots = iter([baseline, baseline, current])
             terminated = []
             mod.snapshot_processes = lambda: next(snapshots)
             mod.terminate_processes = lambda pids: terminated.append(pids)
@@ -280,6 +377,7 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             snapshots = iter([baseline, current])
             snapshot_calls = []
             terminated = []
+            watchdogs = []
 
             def snapshot():
                 snapshot_calls.append(True)
@@ -294,15 +392,32 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 instance_dir=root / "instances" / "dev",
                 run_root=root / "gui-runs",
                 prepare_world_func=self.fake_prepare,
+                cleanup_existing_func=lambda *args: None,
                 configure_instance_func=lambda instance_dir: True,
                 launcher=lambda command: None,
                 wait_for_log_func=lambda **kwargs: "SelfTest: 104 passed\nMS_GUI_TEST_READY\n",
+                display_mode_verifier=lambda manifest: None,
+                watchdog_launcher=lambda expected, log_path, cursor, run_dir: watchdogs.append(
+                    (expected, log_path, cursor, run_dir)
+                ),
                 timestamp_func=lambda: "20260712-030407",
             )
 
             self.assertIsNotNone(result.manual_handoff_message)
-            self.assertEqual(1, len(snapshot_calls))
+            self.assertEqual(2, len(snapshot_calls))
             self.assertEqual([], terminated)
+            self.assertEqual({201: current[201][1]}, watchdogs[0][0])
+            self.assertEqual(result.run_dir, watchdogs[0][3])
+
+    def test_verify_desktop_display_mode_rejects_resolution_change(self):
+        mod = self.load_script()
+        manifest = self.fake_prepare(Path("/tmp/minecraft"), "New World", "MagicStorageGuiTest")
+
+        with self.assertRaisesRegex(RuntimeError, "changed the macOS desktop display mode"):
+            mod.verify_desktop_display_mode(
+                manifest,
+                mode_func=lambda: mod.DisplayMode(1920, 1200, 1920, 1200, 60, 24),
+            )
 
     def test_crafting_fuel_page_scenario_generates_focused_fullscreen_checklist(self):
         mod = self.load_script()
@@ -345,12 +460,21 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "cursor/inventory",
                 "visible outer margins",
                 "frame and left rail are centered as one group",
-                "process-machine slots",
+                "timed-station slots",
                 "currently registered reserve",
                 "scroll its panel",
-                "Stations & Axe Energy",
-                "two flow rows",
-                "lower-right Fuel control panel",
+                "Consumables",
+                "Timed Stations",
+                "Instant Stations",
+                "three full-width category panels",
+                "fill the complete vertical span",
+                "independent information box immediately to the right of the player inventory",
+                "Instant Stations uses its full category width",
+                "multi-row pages",
+                "middle-click",
+                "vanilla-style ×1/×8/×64/Max buttons",
+                "complete wrapped prompt",
+                "no status light",
                 "Crafting Table",
                 "Stonecutter",
                 "Smithing Table",
@@ -362,6 +486,15 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "Smithing Transform",
                 "strip",
                 "16×16",
+                "80×16",
+                "isolated row",
+                "contiguous connected row",
+                "shared casing borders",
+                "center motifs remain",
+                "directional front",
+                "Wrench",
+                "normal right-click",
+                "sneak-right-click",
                 "stays at zero",
                 "hover tooltip",
                 "Brew Energy",
@@ -377,14 +510,24 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "inside their own slot",
                 "stored types / total type capacity",
                 "only Storage, Craftable, and Fuel page tabs",
-                "single current-value selector",
+                "compact Fuel Target bar",
+                "bounded left label strip",
+                "player-inventory label band",
+                "dim representative station item",
+                "stored types / total type capacity",
+                "light vanilla container panels",
+                "compact raised panel",
+                "align from the ledger's top edge",
+                "at most four columns",
+                "third row",
+                "without an oversized empty panel",
                 "list button",
                 "selected row",
                 "bounded scrolling",
                 "outside the popup",
                 "right-click",
                 "actual station slot or reserve icon",
-                "distribute across the available panel width",
+                "fill the available space evenly",
                 "×8",
                 "×64",
                 "Max",
@@ -398,6 +541,7 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             self.assertNotIn("reinstalled axe", checklist)
             self.assertNotIn("lowers its raw durability", checklist)
             self.assertNotIn("Compact Grid", checklist)
+            self.assertNotIn("different fill levels", checklist)
             self.assertNotIn("all five", checklist)
             self.assertNotIn("all eight", checklist)
             self.assertIn("- hotbar `7` → `texture_gallery`", checklist)
@@ -488,6 +632,133 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                     "MagicStorageGuiTest",
                 ),
             )
+
+    def test_cleanup_existing_session_terminates_only_matching_dev_tree(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance_dir = root / "instances" / "dev"
+            minecraft_dir = instance_dir / "minecraft"
+            current = {
+                200: (1, "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher -l dev -w MagicStorageGuiTest -o MagicStorageBot"),
+                201: (200, f"/usr/bin/java -Duser.dir={minecraft_dir} org.prismlauncher.EntryPoint"),
+                300: (1, "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher -l other -w OtherWorld"),
+                301: (300, "/usr/bin/java -Duser.dir=/tmp/other-instance org.prismlauncher.EntryPoint"),
+            }
+            terminated = []
+
+            mod.cleanup_existing_session(
+                instance_dir,
+                minecraft_dir,
+                "dev",
+                "MagicStorageGuiTest",
+                snapshot_func=lambda: current,
+                terminate_func=lambda pids: terminated.append(pids),
+            )
+
+            self.assertEqual([[201, 200]], terminated)
+
+    def test_supervise_shutdown_forces_only_same_java_after_stopping_timeout(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "latest.log"
+            log.write_text("")
+            cursor = mod.log_cursor(log)
+            expected_command = "/usr/bin/java -Duser.dir=/tmp/dev/minecraft org.prismlauncher.EntryPoint"
+            current = {
+                201: (200, expected_command),
+                301: (300, "/usr/bin/java -Duser.dir=/tmp/other/minecraft org.prismlauncher.EntryPoint"),
+            }
+            times = iter([10.0, 10.0, 16.0])
+            terminated = []
+
+            log.write_text("[14Jul2026 22:45:45.407] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Stopping!\n")
+            result = mod.supervise_shutdown(
+                {201: expected_command},
+                log,
+                cursor,
+                root,
+                stall_timeout_seconds=5,
+                poll_seconds=0,
+                snapshot_func=lambda: current,
+                terminate_func=lambda pids: terminated.append(pids),
+                monotonic_func=lambda: next(times),
+                sleep_func=lambda seconds: None,
+            )
+
+            self.assertEqual([[201]], terminated)
+            self.assertEqual("forced_after_glfw_shutdown_stall", result["status"])
+            self.assertEqual([201], result["forced_pids"])
+            self.assertEqual(result, json.loads((root / "shutdown.json").read_text()))
+
+    def test_supervise_shutdown_records_graceful_exit_without_terminating(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "latest.log"
+            log.write_text("")
+            cursor = mod.log_cursor(log)
+            expected_command = "/usr/bin/java -Duser.dir=/tmp/dev/minecraft org.prismlauncher.EntryPoint"
+            snapshots = iter([
+                {201: (200, expected_command)},
+                {},
+            ])
+            terminated = []
+
+            result = mod.supervise_shutdown(
+                {201: expected_command},
+                log,
+                cursor,
+                root,
+                stall_timeout_seconds=5,
+                poll_seconds=0,
+                snapshot_func=lambda: next(snapshots),
+                terminate_func=lambda pids: terminated.append(pids),
+                monotonic_func=lambda: 10.0,
+                sleep_func=lambda seconds: None,
+            )
+
+            self.assertEqual([], terminated)
+            self.assertEqual("graceful", result["status"])
+            self.assertEqual([], result["forced_pids"])
+
+    def test_start_shutdown_watchdog_writes_exact_process_config_and_detaches(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "latest.log"
+            log.write_text("ready\n")
+            cursor = mod.log_cursor(log)
+            expected = {201: "/usr/bin/java -Duser.dir=/tmp/dev/minecraft net.minecraft.client.main.Main"}
+            launches = []
+
+            mod.start_shutdown_watchdog(
+                expected,
+                log,
+                cursor,
+                root,
+                popen_func=lambda command, **kwargs: launches.append((command, kwargs)),
+            )
+
+            config_path = root / "shutdown-watchdog.json"
+            config = json.loads(config_path.read_text())
+            self.assertEqual({"201": expected[201]}, config["expected_processes"])
+            self.assertEqual(str(log), config["log_path"])
+            self.assertEqual(
+                {"size": cursor.size, "device": cursor.device, "inode": cursor.inode},
+                config["cursor"],
+            )
+            self.assertEqual(5, config["stall_timeout_seconds"])
+            command, kwargs = launches[0]
+            self.assertEqual(
+                [sys.executable, str(Path(mod.__file__).resolve()), "--watchdog-config", str(config_path)],
+                command,
+            )
+            self.assertTrue(kwargs["start_new_session"])
+            self.assertTrue(kwargs["close_fds"])
+            self.assertEqual(subprocess.DEVNULL, kwargs["stdin"])
+            self.assertEqual(subprocess.STDOUT, kwargs["stderr"])
 
     def test_terminate_processes_sends_term_to_each_live_owned_pid(self):
         mod = self.load_script()

@@ -2,12 +2,14 @@
 import argparse
 import gzip
 import json
+import re
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 DEFAULT_PRISM_MINECRAFT_DIR = Path.home() / "Library/Application Support/PrismLauncher/instances/dev/minecraft"
 DEFAULT_SOURCE_WORLD = "New World"
@@ -18,7 +20,7 @@ MARKER_FILE = ".magic_storage_gui_test_world"
 PACK_FORMAT = 48
 
 OPTION_OVERRIDES = {
-    "fullscreen": "false",
+    "fullscreen": "true",
     "pauseOnLostFocus": "false",
     "key_key.use": "key.keyboard.u",
     "guiScale": "4",
@@ -27,19 +29,86 @@ OPTION_OVERRIDES = {
     "tutorialStep": "none",
     "autoJump": "false",
 }
+OPTION_REMOVALS = {"fullscreenResolution"}
 
 FULLSCREEN_GATE = {
     "required": True,
     "when": "after_world_ready_before_first_gui_action",
-    "launch_mode": "windowed_only",
-    "accepted_methods": ["native_fullscreen", "f11"],
+    "launch_mode": "minecraft_macos_borderless_fullscreen",
+    "automatic": True,
+    "accepted_methods": ["minecraft_f11_borderless"],
+    "forbidden_methods": ["macos_native_fullscreen", "combined_native_and_minecraft_fullscreen"],
     "ready_log": "MS_GUI_TEST_READY",
     "verify": [
         "Minecraft content is not offset or clipped",
         "hotbar and GUI edges are fully visible",
+        "macOS desktop display mode remains unchanged",
         "User confirms the entire Minecraft frame is visible",
     ],
 }
+
+
+class DisplayMode(NamedTuple):
+    width: int
+    height: int
+    pixel_width: int
+    pixel_height: int
+    refresh_rate: int
+    depth: int
+
+    def minecraft_value(self) -> str:
+        return f"{self.width}x{self.height}@{self.refresh_rate}:{self.depth}"
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "width": self.width,
+            "height": self.height,
+            "pixel_width": self.pixel_width,
+            "pixel_height": self.pixel_height,
+            "refresh_rate": self.refresh_rate,
+            "depth": self.depth,
+        }
+
+
+def current_macos_main_display_mode(run_func=subprocess.run) -> DisplayMode:
+    command = ["/usr/sbin/system_profiler", "-json", "SPDisplaysDataType"]
+    result = run_func(command, text=True, capture_output=True)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise RuntimeError(f"system_profiler failed while reading the macOS display mode: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("system_profiler returned invalid display JSON") from exc
+    displays = [
+        display
+        for gpu in payload.get("SPDisplaysDataType", [])
+        for display in gpu.get("spdisplays_ndrvs", [])
+        if display.get("spdisplays_main") == "spdisplays_yes"
+        and display.get("spdisplays_online") == "spdisplays_yes"
+    ]
+    if len(displays) != 1:
+        raise RuntimeError(f"expected exactly one online main display, found {len(displays)}")
+    display = displays[0]
+    resolution = re.fullmatch(
+        r"\s*(\d+)\s+x\s+(\d+)\s+@\s+(\d+(?:\.\d+)?)Hz\s*",
+        display.get("_spdisplays_resolution", ""),
+    )
+    pixels = re.fullmatch(r"\s*(\d+)\s+x\s+(\d+)\s*", display.get("_spdisplays_pixels", ""))
+    if resolution is None or pixels is None:
+        raise RuntimeError("main display is missing an exact point or pixel resolution")
+    refresh = float(resolution.group(3))
+    rounded_refresh = round(refresh)
+    if abs(refresh - rounded_refresh) >= 0.01:
+        raise RuntimeError(f"main display refresh rate is not an integer GLFW mode: {refresh}")
+    return DisplayMode(
+        int(resolution.group(1)),
+        int(resolution.group(2)),
+        int(pixels.group(1)),
+        int(pixels.group(2)),
+        rounded_refresh,
+        24,
+    )
 
 VOID_GENERATOR = {
     "type": "minecraft:flat",
@@ -89,6 +158,19 @@ GALLERY = [
     {"x": 10, "y": 80, "z": -9, "block": "magic_storage:export_bus[facing=south]"},
 ]
 
+CONNECTED_GALLERY = [
+    {"x": -5, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t1"},
+    {"x": -4, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t2"},
+    {"x": -3, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t3"},
+    {"x": -2, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t4"},
+    {"x": -1, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t5"},
+    {"x": 0, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t6"},
+    {"x": 1, "y": 80, "z": -11, "block": "magic_storage:storage_terminal"},
+    {"x": 2, "y": 80, "z": -11, "block": "magic_storage:crafting_terminal"},
+    {"x": 3, "y": 80, "z": -11, "block": "magic_storage:import_bus[facing=south]"},
+    {"x": 4, "y": 80, "z": -11, "block": "magic_storage:export_bus[facing=south]"},
+]
+
 BASELINE = {
     "stored_items": {
         "minecraft:cobblestone": 8192,
@@ -116,7 +198,6 @@ BASELINE = {
         "brew_energy": 0,
         "furnace_fuel": 0,
         "blaze_fuel": 0,
-        "bottle_fuel": 0,
     },
     "total_type_capacity": 785,
 }
@@ -129,7 +210,7 @@ PLAYER_KIT = {
         "4": {"slot": "hotbar.3", "item": "magic_storage:storage_unit_t6", "count": 1},
         "5": {"slot": "hotbar.4", "item": "magic_storage:import_bus", "count": 1},
         "6": {"slot": "hotbar.5", "item": "magic_storage:export_bus", "count": 1},
-        "7": {"slot": "hotbar.6", "item": "minecraft:spyglass", "count": 1},
+        "7": {"slot": "hotbar.6", "item": "magic_storage:wrench", "count": 1},
         "8": {"slot": "hotbar.7", "item": "minecraft:compass", "count": 1},
         "9": {"slot": "hotbar.8", "item": "minecraft:barrier", "count": 1},
     },
@@ -461,6 +542,8 @@ def patch_options(options_path: Path) -> bool:
             output.append(line)
             continue
         key, _ = line.split(":", 1)
+        if key in OPTION_REMOVALS:
+            continue
         if key in OPTION_OVERRIDES:
             output.append(f"{key}:{OPTION_OVERRIDES[key]}")
             seen.add(key)
@@ -541,6 +624,8 @@ def build_setup_function() -> str:
         "setblock 2 80 -1 minecraft:barrel",
     ])
     for entry in GALLERY:
+        lines.append(f"setblock {entry['x']} {entry['y']} {entry['z']} {entry['block']}")
+    for entry in CONNECTED_GALLERY:
         lines.append(f"setblock {entry['x']} {entry['y']} {entry['z']} {entry['block']}")
     lines.extend([
         "tag @a remove ms_gui_ready",
@@ -629,7 +714,7 @@ def build_function_bodies() -> dict[str, str]:
 def build_manifest(world_dir: Path) -> dict:
     commands = {name: f"/function {DATAPACK_NAME}:{name}" for name in build_function_bodies()}
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "world_name": world_dir.name,
         "world_dir": str(world_dir),
         "datapack": DATAPACK_NAME,
@@ -639,6 +724,7 @@ def build_manifest(world_dir: Path) -> dict:
         "lab": LAB,
         "targets": TARGETS,
         "gallery": GALLERY,
+        "connected_gallery": CONNECTED_GALLERY,
         "baseline": BASELINE,
         "player_kit": PLAYER_KIT,
         "bootstrap": {
@@ -748,10 +834,12 @@ def prepare_world(
     minecraft_dir: Path = DEFAULT_PRISM_MINECRAFT_DIR,
     source_world: str = DEFAULT_SOURCE_WORLD,
     target_world: str = DEFAULT_WORLD_NAME,
+    display_mode_func=current_macos_main_display_mode,
 ) -> dict:
     minecraft_dir = minecraft_dir.expanduser().resolve()
     source = minecraft_dir / "saves" / source_world
     target = minecraft_dir / "saves" / target_world
+    display_mode = display_mode_func()
     staging = _stage_template_world(source, target)
     try:
         level_dat = staging / "level.dat"
@@ -772,6 +860,7 @@ def prepare_world(
                 "source_world": source_world,
                 "options_path": str(options_path),
                 "options_changed": options_changed,
+                "desktop_display_mode": display_mode.as_dict(),
                 "level": read_level_dat_summary(level_dat),
                 "world_generator": world_generator,
                 "launch_command": build_manifest(target)["launch_command"],

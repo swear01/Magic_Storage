@@ -3,6 +3,7 @@ import gzip
 import importlib.util
 import json
 import shutil
+import subprocess
 import struct
 import tempfile
 import unittest
@@ -93,7 +94,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
 
             pack_meta = json.loads((world_dir / "datapacks/magic_storage_gui_test/pack.mcmeta").read_text())
             self.assertEqual(48, pack_meta["pack"]["pack_format"])
-            self.assertEqual(2, manifest["schema_version"])
+            self.assertEqual(3, manifest["schema_version"])
             self.assertEqual([-18, 79, -12, 18, 90, 12], manifest["lab"]["reset_bounds"])
             self.assertEqual([0, 80, 0], manifest["targets"]["storage_core"]["block"])
             self.assertEqual([-1, 80, 0], manifest["targets"]["storage_terminal"]["block"])
@@ -112,12 +113,19 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertEqual(785, manifest["baseline"]["total_type_capacity"])
             self.assertTrue(all(value == 0 for value in manifest["baseline"]["energy"].values()))
             self.assertEqual("magic_storage:storage_terminal", manifest["player_kit"]["hotbar"]["1"]["item"])
+            self.assertEqual("magic_storage:wrench", manifest["player_kit"]["hotbar"]["7"]["item"])
             self.assertEqual("minecraft:barrier", manifest["player_kit"]["hotbar"]["9"]["item"])
             self.assertTrue(manifest["fullscreen_gate"]["required"])
             self.assertEqual("after_world_ready_before_first_gui_action", manifest["fullscreen_gate"]["when"])
-            self.assertEqual("windowed_only", manifest["fullscreen_gate"]["launch_mode"])
-            self.assertIn("native_fullscreen", manifest["fullscreen_gate"]["accepted_methods"])
+            self.assertEqual("minecraft_macos_borderless_fullscreen", manifest["fullscreen_gate"]["launch_mode"])
+            self.assertTrue(manifest["fullscreen_gate"]["automatic"])
+            self.assertEqual(["minecraft_f11_borderless"], manifest["fullscreen_gate"]["accepted_methods"])
+            self.assertEqual(
+                ["macos_native_fullscreen", "combined_native_and_minecraft_fullscreen"],
+                manifest["fullscreen_gate"]["forbidden_methods"],
+            )
             self.assertIn("User confirms the entire Minecraft frame is visible", manifest["fullscreen_gate"]["verify"])
+            self.assertIn("macOS desktop display mode remains unchanged", manifest["fullscreen_gate"]["verify"])
             self.assertFalse(any("Computer Use" in check for check in manifest["fullscreen_gate"]["verify"]))
             self.assertIn("-o MagicStorageBot", manifest["launch_command"])
 
@@ -147,10 +155,23 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 (10, "export_bus[facing=south]"),
             ]:
                 self.assertIn(f"setblock {x} 80 -9 magic_storage:{block}", setup)
+            for x, block in [
+                (-5, "storage_unit_t1"),
+                (-4, "storage_unit_t2"),
+                (-3, "storage_unit_t3"),
+                (-2, "storage_unit_t4"),
+                (-1, "storage_unit_t5"),
+                (0, "storage_unit_t6"),
+                (1, "storage_terminal"),
+                (2, "crafting_terminal"),
+                (3, "import_bus[facing=south]"),
+                (4, "export_bus[facing=south]"),
+            ]:
+                self.assertIn(f"setblock {x} 80 -11 magic_storage:{block}", setup)
             expected_core = (
                 'setblock 0 80 0 magic_storage:storage_core{energy:{smelting_energy:0L,'
                 'blasting_energy:0L,smoking_energy:0L,campfire_energy:0L,brew_energy:0L,'
-                'furnace_fuel:0L,blaze_fuel:0L,bottle_fuel:0L},machines:{Items:['
+                'furnace_fuel:0L,blaze_fuel:0L},machines:{Items:['
                 '{Slot:5b,id:"minecraft:crafting_table",count:1},'
                 '{Slot:6b,id:"minecraft:stonecutter",count:1},'
                 '{Slot:7b,id:"minecraft:smithing_table",count:1},'
@@ -167,9 +188,10 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 '{item:{id:"minecraft:netherite_ingot",count:1},count:4L}]}'
             )
             self.assertIn(expected_core, setup)
+            self.assertNotIn("bottle_fuel", setup)
             player_ready = (datapack / "data/magic_storage_gui_test/function/player_ready.mcfunction").read_text()
             self.assertIn("item replace entity @s hotbar.0 with magic_storage:storage_terminal 1", player_ready)
-            self.assertIn("item replace entity @s hotbar.6 with minecraft:spyglass 1", player_ready)
+            self.assertIn("item replace entity @s hotbar.6 with magic_storage:wrench 1", player_ready)
             self.assertIn("item replace entity @s hotbar.7 with minecraft:compass 1", player_ready)
             self.assertIn("item replace entity @s hotbar.8 with minecraft:barrier 1", player_ready)
             self.assertIn("item replace entity @s inventory.0 with magic_storage:remote_terminal 1", player_ready)
@@ -198,6 +220,36 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             all_function_text = "\n".join(path.read_text() for path in datapack.rglob("*.mcfunction"))
             self.assertNotIn("command_block", all_function_text)
             self.assertNotIn("sleep", all_function_text.lower())
+
+    def test_connected_gallery_is_contiguous_coreless_and_wrench_ready(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            world_dir = Path(tmp) / "MagicStorageGuiTest"
+            world_dir.mkdir()
+
+            manifest = mod.install_datapack(world_dir)
+
+            gallery = manifest["connected_gallery"]
+            self.assertEqual(list(range(-5, 5)), [entry["x"] for entry in gallery])
+            self.assertEqual({80}, {entry["y"] for entry in gallery})
+            self.assertEqual({-11}, {entry["z"] for entry in gallery})
+            self.assertNotIn("magic_storage:storage_core", {entry["block"] for entry in gallery})
+            self.assertEqual(
+                [
+                    "magic_storage:storage_unit_t1",
+                    "magic_storage:storage_unit_t2",
+                    "magic_storage:storage_unit_t3",
+                    "magic_storage:storage_unit_t4",
+                    "magic_storage:storage_unit_t5",
+                    "magic_storage:storage_unit_t6",
+                    "magic_storage:storage_terminal",
+                    "magic_storage:crafting_terminal",
+                    "magic_storage:import_bus[facing=south]",
+                    "magic_storage:export_bus[facing=south]",
+                ],
+                [entry["block"] for entry in gallery],
+            )
+            self.assertEqual("magic_storage:wrench", manifest["player_kit"]["hotbar"]["7"]["item"])
 
     def test_datapack_waits_three_ticks_and_reset_reuses_setup_without_looping(self):
         mod = self.load_script()
@@ -276,6 +328,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             options = Path(tmp) / "options.txt"
             options.write_text(
                 "fullscreen:true\n"
+                "fullscreenResolution:1280x720@60:24\n"
                 "pauseOnLostFocus:true\n"
                 "guiScale:2\n"
                 "key_key.use:key.mouse.right\n"
@@ -286,7 +339,8 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
 
             lines = dict(line.split(":", 1) for line in options.read_text().splitlines() if ":" in line)
             self.assertTrue(changed)
-            self.assertEqual("false", lines["fullscreen"])
+            self.assertEqual("true", lines["fullscreen"])
+            self.assertNotIn("fullscreenResolution", lines)
             self.assertEqual("false", lines["pauseOnLostFocus"])
             self.assertEqual("4", lines["guiScale"])
             self.assertEqual("key.keyboard.u", lines["key_key.use"])
@@ -294,6 +348,53 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertEqual("720", lines["overrideHeight"])
             self.assertEqual("none", lines["tutorialStep"])
             self.assertEqual("kept", lines["unrelated"])
+
+    def test_current_macos_main_display_mode_reads_scaled_desktop_mode(self):
+        mod = self.load_script()
+        payload = {
+            "SPDisplaysDataType": [
+                {
+                    "spdisplays_ndrvs": [
+                        {
+                            "_name": "External",
+                            "_spdisplays_resolution": "1920 x 1080 @ 60.00Hz",
+                            "_spdisplays_pixels": "1920 x 1080",
+                            "spdisplays_online": "spdisplays_yes",
+                        },
+                        {
+                            "_name": "Color LCD",
+                            "_spdisplays_resolution": "1470 x 956 @ 60.00Hz",
+                            "_spdisplays_pixels": "2940 x 1912",
+                            "spdisplays_main": "spdisplays_yes",
+                            "spdisplays_online": "spdisplays_yes",
+                        },
+                    ]
+                }
+            ]
+        }
+        calls = []
+
+        mode = mod.current_macos_main_display_mode(
+            run_func=lambda command, **kwargs: calls.append((command, kwargs))
+            or subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+        )
+
+        self.assertEqual(mod.DisplayMode(1470, 956, 2940, 1912, 60, 24), mode)
+        self.assertEqual(
+            ["/usr/sbin/system_profiler", "-json", "SPDisplaysDataType"],
+            calls[0][0],
+        )
+
+    def test_current_macos_main_display_mode_fails_closed_without_exact_main_mode(self):
+        mod = self.load_script()
+        payload = {"SPDisplaysDataType": [{"spdisplays_ndrvs": []}]}
+
+        with self.assertRaisesRegex(RuntimeError, "exactly one online main display"):
+            mod.current_macos_main_display_mode(
+                run_func=lambda command, **kwargs: subprocess.CompletedProcess(
+                    command, 0, json.dumps(payload), ""
+                )
+            )
 
     def test_patch_options_preserves_original_when_atomic_replace_fails(self):
         mod = self.load_script()
@@ -523,6 +624,8 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
         self.assertIn("全螢幕 gate", notes)
         self.assertIn("所有 GUI 測試都必須先通過全螢幕 gate", notes)
         self.assertIn("任何 `u`、hotbar、點擊、滾輪、截圖前", notes)
+        self.assertIn("自動進入 Minecraft F11 fullscreen", notes)
+        self.assertIn("禁止 macOS 原生 fullscreen", notes)
 
 
 if __name__ == "__main__":

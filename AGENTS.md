@@ -36,6 +36,11 @@ When changing behavior, change it — do not keep the old behavior as an option.
 Never add flags, parameters, or config options that were not explicitly requested.
 If you are about to add an "option to preserve old behavior," stop: just change the behavior.
 
+### Player-Facing UX
+Simple is better for player-facing text and controls.
+Show only what the player needs for the current action; omit implementation details,
+redundant instructions, and input hints that are discoverable through interaction.
+
 ## No Silent Fallback
 
 ### Banned Behaviors
@@ -138,10 +143,10 @@ Expected `git status` after archiving:
 ## GitHub / CI / GUI Release Gates
 
 - Public repo: https://github.com/swear01/Magic_Storage
-- CI lives in `.github/workflows/ci.yml` and must keep `./gradlew build`, minimum/latest-compatible EMI API compilation, `./gradlew runGameTestServer`, `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts`, and the `./gradlew runData` datagen drift check green. Before client-side datagen, `scripts/stage_emi_runtime.sh` may retry the same Gradle command once, then must fail without changing the EMI source or version. CI uploads jar + logs/reports artifacts.
-- Optional client boot/resource smoke lives in `.github/workflows/client-smoke.yml` and is `workflow_dispatch` only; it resolves the latest compatible EMI and stages it through the same explicit single-retry script. It is not GUI layout approval.
+- CI lives in `.github/workflows/ci.yml` and must keep `./gradlew build`, minimum/latest-compatible EMI API compilation, `./gradlew runGameTestServer`, `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts`, and the `./gradlew runData` datagen drift check green. It uploads jar + logs/reports artifacts.
+- Optional client boot/resource smoke lives in `.github/workflows/client-smoke.yml` and is `workflow_dispatch` only; it resolves and stages the latest EMI accepted by `emi_version_range`, and is not GUI layout approval.
 - CD lives in `.github/workflows/release.yml`: push tag `v<mod_version>` only after `gradle.properties` has the matching `mod_version`; the workflow rejects mismatched tags, regenerates release notes from git history, reruns all CI gates, and uploads jar + logs/reports.
-- GUI/Patchouli/visual changes require `python3 scripts/run_prism_gui_session.py --scenario <scenario>` plus the fixed Prism dev / manual handoff checklist in `docs/notes.md`. The runner clears the Computer Use wrapper, disables Prism's per-instance error-console pop-up, launches offline with `-o MagicStorageBot`, waits for `MS_GUI_TEST_READY`, then stops automation and hands control to the user. It still scans `latest.log` and fails on every non-whitelisted current-run error. Visual verification owner: user; the user must pass the fullscreen gate before any GUI action. `boot-smoke` does not require visual approval; visual scenarios do. Do not claim GUI verified from GameTest/client-smoke alone.
+- GUI/Patchouli/visual changes require `python3 scripts/run_prism_gui_session.py --scenario <scenario>` plus the fixed Prism dev / manual handoff checklist in `docs/notes.md` and `docs/macos-fullscreen-guide.md`. The runner clears the Computer Use wrapper, disables Prism's per-instance error-console pop-up, launches offline with `-o MagicStorageBot` in automatic Minecraft F11 fullscreen, waits for `MS_GUI_TEST_READY`, verifies that the captured macOS desktop display mode is unchanged, then stops automation and hands control to the user. On macOS, `MacOsWindowMixin` makes F11 a borderless Cocoa window and must never attach GLFW to a monitor or select a display mode. macOS native fullscreen (green button or Control-Command-F) and combined native+Minecraft fullscreen are forbidden. Closing is also gated: press F11 once, wait for the normal bordered window, then press Command-Q; never press Command-Q directly from F11 fullscreen. Each visual run starts an exact-PID-and-command shutdown watchdog that terminates only its test Java process if `Stopping!` is followed by a five-second GLFW swap stall, writes `shutdown.json`, and the next run precisely clears any stale process from the same dev test instance. It still scans `latest.log` and fails on every non-whitelisted current-run error. Visual verification owner: user; the user must confirm the fullscreen gate before any GUI action. `boot-smoke` does not require visual approval; visual scenarios do. Do not claim GUI verified from GameTest/client-smoke alone.
 
 ## Mod-Specific Essentials
 

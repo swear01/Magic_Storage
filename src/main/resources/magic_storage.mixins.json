@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.swearprom.magicstorage.magic_storage.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MacOsWindowMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

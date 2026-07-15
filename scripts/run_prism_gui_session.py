@@ -12,23 +12,31 @@ from pathlib import Path
 from typing import Callable, NamedTuple
 
 try:
-    from prepare_prism_gui_world import DEFAULT_PRISM_MINECRAFT_DIR, DEFAULT_SOURCE_WORLD, DEFAULT_WORLD_NAME, prepare_world
+    from prepare_prism_gui_world import DisplayMode, DEFAULT_PRISM_MINECRAFT_DIR, DEFAULT_SOURCE_WORLD, DEFAULT_WORLD_NAME, current_macos_main_display_mode, prepare_world
 except ModuleNotFoundError:
-    from scripts.prepare_prism_gui_world import DEFAULT_PRISM_MINECRAFT_DIR, DEFAULT_SOURCE_WORLD, DEFAULT_WORLD_NAME, prepare_world
+    from scripts.prepare_prism_gui_world import DisplayMode, DEFAULT_PRISM_MINECRAFT_DIR, DEFAULT_SOURCE_WORLD, DEFAULT_WORLD_NAME, current_macos_main_display_mode, prepare_world
+
+try:
+    from deploy_prism_dev import FUSION_FILENAME, FUSION_SHA512, fusion_jars, sha512
+except ModuleNotFoundError:
+    from scripts.deploy_prism_dev import FUSION_FILENAME, FUSION_SHA512, fusion_jars, sha512
 
 DEFAULT_INSTANCE_DIR = Path.home() / "Library/Application Support/PrismLauncher/instances/dev"
 DEFAULT_PROJECT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_RUN_ROOT = Path("build/gui-runs")
 DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_PROCESS_TERMINATION_TIMEOUT_SECONDS = 5
+DEFAULT_SHUTDOWN_STALL_TIMEOUT_SECONDS = 5
 DEFAULT_OFFLINE_PLAYER = "MagicStorageBot"
 DEFAULT_REQUIRED_PATTERNS = ["SelfTest:", "MS_GUI_TEST_READY"]
 DEFAULT_FORBIDDEN_PATTERNS = ["advanced_container_set_data", "ERROR", "FATAL", "Caused by"]
-MANUAL_HANDOFF_MESSAGE = "Minecraft is ready in the fixed test world. Please take over for the fullscreen visual checks."
+MANUAL_HANDOFF_MESSAGE = "Minecraft is ready in the fixed test world. Please take over for the fullscreen visual checks; close with F11, wait for the normal window, then Command-Q."
 OFFLINE_AUTH_PROPERTY_ERROR = "[net.minecraft.client.Minecraft/]: Failed to fetch user properties"
 PRIMARY_MONITOR_ERROR = "glfwGetPrimaryMonitor failed"
+STOPPING_LOG_PATTERN = "[net.minecraft.client.Minecraft/]: Stopping!"
 LOG_TIMESTAMP_PATTERN = re.compile(r"^\[\d{1,2}[A-Za-z]{3}\d{4} ")
 DEPLOY_REQUIRED_MESSAGE = "Run `python3 scripts/deploy_prism_dev.py` before launching Prism."
+CURRENT_RUN_LOG_CHECK = "Check latest.log for no non-whitelisted advanced_container_set_data, ERROR, FATAL, or Caused by during the current run; the known offline profile-properties 401 is allowed only in its exact authlib stack."
 
 SCENARIOS = {
     "boot-smoke": {
@@ -48,41 +56,44 @@ SCENARIOS = {
             "Pass the fullscreen gate before pressing hotbar/use/click/scroll.",
             "hotbar `1`, then `u`: Storage Terminal opens with left-side view buttons and no clipping.",
             "hotbar `2`, then `u`: Crafting Terminal opens with left-side view buttons and no EMI overlap.",
-            "Check latest.log for no advanced_container_set_data, ERROR, FATAL, or Caused by during the current run.",
+            CURRENT_RUN_LOG_CHECK,
         ],
     },
     "crafting-fuel-page": {
-        "description": "Verify the adaptive Crafting Terminal, two-row station/Axe Energy page, recipe resource workspace, runtime Fuel, expanded station-gated recipes, EMI action, 16×16 textures, and focus behavior.",
+        "description": "Verify the adaptive Crafting Terminal, vanilla-like full-height paged Fuel/recipe workspaces, runtime Fuel, station-gated recipes, EMI action, native 16×16 art backed by Fusion 80×16 connected sheets, and focus behavior.",
         "manual_gui_required": True,
         "hotbar_keys": ["2", "7", "8", "9"],
         "checks": [
             "Pass the fullscreen gate before pressing hotbar/use/click/scroll.",
-            "Use hotbar `8` and confirm the prepared world is at the true-void ready baseline: one active network, six connected Storage Unit tiers, empty process-machine slots, three preinstalled instant stations, the legacy iron axe converted into finite Axe Energy, and zero process/Fuel Energy Reserves.",
+            "Use hotbar `8` and confirm the prepared world is at the true-void ready baseline: one active network, six connected Storage Unit tiers, empty timed-station slots, three preinstalled instant stations, the legacy iron axe converted into finite Axe Energy, and zero timed/Fuel reserves.",
             "hotbar `2`, then `u`: open the Crafting Terminal; confirm the frame and left rail are centered as one group, retain visible outer margins, and use the side-by-side layout without clipping at this fullscreen size.",
             "On the Storage tab, confirm only stored stacks appear and the recipe panel, player inventory, scrollbar, and slot grid are aligned to one geometry; the EMI overlay covers neither the frame nor left rail.",
             "Confirm the first three page tabs are Storage, Craftable, and Fuel, followed by a clear visual gap before the item-page sorting/search controls; every rail icon occupies the same visual size inside identical buttons.",
             "Cycle search mode and confirm Name uses a magnifier, Tag uses #, and Mod uses @; none may look like a crosshair or an overlay inside the magnifier.",
             "Click a left-rail toggle, then click empty panel space: no white focus border may remain on the button.",
             "Use the Fuel page tab; confirm its left rail contains only Storage, Craftable, and Fuel page tabs, while search/grid/recipe controls hide.",
-            "Confirm Stations & Axe Energy uses two flow rows and both Stations & Axe Energy and Energy Reserves distribute across the available panel width instead of clustering at the left, without clipping.",
-            "Confirm the lower-right Fuel control panel is occupied and balanced with the player inventory: Fuel Target and the Fuel input stay inside it with no dead blank quadrant or overlap.",
-            "Confirm Energy Reserves keeps a single current-value selector labeled Fuel Target: left-click or wheel-down cycles forward, while right-click or wheel-up cycles backward without scrolling the reserve panel.",
+            "Confirm Consumables, Timed Stations, and Instant Stations form three full-width category panels in that order, all using the same light vanilla container panels, inset wells, slot frames, and dark-gray label text as the player inventory; they start immediately below the Crafting Terminal heading, fill the complete vertical span down to the player-inventory label band, and leave no dead blank quadrant. Each name stays inside a bounded left label strip; cells fill the available space evenly within each page, and every descriptor area supports multi-row pages with a visible page indicator and panel-local wheel paging when its category overflows.",
+            "Confirm Consumables contains Fuel input, Fuel, Brew Energy, and Axe Energy; Timed Stations contains the five energy-producing stations; Instant Stations contains Crafting Table, Stonecutter, and Smithing Table without fake energy totals.",
+            "Confirm the compact Fuel Target bar is visually separate above the Consumables content row: left-click or wheel-down cycles forward, right-click or wheel-up cycles backward, and middle-click resets to Auto without scrolling the row.",
+            "Confirm every cyclic sort/search/source/output selector also resets to its documented default on middle-click; page tabs do not pretend to be on/off controls.",
             "Use the separate Fuel Target list button; confirm the popup contains Auto plus every current target with its representative item, marks the selected row, uses bounded scrolling when needed, stays clear of the left rail/EMI overlay, and closes on selection, Escape, or a click outside the popup without leaving a focus border.",
             "Confirm Fuel shows no permanent rate formula, no per-tile explanatory labels, and no shadow behind reserve values; exact identity, rate, and stored amount remain available in the hover tooltip.",
-            "Confirm machine/reserve hover details appear only over the actual station slot or reserve icon, not over unused space in the wider flow cell.",
-            "Confirm Energy Reserves uses representative items (Coal, Blaze Rod, and Glass Bottle) instead of abstract energy glyphs; the selector text always states the current target.",
+            "Confirm station/reserve hover details appear only over the actual station slot or reserve icon, not over unused space in the wider flow cell.",
+            "Confirm Consumables uses representative items—Coal and Blaze Rod—as the only fuel reserves; no third reserve appears.",
             "On Storage and Craftable, confirm large item counts use compact units and automatically shrink/right-align inside their own slot without entering neighboring item cells.",
-            "On Fuel, confirm stored types / total type capacity is visible above the player inventory and matches the Storage Core.",
-            "At the reset baseline, confirm process-machine slots 0–4 are empty, instant-station slots contain exactly one Crafting Table, Stonecutter, and Smithing Table, the Axe Energy input contains no retrievable axe, and every machine-generated total stays at zero.",
-            "Shift-click the supplied stack of three Furnaces into Stations & Axe Energy; the hover tooltip must report the exact rate and only Smelting Energy may rise.",
+            "On Fuel, confirm stored types / total type capacity appears in an independent information box immediately to the right of the player inventory, aligned to the inventory's top and bottom, readable without hover, and matching the Storage Core. Instant Stations uses its full category width and never reserves a station cell for this information.",
+            "At the reset baseline, confirm each empty Timed Stations slot shows a dim representative station item without looking installed; Instant Stations contain exactly one Crafting Table, Stonecutter, and Smithing Table, the Axe Energy input contains no retrievable axe, and every machine-generated total stays at zero.",
+            "Shift-click the supplied stack of three Furnaces into Timed Stations; the hover tooltip must report the exact rate and only Smelting Energy may rise.",
             "Remove the Furnace stack and confirm generation stops while the accumulated Smelting Energy remains.",
             "With each baseline instant station still installed, Shift-click its supplied duplicate and confirm instant stations accept only one: the second copy remains in the player inventory. Remove the installed copy to make its recipes disappear, then reinstall one copy to restore them; none may increase a machine-generated energy total.",
             "Shift-click the supplied plain iron axe into the Axe Energy input and confirm it is consumed immediately, no retrievable axe remains, and finite Axe Energy increases by its exact remaining durability. Repeat with the supplied damaged Unbreaking II axe and confirm the increase is remaining durability multiplied by three.",
             "With player-inventory ingredients enabled, verify station gating dynamically: Crafting Table exposes an Oak Log crafting recipe, Stonecutter exposes a cobblestone result, Smithing Table exposes the Netherite Smithing Transform, and stored Axe Energy exposes an Oak Log strip transformation.",
-            "Select each expanded recipe once and confirm the EMI recipe diagram is used for represented standard recipes while the internal axe transformation uses the native diagram; both clearly show station/type, input resources, operation arrow, exact output count, Ready/Missing state, Available / Required values, explicit navigation arrows, and equal-size ×1/×8/×64/Max controls.",
+            "Select each expanded recipe once and confirm the light vanilla-style recipe workspace contains one compact raised panel: the EMI recipe diagram is used for represented standard recipes while the internal axe transformation uses the native diagram, and the material ledger follows immediately below without an oversized empty panel. Required resources align from the ledger's top edge, use at most four columns, and recipes with more than eight total item/energy/tool resources continue into a third row without clipping. Both clearly show input resources, operation arrow, exact output count, Ready/Missing state, Available / Required values, explicit vanilla-style navigation buttons, and vanilla-style ×1/×8/×64/Max buttons. A dim station icon stays in the diagram's lower-right corner without covering recipe content.",
+            "Select no item and confirm the complete wrapped prompt is centered in that same compact card without losing its final character; select a stored item with no supported recipe and confirm the panel shows a neutral No supported recipe message instead of an empty panel, white fallback surface, or red error.",
+            "Toggle Craft Output and confirm Player uses a player-head icon while Storage uses the Storage Core icon; Craft Output: Storage has no status light, while the genuine Use Player Inventory on/off control may show one.",
             "For the axe strip recipe, confirm Axe Energy appears as a distinct required energy resource and one successful finite craft decrements Axe Energy by exactly one without storing or mutating an axe item.",
             "Use hotbar `9` reset, then Shift-click the supplied Unbreakable axe into the Axe Energy input; it must be consumed and display an infinity marker. A later axe must be rejected unchanged, and a successful axe recipe must not decrement infinite Axe Energy.",
-            "Confirm every currently registered reserve total is reachable (scroll its panel if paging is shown), and functional labels read Fuel, Brew Energy, and Bottle Energy rather than implementation names.",
+            "Confirm every currently registered reserve total is reachable (scroll its panel if paging is shown), and the only fuel-reserve labels are Fuel and Brew Energy rather than implementation names.",
             "Confirm the single Fuel Target selector shows Auto, then Shift-click a Blaze Rod and verify only Brew Energy increases; use hotbar `9` reset before another case if needed.",
             "Use hotbar `9` reset, re-open Fuel, select Fuel in the Fuel Target selector, and Shift-click Oak Logs; the stack must be accepted and add its current runtime burn time multiplied by the accepted count.",
             "Use hotbar `9` reset again; install three Furnaces, add Coal to Fuel, and wait until Smelting Energy reaches at least one Charcoal recipe cooking time.",
@@ -92,9 +103,11 @@ SCENARIOS = {
             "In that table, confirm Oak Log shows its current available count and 1 required, while Smelting Energy and Fuel each show their current reserve and the exact recipe cooking time required for one craft.",
             "Change an ingredient or energy reserve and confirm the corresponding available value refreshes while required-for-one stays recipe-derived.",
             "Open the Charcoal recipe in EMI: NONE selection must preserve resources, then a cursor/inventory craft action must perform one immediate server-authoritative craft without recursively crafting intermediates.",
-            "Use hotbar `7` to inspect the isolated texture gallery, then inspect the held Remote Terminal item: the Storage Core, six Storage Unit tiers, both terminals, and Import/Export Bus faces must read as crisp native 16×16 pixel art with a coherent dark stone plus restrained amethyst/cyan accent, while adjacent tiers and bus faces remain distinguishable.",
+            "Use hotbar `7` to inspect both gallery rows and the held Remote Terminal item. In the isolated row, the Storage Core, six Storage Unit tiers, both terminals, and Import/Export Bus faces must read as crisp native 16×16 pixel art; each tier must gain a recognizably richer centered ornament rather than a taller capacity fill meter.",
+            "Inspect the contiguous connected row behind it: the Fusion 80×16 five-tile sheets must remove shared casing borders between every adjacent network role while all center motifs remain intact. The connected row intentionally has no Storage Core, so it cannot become a second active network. Import and Export must keep a readable directional front instead of connecting that face.",
+            "While holding the Wrench on hotbar `7`, normal right-click the gallery Import or Export Bus and confirm its directional front rotates once. Then sneak-right-click one gallery block and confirm it dismantles directly into the inventory without losing its state or contents; use hotbar `9` to restore the complete gallery immediately afterward.",
             "Return between Storage, Craftable, and Fuel once more and confirm search, sort, item grid, adaptive recipe panel, machine slots, and crafting controls restore without drifting.",
-            "Check latest.log for no advanced_container_set_data, ERROR, FATAL, or Caused by during the current run.",
+            CURRENT_RUN_LOG_CHECK,
         ],
     },
     "patchouli-guide": {
@@ -285,8 +298,6 @@ def runner_started_process_ids(
     world: str,
 ) -> list[int]:
     new_processes = {pid: process for pid, process in current.items() if pid not in baseline}
-    instance_path = str(instance_dir)
-    minecraft_path = str(minecraft_dir)
     targets = set()
 
     def is_prism_command(command: str) -> bool:
@@ -298,8 +309,7 @@ def runner_started_process_ids(
             marker in command
             for marker in [f"-l {instance}", f"-w {world}", f"-o {DEFAULT_OFFLINE_PLAYER}"]
         )
-        is_java = re.search(r"(?:^|/)java(?:\s|$)", command) is not None
-        is_instance_java = is_java and (instance_path in command or minecraft_path in command)
+        is_instance_java = is_instance_java_command(command, instance_dir, minecraft_dir)
         if is_runner_prism or is_instance_java:
             targets.add(pid)
 
@@ -335,6 +345,147 @@ def runner_started_process_ids(
         return depth
 
     return sorted(targets, key=lambda pid: (process_depth(pid), pid), reverse=True)
+
+
+def is_instance_java_command(command: str, instance_dir: Path, minecraft_dir: Path) -> bool:
+    is_java = re.search(r"(?:^|/)java(?:\s|$)", command) is not None
+    if not is_java:
+        return False
+    if str(instance_dir) in command or str(minecraft_dir) in command:
+        return True
+    user_dir_match = re.search(r'-Duser\.dir=(?:"([^"]+)"|\'([^\']+)\'|(\S+))', command)
+    if user_dir_match is None:
+        return False
+    user_dir = Path(next(value for value in user_dir_match.groups() if value is not None)).expanduser().resolve()
+    return user_dir in {instance_dir.expanduser().resolve(), minecraft_dir.expanduser().resolve()}
+
+
+def cleanup_existing_session(
+    instance_dir: Path,
+    minecraft_dir: Path,
+    instance: str,
+    world: str,
+    snapshot_func=None,
+    terminate_func=None,
+) -> None:
+    snapshot_func = snapshot_processes if snapshot_func is None else snapshot_func
+    terminate_func = terminate_processes if terminate_func is None else terminate_func
+    current = snapshot_func()
+    targets = runner_started_process_ids({}, current, instance_dir, minecraft_dir, instance, world)
+    if targets:
+        terminate_func(targets)
+
+
+def supervise_shutdown(
+    expected_processes: dict[int, str],
+    log_path: Path,
+    cursor: LogCursor,
+    run_dir: Path,
+    stall_timeout_seconds: float = DEFAULT_SHUTDOWN_STALL_TIMEOUT_SECONDS,
+    poll_seconds: float = 0.25,
+    snapshot_func=None,
+    terminate_func=None,
+    monotonic_func=time.monotonic,
+    sleep_func=time.sleep,
+) -> dict:
+    snapshot_func = snapshot_processes if snapshot_func is None else snapshot_func
+    terminate_func = terminate_processes if terminate_func is None else terminate_func
+    stopping_since = None
+    stopping_detected = False
+    while True:
+        current = snapshot_func()
+        matching = {
+            pid: command
+            for pid, command in expected_processes.items()
+            if pid in current and current[pid][1] == command
+        }
+        if not matching:
+            result = {
+                "status": "graceful",
+                "stopping_detected": stopping_detected,
+                "forced_pids": [],
+                "stall_timeout_seconds": stall_timeout_seconds,
+            }
+            write_json(run_dir / "shutdown.json", result)
+            return result
+
+        if STOPPING_LOG_PATTERN in read_log_since(log_path, cursor):
+            stopping_detected = True
+            if stopping_since is None:
+                stopping_since = monotonic_func()
+            elif monotonic_func() - stopping_since >= stall_timeout_seconds:
+                forced_pids = sorted(matching)
+                terminate_func(forced_pids)
+                result = {
+                    "status": "forced_after_glfw_shutdown_stall",
+                    "stopping_detected": True,
+                    "forced_pids": forced_pids,
+                    "stall_timeout_seconds": stall_timeout_seconds,
+                }
+                write_json(run_dir / "shutdown.json", result)
+                return result
+        sleep_func(poll_seconds)
+
+
+def start_shutdown_watchdog(
+    expected_processes: dict[int, str],
+    log_path: Path,
+    cursor: LogCursor,
+    run_dir: Path,
+    popen_func=subprocess.Popen,
+) -> None:
+    config_path = run_dir / "shutdown-watchdog.json"
+    write_json(config_path, {
+        "expected_processes": {str(pid): command for pid, command in expected_processes.items()},
+        "log_path": str(log_path),
+        "cursor": {"size": cursor.size, "device": cursor.device, "inode": cursor.inode},
+        "run_dir": str(run_dir),
+        "stall_timeout_seconds": DEFAULT_SHUTDOWN_STALL_TIMEOUT_SECONDS,
+    })
+    watchdog_log = (run_dir / "shutdown-watchdog.log").open("ab")
+    try:
+        popen_func(
+            [sys.executable, str(Path(__file__).resolve()), "--watchdog-config", str(config_path)],
+            stdin=subprocess.DEVNULL,
+            stdout=watchdog_log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        watchdog_log.close()
+
+
+def run_shutdown_watchdog(config_path: Path) -> dict:
+    config = json.loads(config_path.read_text())
+    cursor_data = config["cursor"]
+    return supervise_shutdown(
+        {int(pid): command for pid, command in config["expected_processes"].items()},
+        Path(config["log_path"]),
+        LogCursor(cursor_data["size"], cursor_data["device"], cursor_data["inode"]),
+        Path(config["run_dir"]),
+        stall_timeout_seconds=float(config["stall_timeout_seconds"]),
+    )
+
+
+def verify_desktop_display_mode(manifest: dict, mode_func=current_macos_main_display_mode) -> DisplayMode:
+    expected_data = manifest.get("desktop_display_mode")
+    if not isinstance(expected_data, dict):
+        raise RuntimeError("GUI manifest is missing the captured macOS desktop display mode")
+    try:
+        expected = DisplayMode(**expected_data)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("GUI manifest contains an invalid macOS desktop display mode") from exc
+    actual = mode_func()
+    if actual != expected:
+        raise RuntimeError(
+            "Minecraft changed the macOS desktop display mode: "
+            f"expected {expected.width}x{expected.height}@{expected.refresh_rate} "
+            f"({expected.pixel_width}x{expected.pixel_height} pixels), found "
+            f"{actual.width}x{actual.height}@{actual.refresh_rate} "
+            f"({actual.pixel_width}x{actual.pixel_height} pixels)"
+        )
+    return actual
 
 
 def cleanup_started_processes(
@@ -401,6 +552,23 @@ def verify_deployed_magic_storage_jar(project_dir: Path, minecraft_dir: Path) ->
         )
 
 
+def verify_deployed_fusion_jar(minecraft_dir: Path) -> None:
+    mods_dir = minecraft_dir.expanduser().resolve() / "mods"
+    deployed_jars = fusion_jars(mods_dir) if mods_dir.is_dir() else []
+    if len(deployed_jars) != 1 or deployed_jars[0].name != FUSION_FILENAME:
+        found = ", ".join(path.name for path in deployed_jars) or "none"
+        raise RuntimeError(
+            f"Expected exactly one Fusion jar named {FUSION_FILENAME} in Prism dev mods at {mods_dir}, "
+            f"found {len(deployed_jars)}: {found}. {DEPLOY_REQUIRED_MESSAGE}"
+        )
+    deployed_hash = sha512(deployed_jars[0])
+    if deployed_hash != FUSION_SHA512:
+        raise RuntimeError(
+            f"Fusion jar contents differ for {FUSION_FILENAME}: expected SHA-512 {FUSION_SHA512}, "
+            f"found {deployed_hash}. {DEPLOY_REQUIRED_MESSAGE}"
+        )
+
+
 def configure_instance_for_manual_handoff(instance_dir: Path) -> bool:
     instance_cfg = instance_dir.expanduser().resolve() / "instance.cfg"
     if not instance_cfg.is_file():
@@ -455,8 +623,13 @@ def write_checklist(
         "",
         "## Fullscreen gate",
         "",
-        "Start windowed, wait for the current MS_GUI_TEST_READY log line, then enter native fullscreen or F11 fullscreen.",
+        "Minecraft automatically starts in borderless Minecraft F11 fullscreen; wait for the current MS_GUI_TEST_READY log line before taking control.",
+        "On macOS the client never attaches the GLFW window to the monitor, and the runner fails closed if the desktop display mode changes.",
+        "Do not use the macOS green fullscreen button or Control-Command-F, and never combine native fullscreen with Minecraft F11 fullscreen.",
         "Do not perform hotbar/use/click/scroll/screenshot actions until the fullscreen gate is visually confirmed.",
+        "To close this test session safely, press F11 once, wait until the normal window is visible, then press Command-Q.",
+        "Do not press Command-Q while Minecraft F11 fullscreen is still active.",
+        "A runner-owned shutdown watchdog terminates only this test client if the Minecraft shutdown log appears but the Java process stalls for five seconds.",
         "",
         "## Scenario steps",
         "",
@@ -482,6 +655,7 @@ def write_checklist(
 
 
 def session_to_json(result: SessionResult, instance_cfg_changed: bool, log_path: Path) -> dict:
+    fullscreen_gate = result.manifest["fullscreen_gate"]
     return {
         "scenario": result.scenario,
         "manual_gui_required": result.manual_gui_required,
@@ -496,7 +670,16 @@ def session_to_json(result: SessionResult, instance_cfg_changed: bool, log_path:
             "offline_player": DEFAULT_OFFLINE_PLAYER,
             "computer_use_wrapper_disabled": True,
             "error_console_disabled": True,
+            "fullscreen_mode": fullscreen_gate["accepted_methods"][0],
+            "automatic_fullscreen": fullscreen_gate["automatic"],
+            "desktop_display_mode": result.manifest["desktop_display_mode"],
             "instance_cfg_changed": instance_cfg_changed,
+        },
+        "shutdown_profile": {
+            "safe_sequence": "f11_then_command_q",
+            "watchdog_enabled": result.manual_gui_required,
+            "stall_timeout_seconds": DEFAULT_SHUTDOWN_STALL_TIMEOUT_SECONDS,
+            "direct_command_q_while_fullscreen": "forbidden",
         },
     }
 
@@ -514,9 +697,12 @@ def run_session(
     poll_seconds: float = 0.25,
     no_launch: bool = False,
     prepare_world_func=prepare_world,
+    cleanup_existing_func=cleanup_existing_session,
     configure_instance_func=configure_instance_for_manual_handoff,
     launcher=default_launcher,
     wait_for_log_func=wait_for_log_patterns,
+    display_mode_verifier=None,
+    watchdog_launcher=start_shutdown_watchdog,
     timestamp_func=timestamp,
 ) -> SessionResult:
     if scenario_name not in SCENARIOS:
@@ -528,6 +714,8 @@ def run_session(
 
     if not no_launch:
         verify_deployed_magic_storage_jar(DEFAULT_PROJECT_DIR, minecraft_dir)
+        verify_deployed_fusion_jar(minecraft_dir)
+        cleanup_existing_func(instance_dir, minecraft_dir, instance, world)
     instance_cfg_changed = configure_instance_func(instance_dir)
     manifest = prepare_world_func(minecraft_dir, source_world, world)
     log_path = minecraft_dir / "logs" / "latest.log"
@@ -554,6 +742,8 @@ def run_session(
                 timeout_seconds=timeout_seconds,
                 poll_seconds=poll_seconds,
             )
+            verifier = verify_desktop_display_mode if display_mode_verifier is None else display_mode_verifier
+            verifier(manifest)
         (run_dir / "log-excerpt.log").write_text(log_excerpt)
 
         result = SessionResult(
@@ -566,6 +756,23 @@ def run_session(
             manifest=manifest,
         )
         write_json(run_dir / "session.json", session_to_json(result, instance_cfg_changed, log_path))
+        if process_baseline is not None and scenario["manual_gui_required"]:
+            current_processes = snapshot_processes()
+            owned_pids = runner_started_process_ids(
+                process_baseline,
+                current_processes,
+                instance_dir,
+                minecraft_dir,
+                instance,
+                world,
+            )
+            expected_java = {
+                pid: current_processes[pid][1]
+                for pid in owned_pids
+                if is_instance_java_command(current_processes[pid][1], instance_dir, minecraft_dir)
+            }
+            if expected_java:
+                watchdog_launcher(expected_java, log_path, log_cursor(log_path), run_dir)
     except BaseException as session_error:
         if process_baseline is not None:
             try:
@@ -582,6 +789,14 @@ def run_session(
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--watchdog-config":
+        try:
+            result = run_shutdown_watchdog(Path(argv[2]))
+        except Exception as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
     parser = argparse.ArgumentParser(description="Prepare and launch the fixed Prism GUI test world with current-run log polling.")
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), default="boot-smoke")
     parser.add_argument("--minecraft-dir", type=Path, default=DEFAULT_PRISM_MINECRAFT_DIR)
