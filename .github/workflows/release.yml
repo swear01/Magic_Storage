@@ -45,6 +45,14 @@ jobs:
           set -o pipefail
           ./gradlew build --console=plain --no-daemon 2>&1 | tee build/ci-logs/build.log
 
+      - name: Verify minimum and latest compatible EMI API
+        run: |
+          set -o pipefail
+          MIN_EMI="$(sed -n 's/^emi_version=//p' gradle.properties)"
+          LATEST_EMI="$(python3 scripts/resolve_emi_version.py)"
+          ./gradlew compileJava -Pemi_version="$MIN_EMI" --console=plain --no-daemon 2>&1 | tee build/ci-logs/emi-minimum.log
+          ./gradlew compileJava -Pemi_version="$LATEST_EMI" --rerun-tasks --console=plain --no-daemon 2>&1 | tee build/ci-logs/emi-latest.log
+
       - name: Run GameTest server
         run: |
           set -o pipefail

@@ -91,7 +91,7 @@
 
 ## Task 4: EMI-first public-widget renderer with explicit native fallback
 
-> Status: complete. Five focused static failures established the missing runtime/boundary/public-widget/exact-selection/bounded-no-catch contracts. GREEN is compileJava, build, SelfTest 222946/222946, GameTest 231/231, focused Python 48/48, full Python 95/95, runData without drift, and `runClient --dry-run`; full EMI is a development `runtimeOnly` dependency while release metadata remains optional. The local Maven full-jar transfer required a user-approved same-URL range-prefetch into Gradle cache and did not change project or CI dependency sources.
+> Status: complete. Five focused static failures established the missing runtime/boundary/public-widget/exact-selection/bounded-no-catch contracts. GREEN is compileJava, build, SelfTest 222946/222946, GameTest 231/231, focused Python 48/48, full Python 95/95, runData without drift, and `runClient --dry-run`; full EMI originally used development `runtimeOnly`. Release metadata was optional when this task completed, but the 2026-07-15 compatibility correction supersedes that product policy with client-only required `[1.1.24,2)`, retains the exact coordinate only as the minimum dev baseline, and isolates the full mod from dedicated GameTest. The local Maven full-jar transfer required a user-approved same-URL range-prefetch into Gradle cache and did not change project or CI dependency sources.
 
 **Files:**
 
@@ -107,7 +107,7 @@
 - Modify: `docs/notes.md`
 - Modify: `docs/rs2-design-gap.md`
 
-**RED:** Add static/compile contracts proving the development client includes the full EMI mod, the base screen and renderer interface do not import EMI, the guarded bootstrap is the only optional linkage point, only public `EmiRecipe`, `Widget`, and `WidgetHolder` APIs are used, no internal `WidgetGroup`/recipe-screen class is referenced, and there is no broad catch-and-native-fallback path. Add renderer-selection tests for EMI present, EMI absent, exact standard recipe found, and known unsupported/synthetic recipe. Run the Python test and `./gradlew compileJava` and observe missing adapter/runtime coverage.
+**RED:** Add static/compile contracts proving the development client includes the full EMI mod, the base screen and renderer interface do not import EMI, the guarded bootstrap is the only client linkage point, only public `EmiRecipe`, `Widget`, and `WidgetHolder` APIs are used, no internal `WidgetGroup`/recipe-screen class is referenced, and there is no broad catch-and-native-fallback path. Add renderer-selection tests for EMI present, EMI absent, exact standard recipe found, and known unsupported/synthetic recipe. Run the Python test and `./gradlew compileJava` and observe missing adapter/runtime coverage.
 
 **GREEN:** Implement a bounded public-API `WidgetHolder`, translate/render the widgets from `EmiRecipe#addWidgets`, forward input/tooltips only inside the diagram bounds, and keep the native ledger/craft controls authoritative. Select native rendering only when EMI is absent or the exact recipe has no compatible public representation. Let unexpected EMI exceptions surface. Run `./gradlew compileJava`, focused Python tests, and `./gradlew runClient --dry-run`.
 

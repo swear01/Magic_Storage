@@ -506,8 +506,9 @@ class StaticRegressionTests(unittest.TestCase):
             entrypoint,
         )
 
-    def test_development_runtime_includes_full_emi_without_release_loader_dependency(self):
+    def test_release_requires_compatible_emi_client_range_without_exact_pin(self):
         build = self.read_required("build.gradle")
+        properties = self.read_required("gradle.properties")
         metadata = self.read_required("src/main/templates/META-INF/neoforge.mods.toml")
 
         self.assertRegex(
@@ -516,14 +517,35 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertRegex(
             build,
-            r'runtimeOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
-            "the normal development client must exercise the full EMI runtime",
+            r'clientRuntimeRuntimeOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
+            "the isolated client/data runtime must exercise the full EMI mod",
         )
         self.assertNotRegex(
-            metadata,
-            r'modId\s*=\s*"emi"',
-            "EMI remains an optional released-mod integration",
+            build,
+            r'(?m)^\s*runtimeOnly\s+"dev\.emi:emi-neoforge:',
+            "dedicated server and GameTest must not receive the full EMI runtime",
         )
+        self.assertIn("emiRuntime", build)
+        self.assertRegex(
+            build,
+            r'emiRuntime\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
+        )
+        self.assertIn('tasks.register("stageEmiRuntime", Copy)', build)
+        self.assertIn("from configurations.emiRuntime", build)
+        self.assertIn('into layout.buildDirectory.dir("client-smoke-mods")', build)
+        self.assertIn("emi_version=1.1.24+1.21.1", properties)
+        self.assertIn("emi_version_range=[1.1.24,2)", properties)
+        self.assertRegex(build, r"emi_version_range\s*:\s*emi_version_range")
+        self.assertRegex(
+            metadata,
+            r'''(?s)\[\[dependencies\.\$\{mod_id\}\]\]\s*
+\s*modId="emi"\s*
+\s*type="required"\s*
+\s*versionRange="\$\{emi_version_range\}"\s*
+\s*ordering="NONE"\s*
+\s*side="CLIENT"''',
+        )
+        self.assertNotIn('versionRange="[1.1.24]"', metadata)
 
     def test_recipe_renderer_boundary_keeps_emi_out_of_base_screen_and_native_path(self):
         interface = self.read_required(
@@ -586,6 +608,14 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("widget.getTooltip(", renderer)
         self.assertIn("widget.mouseClicked(", renderer)
         self.assertIn("widget.keyPressed(", renderer)
+
+    def test_emi_compat_sources_never_link_internal_packages(self):
+        compat_root = ROOT / "src/main/java/com/swearprom/magicstorage/magic_storage/compat"
+        sources = "\n".join(path.read_text() for path in sorted(compat_root.glob("*.java")))
+
+        self.assertNotIn("dev.emi.emi.bom", sources)
+        self.assertNotIn("dev.emi.emi.screen", sources)
+        self.assertNotIn("dev.emi.emi.runtime", sources)
 
     def test_emi_diagram_selection_is_exact_and_has_only_capability_fallbacks(self):
         setup = self.read_required(

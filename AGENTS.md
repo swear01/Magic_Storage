@@ -138,7 +138,7 @@ Expected `git status` after archiving:
 ## GitHub / CI / GUI Release Gates
 
 - Public repo: https://github.com/swear01/Magic_Storage
-- CI lives in `.github/workflows/ci.yml` and must keep `./gradlew build`, `./gradlew runGameTestServer`, `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts`, and the `./gradlew runData` datagen drift check green. It uploads jar + logs/reports artifacts.
+- CI lives in `.github/workflows/ci.yml` and must keep `./gradlew build`, minimum/latest-compatible EMI API compilation, `./gradlew runGameTestServer`, `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts`, and the `./gradlew runData` datagen drift check green. It uploads jar + logs/reports artifacts.
 - Optional client boot/resource smoke lives in `.github/workflows/client-smoke.yml` and is `workflow_dispatch` only; it is not GUI layout approval.
 - CD lives in `.github/workflows/release.yml`: push tag `v<mod_version>` only after `gradle.properties` has the matching `mod_version`; the workflow rejects mismatched tags, regenerates release notes from git history, reruns all CI gates, and uploads jar + logs/reports.
 - GUI/Patchouli/visual changes require `python3 scripts/run_prism_gui_session.py --scenario <scenario>` plus the fixed Prism dev / manual handoff checklist in `docs/notes.md`. The runner clears the Computer Use wrapper, disables Prism's per-instance error-console pop-up, launches offline with `-o MagicStorageBot`, waits for `MS_GUI_TEST_READY`, then stops automation and hands control to the user. It still scans `latest.log` and fails on every non-whitelisted current-run error. Visual verification owner: user; the user must pass the fullscreen gate before any GUI action. `boot-smoke` does not require visual approval; visual scenarios do. Do not claim GUI verified from GameTest/client-smoke alone.
@@ -146,5 +146,6 @@ Expected `git status` after archiving:
 ## Mod-Specific Essentials
 
 - `magic_storage` — NeoForge 1.21.1 storage+crafting mod. Build: `./gradlew build`.
+- EMI is a required **client-only** dependency with release range `[1.1.24,2)`; `emi_version=1.1.24+1.21.1` is only the reproducible minimum development baseline. Integration code may use only EMI public API packages; dedicated servers must not require EMI.
 - When stuck on storage/network/grid/resource code, **check Refined Storage 2 source first** (patterns only, never copy verbatim — license differs). Full reference table + workflow in `docs/notes.md`.
 - Keep all network/storage logic **server-side**; sync to client via packets. Never store storage state client-side.

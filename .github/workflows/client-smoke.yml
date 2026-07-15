@@ -31,10 +31,14 @@ jobs:
       - name: Build mod jar
         run: ./gradlew build --console=plain --no-daemon
 
-      - name: Stage mod for runtime client
+      - name: Stage required client mods
         run: |
           mkdir -p run/mods
           cp build/libs/magic_storage-*.jar run/mods/
+          EMI_VERSION="$(python3 scripts/resolve_emi_version.py)"
+          ./gradlew stageEmiRuntime -Pemi_version="$EMI_VERSION" --console=plain --no-daemon
+          cp "build/client-smoke-mods/emi-neoforge-${EMI_VERSION}.jar" run/mods/
+          python3 -m zipfile -t "run/mods/emi-neoforge-${EMI_VERSION}.jar"
 
       # Client Smoke is a boot/resource smoke test, not GUI layout approval.
       # Manual Prism dev / Computer Use remains required for visible GUI/Patchouli changes.

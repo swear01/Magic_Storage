@@ -68,9 +68,9 @@ Item-resource rows use the neutral panel palette. Energy and tool-resource rows 
 
 ## EMI-first renderer with explicit fallback
 
-EMI remains optional in released mod metadata, while the development/runtime configuration includes EMI so the normal implementation and CI client smoke exercise the EMI path. This is an explicit EMI-first integration, not a hard loader dependency.
+EMI is a required client-only dependency in released metadata with Maven range `[1.1.24,2)`. The exact `1.1.24+1.21.1` coordinate remains only the reproducible minimum compile/development baseline; dedicated servers do not require EMI. CI compiles that minimum and the newest compatible Minecraft 1.21.1 EMI release, while client smoke stages the newest compatible full jar.
 
-The base screen references only a Magic Storage client renderer interface. A guarded EMI compatibility bootstrap is loaded only when NeoForge reports EMI present, keeping dedicated server and no-EMI clients free of EMI class references.
+The base screen references only a Magic Storage client renderer interface. A guarded EMI compatibility bootstrap is loaded only when NeoForge reports EMI present, keeping dedicated servers free of EMI class references.
 
 For a selected standard recipe:
 
@@ -156,7 +156,7 @@ Final gates are compileJava, build, dedicated GameTest server, all Python tests,
 ## Out of scope
 
 - RS2 recursive pattern trees, crafting jobs, or crafting monitors.
-- Making EMI a required loader dependency or bundling EMI in the Magic Storage jar.
+- Bundling EMI in the Magic Storage jar or accepting EMI 2.x without an explicit compatibility review.
 - Client-side storage authority or a complete client mirror of the network inventory.
 - Arbitrary modded durability-effect valuation without a future server-owned descriptor API.
 - A public third-party station/fuel registration API in this revision.

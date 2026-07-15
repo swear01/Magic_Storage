@@ -16,6 +16,9 @@ sourceSets.main.resources {
     srcDir('src/generated/resources')
     exclude("src/generated/**/.cache")
 }
+sourceSets {
+    clientRuntime
+}
 
 base {
     archivesName = mod_id
@@ -25,6 +28,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 neoForge {
     version = project.neo_version
+    addModdingDependenciesTo sourceSets.clientRuntime
 
     parchment {
         mappingsVersion = project.parchment_mappings_version
@@ -34,6 +38,7 @@ neoForge {
     runs {
         client {
             client()
+            sourceSet = sourceSets.clientRuntime
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
@@ -50,6 +55,7 @@ neoForge {
 
         data {
             data()
+            sourceSet = sourceSets.clientRuntime
             programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
         }
 
@@ -66,6 +72,16 @@ neoForge {
     }
 }
 
+configurations {
+    clientRuntimeImplementation.extendsFrom implementation
+    clientRuntimeRuntimeOnly.extendsFrom runtimeOnly
+    emiRuntime {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
 repositories {
     maven {
         url = 'https://maven.blamejared.com'
@@ -79,7 +95,13 @@ repositories {
 dependencies {
     compileOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
     compileOnly "dev.emi:emi-neoforge:${emi_version}:api"
-    runtimeOnly "dev.emi:emi-neoforge:${emi_version}"
+    clientRuntimeRuntimeOnly "dev.emi:emi-neoforge:${emi_version}"
+    emiRuntime "dev.emi:emi-neoforge:${emi_version}"
+}
+
+tasks.register("stageEmiRuntime", Copy) {
+    from configurations.emiRuntime
+    into layout.buildDirectory.dir("client-smoke-mods")
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
@@ -92,6 +114,7 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             mod_name               : mod_name,
             mod_license            : mod_license,
             mod_version            : mod_version,
+            emi_version_range      : emi_version_range,
     ]
     inputs.properties replaceProperties
     expand replaceProperties

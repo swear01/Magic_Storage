@@ -25,3 +25,10 @@ and craft instantly using accumulated Crafting Energy.
     versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="emi"
+    type="required"
+    versionRange="${emi_version_range}"
+    ordering="NONE"
+    side="CLIENT"
