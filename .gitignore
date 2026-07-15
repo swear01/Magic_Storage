@@ -16,6 +16,10 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Skill symlinks (machine-specific absolute paths, not git)
 .agents/skills/
 # .skillshare-reveal is the manifest — DO NOT gitignore it; commit it so other machines can sync

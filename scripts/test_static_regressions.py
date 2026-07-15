@@ -7,6 +7,7 @@ import unittest
 import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
+FUSION_PACK = ROOT / "src/main/resources/resourcepacks/fusion_connected_casing"
 
 
 class StaticRegressionTests(unittest.TestCase):
@@ -96,6 +97,21 @@ class StaticRegressionTests(unittest.TestCase):
             "magic_storage:block/export_bus_side": "export_casing_side",
             "magic_storage:block/export_bus_front": "export_outward_arrow",
             "magic_storage:item/remote_terminal": "remote_display",
+        }
+
+    def expected_connected_texture_family(self) -> set[str]:
+        return {
+            "magic_storage:block/storage_core_connected",
+            *{
+                f"magic_storage:block/storage_unit_t{tier}_connected"
+                for tier in range(1, 7)
+            },
+            "magic_storage:block/storage_terminal_connected",
+            "magic_storage:block/crafting_terminal_connected",
+            "magic_storage:block/import_bus_top_connected",
+            "magic_storage:block/import_bus_side_connected",
+            "magic_storage:block/export_bus_top_connected",
+            "magic_storage:block/export_bus_side_connected",
         }
 
     def java_block(self, text: str, declaration: str, description: str) -> str:
@@ -428,21 +444,20 @@ class StaticRegressionTests(unittest.TestCase):
         lang = json.loads(
             self.read_required("src/main/resources/assets/magic_storage/lang/en_us.json")
         )
-        self.assertEqual(
-            "Stations & Axe Energy",
-            lang["gui.magic_storage.installed_machines"],
-        )
+        self.assertEqual("Consumables", lang["gui.magic_storage.fuel_group.consumables"])
+        self.assertEqual("Timed Stations", lang["gui.magic_storage.fuel_group.timed_stations"])
+        self.assertEqual("Instant Stations", lang["gui.magic_storage.fuel_group.instant_stations"])
         self.assertEqual("Axe Energy", lang["gui.magic_storage.axe_energy"])
         screen = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
         )
-        machine_panel = screen[
-            screen.index("private void renderMachinePanel"):
-            screen.index("private void renderFuelPanel")
+        consumables_panel = screen[
+            screen.index("private void renderConsumablesPanel"):
+            screen.index("private void renderTimedStationsPanel")
         ]
-        self.assertIn("MachineEnergyTable.Category.CONSUMABLE", machine_panel)
-        self.assertIn("menu.hasInfiniteAxeEnergy()", machine_panel)
-        self.assertIn("menu.getAxeEnergyAmount()", machine_panel)
+        self.assertIn("MachineEnergyTable.Category.CONSUMABLE", consumables_panel)
+        self.assertIn("menu.hasInfiniteDescriptor(entry.id())", consumables_panel)
+        self.assertIn("menu.getDescriptorAmount(entry.id())", consumables_panel)
 
     def test_emi_uses_terminal_display_slot_contract_without_54_slot_hardcode(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java")
@@ -517,7 +532,7 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertRegex(
             build,
-            r'clientRuntimeRuntimeOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
+            r'fusionRuntimeRuntimeOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
             "the isolated client/data runtime must exercise the full EMI mod",
         )
         self.assertNotRegex(
@@ -546,6 +561,11 @@ class StaticRegressionTests(unittest.TestCase):
 \s*side="CLIENT"''',
         )
         self.assertNotIn('versionRange="[1.1.24]"', metadata)
+
+    def test_build_script_uses_gradle_10_safe_repository_url_assignment(self):
+        build = self.read_required("build.gradle")
+        self.assertNotRegex(build, r'(?m)^\s*url\s+"')
+        self.assertIn('url = uri("file://${project.projectDir}/repo")', build)
 
     def test_recipe_renderer_boundary_keeps_emi_out_of_base_screen_and_native_path(self):
         interface = self.read_required(
@@ -788,6 +808,12 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("FMLEnvironment.dist == Dist.CLIENT", magic_storage)
         self.assertIn("ClientSetup.register(modEventBus)", magic_storage)
 
+    def test_directional_bus_mirror_avoids_deprecated_blockstate_rotate(self):
+        for source in ["ImportBusBlock.java", "ExportBusBlock.java"]:
+            text = self.read_required(f"src/main/java/com/swearprom/magicstorage/magic_storage/{source}")
+            self.assertNotIn("state.rotate(", text, source)
+            self.assertIn("state.setValue(FACING, mirror.mirror(state.getValue(FACING)))", text, source)
+
     def test_runtime_texture_family_is_complete_native_and_orphan_free(self):
         textures = ROOT / "src/main/resources/assets/magic_storage/textures"
         generation_artifacts = sorted(
@@ -807,7 +833,9 @@ class StaticRegressionTests(unittest.TestCase):
         }
         self.assertTrue(texture_ids, "no gameplay texture references found in block/item models")
         expected_family = self.expected_texture_family()
-        self.assertEqual(set(expected_family), texture_ids)
+        expected_connected = self.expected_connected_texture_family()
+        expected_runtime = set(expected_family) | {"magic_storage:item/wrench"}
+        self.assertEqual(expected_runtime, texture_ids)
 
         runtime_texture_ids = {
             f"magic_storage:{path.parent.name}/{path.stem}"
@@ -815,7 +843,7 @@ class StaticRegressionTests(unittest.TestCase):
             for path in category.glob("*.png")
         }
         self.assertEqual(
-            set(expected_family),
+            expected_runtime,
             runtime_texture_ids,
             "runtime block/item textures must contain exactly the model-referenced semantic family",
         )
@@ -828,10 +856,17 @@ class StaticRegressionTests(unittest.TestCase):
                 invalid_textures.append(f"missing {relative_path}")
                 continue
             dimensions = self.png_dimensions(texture_path)
-            if dimensions != (16, 16):
+            expected_dimensions = (80, 16) if texture_id in expected_connected else (16, 16)
+            if dimensions != expected_dimensions:
                 invalid_textures.append(f"{relative_path} is {dimensions[0]}x{dimensions[1]}")
 
         self.assertEqual([], invalid_textures)
+        overlay_textures = FUSION_PACK / "assets/magic_storage/textures"
+        overlay_texture_ids = {
+            f"magic_storage:{path.parent.name}/{path.stem}"
+            for path in (overlay_textures / "block").glob("*.png")
+        }
+        self.assertEqual(expected_connected, overlay_texture_ids)
         runtime_gui = {
             path.name for path in (textures / "gui").glob("*.png")
         }
@@ -858,10 +893,12 @@ class StaticRegressionTests(unittest.TestCase):
             visit(json.loads(metadata_path.read_text()))
         self.assertEqual([], absolute_metadata_paths)
         expected_family = self.expected_texture_family()
-        self.assertEqual(1, manifest.get("schema"))
+        expected_connected = self.expected_connected_texture_family()
+        self.assertEqual(2, manifest.get("schema"))
         self.assertEqual("retro-diffusion/rd-fast", manifest.get("model"))
         self.assertEqual([16, 16], manifest.get("runtime_size"))
         self.assertEqual(71421, manifest.get("settings", {}).get("seed"))
+        self.assertEqual([71422, 71423, 71424], manifest.get("settings", {}).get("revision_seeds"))
         self.assertEqual(0.38, manifest.get("settings", {}).get("block_img2img_strength"))
         self.assertEqual(0.68, manifest.get("settings", {}).get("item_img2img_strength"))
 
@@ -878,6 +915,13 @@ class StaticRegressionTests(unittest.TestCase):
 
         members = manifest.get("members", {})
         self.assertEqual(set(expected_family), set(members))
+        revised_seeds = {
+            **{f"magic_storage:block/storage_unit_t{tier}": 71422 for tier in range(1, 7)},
+            "magic_storage:block/import_bus_top": 71423,
+            "magic_storage:block/import_bus_side": 71423,
+            "magic_storage:block/export_bus_top": 71424,
+            "magic_storage:block/export_bus_side": 71424,
+        }
         for texture_id, expected_role in expected_family.items():
             member = members[texture_id]
             self.assertEqual(expected_role, member.get("role"), texture_id)
@@ -891,7 +935,7 @@ class StaticRegressionTests(unittest.TestCase):
             metadata = json.loads(metadata_path.read_text())
             self.assertEqual("retro-diffusion/rd-fast", metadata.get("model"), texture_id)
             self.assertEqual(16, metadata.get("size"), texture_id)
-            self.assertEqual(71421, metadata.get("seed"), texture_id)
+            self.assertEqual(revised_seeds.get(texture_id, 71421), metadata.get("seed"), texture_id)
             self.assertTrue(metadata.get("img2img"), texture_id)
             self.assertEqual(manifest["chassis"]["source"], metadata.get("reference_image"), texture_id)
 
@@ -912,16 +956,28 @@ class StaticRegressionTests(unittest.TestCase):
                 self.assertEqual(chassis_pixels[y * 16 + x], pixels[y * 16 + x],
                                  f"{texture_id} does not share chassis pixel {(x, y)}")
 
-        tier_bar = manifest.get("tier_bar", {})
-        positions = [tuple(point) for point in tier_bar.get("positions", [])]
-        self.assertEqual(6, len(positions))
-        active = tuple(bytes.fromhex(tier_bar["active"].removeprefix("#")))
-        inactive = tuple(bytes.fromhex(tier_bar["inactive"].removeprefix("#")))
-        for tier in range(1, 7):
-            runtime = ROOT / members[f"magic_storage:block/storage_unit_t{tier}"]["runtime"]
-            _, _, pixels = self.rgba_png_pixels(runtime)
-            actual = [pixels[y * 16 + x][:3] for x, y in positions]
-            self.assertEqual([active] * tier + [inactive] * (6 - tier), actual)
+        connected_members = manifest.get("connected_textures", {})
+        self.assertEqual(expected_connected, set(connected_members))
+        for texture_id, connected in connected_members.items():
+            runtime = ROOT / connected["runtime"]
+            source = art / connected["source"]
+            metadata_path = ROOT / connected["metadata"]
+            self.assertTrue(runtime.is_file(), texture_id)
+            self.assertTrue(source.is_file(), texture_id)
+            self.assertTrue(metadata_path.is_file(), texture_id)
+            self.assertEqual((80, 16), self.png_dimensions(runtime), texture_id)
+            self.assertEqual(runtime.read_bytes(), source.read_bytes(), texture_id)
+            self.assertEqual(hashlib.sha256(runtime.read_bytes()).hexdigest(), connected.get("sha256"))
+            self.assertEqual("pieced", connected.get("layout"), texture_id)
+            self.assertEqual(5, connected.get("tiles"), texture_id)
+            self.assertEqual(
+                {"fusion": {"type": "connecting", "layout": "pieced"}},
+                json.loads(metadata_path.read_text()),
+                texture_id,
+            )
+
+        for contact_sheet in manifest.get("contact_sheets", []):
+            self.assertTrue((art / contact_sheet).is_file(), contact_sheet)
 
         semantic_accents = {
             "magic_storage:block/storage_core": {"#3FDCE5", "#9A5CE8"},
@@ -1016,7 +1072,9 @@ class StaticRegressionTests(unittest.TestCase):
             "gui.magic_storage.page_craftable",
             "gui.magic_storage.fuel_target_auto",
             "gui.magic_storage.fuel_target",
-            "gui.magic_storage.energy_reserves",
+            "gui.magic_storage.fuel_group.consumables",
+            "gui.magic_storage.fuel_group.timed_stations",
+            "gui.magic_storage.fuel_group.instant_stations",
         ]:
             self.assertIn(key, lang)
         self.assertNotIn("gui.magic_storage.previous_fuel_target", lang)
@@ -1058,8 +1116,13 @@ class StaticRegressionTests(unittest.TestCase):
             '"gui.magic_storage.fuel_target_list")))',
             screen,
         )
-        render_popup = self.java_block(
+        popup_class = self.java_block(
             screen,
+            r"\bclass\s+FuelTargetPopup\b",
+            "FuelTargetPopup",
+        )
+        render_popup = self.java_block(
+            popup_class,
             r"\bprotected\s+void\s+renderWidget\s*\(",
             "FuelTargetPopup.renderWidget",
         )
@@ -1146,22 +1209,22 @@ class StaticRegressionTests(unittest.TestCase):
         screen = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
         )
-        machine_hit = self.java_block(
-            screen,
-            r"\bprivate\s+int\s+machineEnergyIndexAt\s*\(",
-            "CraftingTerminalScreen.machineEnergyIndexAt",
-        )
+        machine_hit = screen[
+            screen.index("private int machineEnergyIndexAt"):
+            screen.index("private int storedFuelIndexAt")
+        ]
         reserve_hit = self.java_block(
             screen,
             r"\bprivate\s+int\s+storedFuelIndexAt\s*\(",
             "CraftingTerminalScreen.storedFuelIndexAt",
         )
 
-        self.assertIn("static Rect centeredSlot(Rect", layout)
-        self.assertIn("static Rect centeredIcon(Rect", layout)
-        self.assertIn("TerminalLayout.centeredSlot(cell).contains", machine_hit)
+        self.assertIn("static Rect fuelSlot(Rect", layout)
+        self.assertIn("static Rect fuelIcon(Rect", layout)
+        self.assertIn("static Rect fuelAmountBounds(Rect", layout)
+        self.assertIn("TerminalLayout.fuelSlot(cells.get(visibleIndex)).contains", machine_hit)
         self.assertNotIn("cell.contains", machine_hit)
-        self.assertIn("TerminalLayout.centeredIcon(cell).contains", reserve_hit)
+        self.assertIn("TerminalLayout.fuelIcon(cells.get(visibleIndex)).contains", reserve_hit)
         self.assertNotIn("cell.contains", reserve_hit)
 
     def test_crafting_terminal_repositions_fuel_slots_without_sticky_checkbox_focus(self):
@@ -1175,7 +1238,9 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("MACHINE_SLOT_COUNT", screen)
         self.assertIn("repositionFuelSlots", screen)
         self.assertIn("replaceSlot", screen)
-        self.assertIn("geometry.machineGrid()", screen)
+        self.assertIn("geometry.consumablesGrid()", screen)
+        self.assertIn("geometry.timedStationsGrid()", screen)
+        self.assertIn("geometry.instantStationsGrid()", screen)
         self.assertIn("boolean handled = super.mouseClicked", shared_shell)
         handled = shared_shell.index("boolean handled = super.mouseClicked")
         self.assertGreater(shared_shell.index("setFocused(null)", handled), handled)
@@ -1218,7 +1283,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("craftMaximum", menu)
         self.assertIn("RAIL_GROUP_GAP", layout)
         self.assertIn("record FlowGrid", layout)
-        self.assertIn("MACHINE_CELL_PREFERRED_WIDTH", layout)
+        self.assertIn("CATEGORY_CELL_PREFERRED_WIDTH", layout)
         self.assertIn("int minimumColumns = (visible + maxRows - 1) / maxRows;", layout)
         self.assertIn("Math.clamp(preferredColumns, minimumColumns, largestColumns)", layout)
         self.assertIn("(column + 1) * bounds.width() / columns", layout)
@@ -1226,10 +1291,12 @@ class StaticRegressionTests(unittest.TestCase):
         for stale in ["MACHINE_ENERGY_TYPES", "MACHINE_LABEL_KEYS", "STORED_FUEL_TYPES", "FUEL_LABEL_KEYS"]:
             self.assertNotIn(stale, screen)
         self.assertNotIn("machine_rate_hint", screen)
-        machine_panel = screen[screen.index("private void renderMachinePanel"):screen.index("private void renderFuelPanel")]
-        fuel_panel = screen[screen.index("private void renderFuelPanel"):screen.index("private void drawFlowPageIndicator")]
-        self.assertNotIn("drawCenteredString", machine_panel + fuel_panel)
-        self.assertIn("drawCenteredNoShadow", machine_panel + fuel_panel)
+        fuel_rows = screen[
+            screen.index("private void renderConsumablesPanel"):
+            screen.index("private void drawFlowPageIndicator")
+        ]
+        self.assertNotIn("drawCenteredString", fuel_rows)
+        self.assertIn("drawFlowAmount", fuel_rows)
         self.assertIn("craftMaxBtn", screen)
         self.assertIn("craft1Btn.active = craftable >= 1", screen)
         self.assertIn("craft8Btn.active = craftable >= 8", screen)
@@ -1259,14 +1326,39 @@ class StaticRegressionTests(unittest.TestCase):
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
         )
         fuel_panel = crafting[
-            crafting.index("private void renderFuelPanel"):
+            crafting.index("private void renderConsumablesPanel"):
             crafting.index("private void drawFlowPageIndicator")
         ]
         self.assertIn("type.representativeStack()", fuel_panel)
         self.assertNotIn("drawEnergyIcon", fuel_panel)
         self.assertNotIn("nextFuelTargetBtn", crafting)
         self.assertIn("menu.getPage() == CraftingTerminalPage.FUEL", crafting)
-        self.assertIn("drawTypeCapacity(graphics)", crafting)
+        self.assertIn("renderFuelTypeCapacity", crafting)
+        self.assertIn("geometry.fuelStatus()", crafting)
+        flow_amount = self.java_block(
+            crafting,
+            r"\bprivate\s+void\s+drawFlowAmount\s*\(",
+            "CraftingTerminalScreen.drawFlowAmount",
+        )
+        self.assertIn("TerminalLayout.fuelAmountBounds(cell)", flow_amount)
+        self.assertIn("bounds.x() + bounds.width() / 2.0F", flow_amount)
+        self.assertIn("graphics.drawString(font, text, -textWidth / 2", flow_amount)
+        self.assertNotIn("cell.right()", flow_amount)
+        type_capacity = self.java_block(
+            crafting,
+            r"\bprivate\s+void\s+renderFuelTypeCapacity\s*\(",
+            "CraftingTerminalScreen.renderFuelTypeCapacity",
+        )
+        self.assertIn("geometry.fuelStatus()", type_capacity)
+        self.assertIn("drawRaisedPanel(graphics, leftPos, topPos, status)", type_capacity)
+        self.assertIn('"gui.magic_storage.type_capacity"', type_capacity)
+        self.assertNotIn("drawFlowAmount(graphics, status", type_capacity)
+        labels = self.java_block(
+            crafting,
+            r"\bprotected\s+void\s+renderLabels\s*\(",
+            "CraftingTerminalScreen.renderLabels",
+        )
+        self.assertNotIn("drawTypeCapacity", labels)
 
     def test_terminal_display_amount_is_exact_server_metadata_not_stack_count(self):
         helper = self.read_required(
@@ -1437,7 +1529,9 @@ class StaticRegressionTests(unittest.TestCase):
             "Rect recipeFooter",
             "List<Rect> recipeNavigationButtons",
             "List<Rect> recipeCraftButtons",
-            "Rect fuelControlPanel",
+            "Rect consumablesPanel",
+            "Rect timedStationsPanel",
+            "Rect instantStationsPanel",
             "Rect fuelInput",
         ]
         self.assertEqual([], [region for region in required_layout_regions if region not in layout])
@@ -1513,61 +1607,86 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertNotIn("output.copyWithCount(1)", native)
 
-    def test_recipe_ledger_uses_neutral_items_and_dark_red_energy_tool_rows(self):
+    def test_terminal_semantic_workspaces_use_vanilla_container_grammar(self):
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
         screen = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
         )
-
-        constants = {
-            name: int(value, 16) & 0xFFFFFF
-            for name, value in re.findall(
-                r"\bstatic\s+final\s+int\s+([A-Z][A-Z0-9_]*)\s*=\s*"
-                r"(0x[0-9A-Fa-f]{8})\s*;",
-                screen,
-            )
-        }
-
-        def palette_names(kind: str, role: str) -> list[str]:
-            role_tokens = [role] if role == "BORDER" else ["BACKGROUND", "FILL"]
-            return [
-                name for name in constants
-                if kind in name and any(token in name for token in role_tokens)
-            ]
-
-        item_names = palette_names("ITEM", "BACKGROUND") + palette_names("ITEM", "BORDER")
-        self.assertGreaterEqual(
-            len(set(item_names)),
-            2,
-            "item rows need explicit neutral background/fill and border palette constants",
+        native = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/NativeRecipeDiagramRenderer.java"
         )
-        for name in set(item_names):
-            red = constants[name] >> 16 & 0xFF
-            green = constants[name] >> 8 & 0xFF
-            blue = constants[name] & 0xFF
-            self.assertLessEqual(max(red, green, blue) - min(red, green, blue), 12)
-            self.assertGreaterEqual(screen.count(name), 2, f"{name} must be used by row rendering")
 
-        special_names = set()
-        for kind in ["ENERGY", "TOOL"]:
-            kind_names = palette_names(kind, "BACKGROUND") + palette_names(kind, "BORDER")
-            self.assertGreaterEqual(
-                len(set(kind_names)),
-                2,
-                f"{kind.lower()} rows need explicit dark-red background/fill and border constants",
-            )
-            special_names.update(kind_names)
-        for name in special_names:
-            red = constants[name] >> 16 & 0xFF
-            green = constants[name] >> 8 & 0xFF
-            blue = constants[name] & 0xFF
-            self.assertGreater(red, green * 4 // 3, name)
-            self.assertGreater(red, blue * 4 // 3, name)
-            self.assertGreaterEqual(screen.count(name), 2, f"{name} must be used by row rendering")
-
-        self.assertRegex(screen, r"\bITEM\b")
-        self.assertRegex(screen, r"\bENERGY\b")
-        self.assertRegex(screen, r"\bTOOL\b")
+        for source in [storage, screen, native]:
+            self.assertNotRegex(source, r"\bTERMINAL_(?:SURFACE|CARD|BORDER|ACCENT|TEXT)")
+            self.assertNotIn("drawTerminalSurface", source)
+            self.assertNotIn("drawTerminalCard", source)
+            self.assertNotIn("drawTerminalControl", source)
+            self.assertNotIn("drawTerminalSlot", source)
+        for palette_name in [
+            "ITEM_ROW_BACKGROUND", "ITEM_ROW_BORDER",
+            "ENERGY_ROW_BACKGROUND", "ENERGY_ROW_BORDER",
+            "TOOL_ROW_BACKGROUND", "TOOL_ROW_BORDER",
+        ]:
+            self.assertNotIn(palette_name, screen)
+        self.assertIn("drawRaisedPanel(graphics, leftPos, topPos, bar)", screen)
+        self.assertIn("drawInsetPanel(graphics, leftPos, topPos, panel)", screen)
+        self.assertIn("drawVanillaSlot(graphics, x, y)", screen)
+        self.assertIn("super.renderWidget(graphics, mouseX, mouseY, partialTick)", storage)
         self.assertRegex(screen, r"\.available\(\)\s*>=\s*[A-Za-z_]\w*\.required\(\)")
+
+    def test_recipe_presentation_tolerates_in_flight_slot_sync(self):
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        presentation = self.java_block(
+            menu,
+            r"\bpublic\s+RecipePresentation\s+getRecipePresentation\s*\(",
+            "CraftingTerminalMenu.getRecipePresentation",
+        )
+        self.assertNotIn("Recipe presentation item resource is missing", presentation)
+        self.assertNotIn("Recipe presentation tool resource is missing", presentation)
+        self.assertGreaterEqual(
+            presentation.count("return RecipePresentation.empty();"),
+            3,
+            "metadata and dependent hidden slots arrive in separate packets; partial snapshots must not crash rendering",
+        )
+
+    def test_recipe_ledger_is_top_aligned_and_never_exceeds_four_columns(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        cells = self.java_block(
+            layout,
+            r"\bprivate\s+static\s+List<Rect>\s+recipeLedgerCells\s*\(",
+            "TerminalLayout.recipeLedgerCells",
+        )
+        self.assertIn("RECIPE_LEDGER_MAX_COLUMNS = 4", layout)
+        self.assertRegex(cells, r"int\s+columns\s*=\s*Math\.min\(.+RECIPE_LEDGER_MAX_COLUMNS")
+        self.assertRegex(cells, r"int\s+rows\s*=\s*\(resourceCount\s*\+\s*columns\s*-\s*1\)\s*/\s*columns")
+        self.assertIn("int top = bounds.y();", cells)
+        self.assertNotIn("(bounds.height() - rows * cellHeight) / 2", cells)
+        self.assertIn("RECIPE_LEDGER_MAX_HEIGHT = SLOT_SIZE * 3", layout)
+
+    def test_recipe_ledger_reduces_columns_when_the_viewport_is_too_narrow(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        cells = self.java_block(
+            layout,
+            r"\bprivate\s+static\s+List<Rect>\s+recipeLedgerCells\s*\(",
+            "TerminalLayout.recipeLedgerCells",
+        )
+        self.assertIn("RECIPE_LEDGER_MIN_CELL_WIDTH", layout)
+        self.assertRegex(cells, r"bounds\.width\(\)\s*/\s*RECIPE_LEDGER_MIN_CELL_WIDTH")
+
+    def test_available_recipe_amount_uses_high_contrast_dark_green(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        self.assertIn("0xFF176B2C", screen)
+        self.assertNotIn("0xFF75D58A", screen)
 
     def test_recipe_presentation_keeps_data_and_container_slot_parity_guarded(self):
         tests = self.read_required(
@@ -1643,11 +1762,14 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotIn("displays all eight totals live", guide)
         self.assertIn("cooking time", guide)
         self.assertIn("runtime burn time", guide)
-        self.assertIn("third page button", guide)
+        self.assertIn("third page", guide)
         self.assertNotIn("previous/next", guide)
         self.assertIn("Fuel Target", guide)
-        self.assertIn("Energy Reserves header", guide)
-        self.assertIn("all currently registered totals", guide)
+        self.assertNotIn("Energy Reserves header", guide)
+        self.assertNotIn("all currently registered totals", guide)
+        self.assertIn("Consumables", guide)
+        self.assertIn("Timed Stations", guide)
+        self.assertIn("Instant Stations", guide)
 
     def test_remote_access_is_pinned_to_exact_loaded_core_identity(self):
         core = self.read_required(
@@ -1714,6 +1836,494 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("drops itself", text)
         self.assertIn("available type capacity decreases", text)
         self.assertIn("stored items stay in the core", text)
+
+    def test_retired_bottle_energy_has_only_a_lossless_nbt_migration_surface(self):
+        runtime_without_migration = "\n".join(
+            self.read_required(path)
+            for path in [
+                "src/main/java/com/swearprom/magicstorage/magic_storage/EnergyType.java",
+                "src/main/java/com/swearprom/magicstorage/magic_storage/FuelTable.java",
+                "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java",
+                "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java",
+            ]
+        )
+        self.assertNotIn("BOTTLE_FUEL", runtime_without_migration)
+        self.assertNotIn("bottle_fuel", runtime_without_migration)
+        core = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
+        )
+        self.assertIn('"bottle_fuel"', core)
+        self.assertIn("legacyBottleFuel", core)
+
+        player_facing_surfaces = "\n".join(
+            self.read_required(path)
+            for path in [
+                "scripts/prepare_prism_gui_world.py",
+                "scripts/run_prism_gui_session.py",
+                "src/main/resources/assets/magic_storage/patchouli_books/guide/en_us/entries/energy_overview.json",
+                "src/main/resources/assets/magic_storage/patchouli_books/guide/en_us/entries/fuel_conversion.json",
+                "src/main/resources/assets/magic_storage/patchouli_books/guide/en_us/entries/crafting_terminal.json",
+            ]
+        )
+        self.assertNotIn("bottle_fuel", player_facing_surfaces)
+        self.assertNotIn("Bottle Energy", player_facing_surfaces)
+        self.assertNotIn("Coal, Blaze Rod, and Glass Bottle", player_facing_surfaces)
+
+    def test_player_facing_terminal_text_is_concise_localized_and_locale_complete(self):
+        agents = self.read_required("AGENTS.md")
+        self.assertIn("Simple is better", agents)
+        self.assertIn("player-facing", agents)
+
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        tooltip = self.java_block(
+            storage,
+            r"\b(?:protected\s+)?static\s+Tooltip\s+createCycleTooltip\s*\(",
+            "concise cycle tooltip",
+        )
+        self.assertNotIn("cycle_hint", tooltip)
+        self.assertNotIn('"\\n"', tooltip)
+
+        crafting = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        self.assertNotIn('Component.literal("Previous recipe")', crafting)
+        self.assertNotIn('Component.literal("Next recipe")', crafting)
+        self.assertIn('Component.translatable("gui.magic_storage.previous_recipe")', crafting)
+        self.assertIn('Component.translatable("gui.magic_storage.next_recipe")', crafting)
+
+        en_us = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/en_us.json"
+        ))
+        zh_tw = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/zh_tw.json"
+        ))
+        self.assertEqual(set(en_us), set(zh_tw))
+        self.assertNotIn("gui.magic_storage.energy.bottle_fuel", en_us)
+        self.assertNotIn("tooltip.magic_storage.cycle_hint", en_us)
+        self.assertIn("gui.magic_storage.previous_recipe", en_us)
+        self.assertIn("gui.magic_storage.next_recipe", en_us)
+        self.assertIn("gui.magic_storage.recipe_station", en_us)
+        self.assertEqual(zh_tw["gui.magic_storage.energy.blaze_fuel"], "釀造能量")
+
+    def test_recipe_empty_state_station_badge_and_output_icon_match_current_state(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        native = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/NativeRecipeDiagramRenderer.java"
+        )
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        storage = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+
+        recipe_panel = self.java_block(
+            screen,
+            r"\bprivate\s+void\s+renderRecipePanel\s*\(",
+            "recipe panel renderer",
+        )
+        self.assertIn("menu.getSelectedStack()", recipe_panel)
+        self.assertIn('"gui.magic_storage.no_recipe"', recipe_panel)
+        clear_presentation = self.java_block(
+            menu,
+            r"\bprivate\s+void\s+clearRecipePresentation\s*\(",
+            "recipe presentation clear",
+        )
+        self.assertIn("selectedKey", clear_presentation)
+        self.assertIn("PRESENTATION_OUTPUT_SLOT", clear_presentation)
+
+        self.assertIn("renderRecipeStationHint", screen)
+        self.assertIn("presentation.station()", screen)
+        self.assertNotIn("presentation.station()", native)
+        recipe_geometry = self.java_block(
+            layout,
+            r"\bprivate\s+static\s+RecipeGeometry\s+recipeGeometry\s*\(",
+            "recipe geometry",
+        )
+        station_declaration = recipe_geometry[recipe_geometry.index("Rect station"):
+                                              recipe_geometry.index("Rect shapelessMarker")]
+        self.assertIn("diagram.right()", station_declaration)
+        self.assertIn("diagram.bottom()", station_declaration)
+
+        icon_button = self.java_block(
+            storage,
+            r"\bclass\s+TerminalIconButton\b",
+            "mutable terminal item-icon control",
+        )
+        self.assertIn("setItemIcon", icon_button)
+        self.assertNotIn("final ItemStack itemIcon", icon_button)
+        self.assertIn("Items.PLAYER_HEAD", screen)
+        self.assertIn("MagicStorage.STORAGE_CORE_ITEM", screen)
+        self.assertIn("outputDestinationRailBtn.setItemIcon", screen)
+
+    def test_fuel_workspace_uses_three_descriptor_category_rows(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        machine_table = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MachineEnergyTable.java"
+        )
+
+        for declaration in [
+            "record FuelDescriptorCounts",
+            "Rect consumablesPanel",
+            "Rect timedStationsPanel",
+            "Rect instantStationsPanel",
+            "Rect fuelStatus",
+            "FlowGrid consumablesGrid",
+            "FlowGrid timedStationsGrid",
+            "FlowGrid instantStationsGrid",
+        ]:
+            self.assertIn(declaration, layout)
+        for legacy in [
+            "MACHINE_FLOW_ROWS",
+            "Rect machinePanel",
+            "Rect fuelPanel",
+            "Rect fuelControlPanel",
+            "FlowGrid machineGrid",
+            "FlowGrid reserveGrid",
+        ]:
+            self.assertNotIn(legacy, layout)
+
+        self.assertIn("pagedFlowGrid", layout)
+        self.assertNotIn("horizontalFlowGrid", layout)
+        self.assertIn("renderConsumablesPanel", screen)
+        self.assertIn("renderTimedStationsPanel", screen)
+        self.assertIn("renderInstantStationsPanel", screen)
+        self.assertNotIn("renderMachinePanel", screen)
+        self.assertNotIn("renderFuelPanel", screen)
+        self.assertNotIn("renderFuelControlPanel", screen)
+        self.assertNotIn('"gui.magic_storage.installed_machines"', screen)
+        self.assertNotIn('"gui.magic_storage.energy_reserves"', screen)
+        for category in ["PROCESS", "INSTANT", "CONSUMABLE"]:
+            self.assertIn(category, machine_table)
+
+    def test_fuel_panels_fill_vertical_space_and_type_capacity_is_inventory_side(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        assembly = self.java_block(
+            layout,
+            r"\bprivate\s+static\s+Geometry\s+assembleCraftingGeometry\s*\(",
+            "TerminalLayout.assembleCraftingGeometry",
+        )
+        self.assertIn("fuelAreaBottom - TOP_HEIGHT", assembly)
+        self.assertIn("playerInventory.right() + CONTROL_GAP", assembly)
+        self.assertNotIn("fuelStatus.x() - CONTROL_GAP", assembly)
+        status = self.java_block(
+            screen,
+            r"\bprivate\s+void\s+renderFuelTypeCapacity\s*\(",
+            "CraftingTerminalScreen.renderFuelTypeCapacity",
+        )
+        self.assertIn("drawRaisedPanel", status)
+        self.assertRegex(
+            status,
+            r'Component\.translatable\(\s*"gui\.magic_storage\.type_capacity"',
+        )
+
+    def test_fuel_descriptor_grids_are_multi_row_and_paged_for_large_integrations(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        grid = self.java_block(
+            layout,
+            r"\bprivate\s+static\s+FlowGrid\s+pagedFlowGrid\s*\(",
+            "TerminalLayout.pagedFlowGrid",
+        )
+        self.assertIn("bounds.height() / FUEL_CATEGORY_CELL_HEIGHT", grid)
+        self.assertIn("columns * rows", grid)
+
+        en_us = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/en_us.json"
+        ))
+        zh_tw = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/zh_tw.json"
+        ))
+        self.assertEqual("Consumables", en_us["gui.magic_storage.fuel_group.consumables"])
+        self.assertEqual("Timed Stations", en_us["gui.magic_storage.fuel_group.timed_stations"])
+        self.assertEqual("Instant Stations", en_us["gui.magic_storage.fuel_group.instant_stations"])
+        self.assertEqual(set(en_us), set(zh_tw))
+        self.assertNotIn("Stations & Axe Energy", en_us.values())
+
+    def test_cycle_controls_middle_reset_and_only_boolean_controls_have_status_lights(self):
+        direction = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalCycleDirection.java"
+        )
+        storage_screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        storage_menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalMenu.java"
+        )
+        crafting_screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        crafting_menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+
+        self.assertNotIn("RESET", direction)
+        cycle_button = self.java_block(
+            storage_screen,
+            r"\bclass\s+TerminalCycleButton\b",
+            "terminal cycle button",
+        )
+        self.assertIn("Runnable resetAction", cycle_button)
+        self.assertRegex(cycle_button, r"button\s*==\s*2")
+        self.assertIn("resetAction.run()", cycle_button)
+        for constant in [
+            "RESET_SORT_ORDER_BUTTON",
+            "RESET_SORT_MODE_BUTTON",
+            "RESET_SEARCH_MODE_BUTTON",
+        ]:
+            self.assertIn(constant, storage_menu)
+        self.assertIn("sortOrder = SortOrder.ASCENDING", storage_menu)
+        self.assertIn("sortMode = SortMode.NAME", storage_menu)
+        self.assertIn("searchMode = SearchMode.NORMAL", storage_menu)
+        self.assertIn("RESET_OUTPUT_DESTINATION_BUTTON", crafting_menu)
+        self.assertIn("RESET_PLAYER_INVENTORY_BUTTON", crafting_menu)
+        self.assertIn("outputDestination = TerminalOutputDestination.PLAYER", crafting_menu)
+        self.assertIn("selectedFuelTarget = null", crafting_menu)
+        self.assertIn("usePlayerInventory = false", crafting_menu)
+
+        side_rail = self.java_block(
+            crafting_screen,
+            r"\bprivate\s+void\s+renderSideRail\s*\(",
+            "CraftingTerminalScreen.renderSideRail",
+        )
+        self.assertIn("menu.isUsePlayerInventory()", side_rail)
+        self.assertNotIn("menu.getOutputDestination()", side_rail)
+        self.assertNotIn("outputDestinationIndex", side_rail)
+
+    def test_recipe_prompt_wraps_and_amount_actions_form_one_segmented_strip(self):
+        layout = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        recipe_panel = self.java_block(
+            screen,
+            r"\bprivate\s+void\s+renderRecipePanel\s*\(",
+            "CraftingTerminalScreen.renderRecipePanel",
+        )
+        empty_start = recipe_panel.index("if (presentation.isEmpty())")
+        empty_branch = recipe_panel[empty_start:recipe_panel.index("return;", empty_start)]
+        self.assertIn("geometry.recipeContent()", recipe_panel)
+        self.assertIn("font.split", empty_branch)
+        self.assertNotIn("plainSubstrByWidth", empty_branch)
+        self.assertIn("renderWrappedPrompt", empty_branch)
+        self.assertIn("content", empty_branch)
+        self.assertNotIn("ledger", empty_branch)
+        self.assertLess(
+            recipe_panel.index("return;", empty_start),
+            recipe_panel.index("leftPos + ledger.x()"),
+        )
+
+        self.assertIn("class RecipeAmountButton", screen)
+        self.assertIn("RecipeAmountSegment", screen)
+        self.assertIn("addRecipeAmountButton", screen)
+        init = self.java_block(
+            screen,
+            r"\bprotected\s+void\s+init\s*\(",
+            "CraftingTerminalScreen.init",
+        )
+        amount_controls = init[init.index("List<TerminalLayout.Rect> craftButtons"):]
+        self.assertNotIn("Button.builder", amount_controls)
+        self.assertEqual(4, amount_controls.count("addRecipeAmountButton("))
+        self.assertIn("contiguousSegmentRects", layout)
+
+    def test_fuel_target_popup_renders_once_after_container_foreground(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+        self.assertIn("addWidget(fuelTargetPopup)", screen)
+        self.assertNotIn("addRenderableWidget(fuelTargetPopup)", screen)
+        foreground = self.java_block(
+            screen,
+            r"\bpublic\s+void\s+render\s*\(\s*GuiGraphics",
+            "Crafting Terminal foreground overlay pass",
+        )
+        self.assertLess(foreground.index("super.render"), foreground.index("fuelTargetPopup.render"))
+        self.assertRegex(foreground, r"translate\([^;]*[3-9]\d\d(?:\.0)?F?\s*\)")
+
+    def test_terminal_control_name_icon_is_even_grid_centered(self):
+        atlas = ROOT / "src/main/resources/assets/magic_storage/textures/gui/terminal_controls.png"
+        width, height, pixels = self.rgba_png_pixels(atlas)
+        self.assertEqual((256, 16), (width, height))
+        first = 2 * 16
+        points = [
+            (x, y)
+            for y in range(16)
+            for x in range(16)
+            if pixels[y * width + first + x][3] != 0
+        ]
+        self.assertEqual((4, 11), (min(x for x, _ in points), max(x for x, _ in points)))
+        self.assertEqual(
+            sorted(points),
+            sorted((15 - x, y) for x, y in points),
+            "the A glyph must be mirrored around the even-grid axis x=7.5",
+        )
+
+    def test_machine_descriptors_have_a_public_server_owned_registry_and_fixed_menu_bank(self):
+        api = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MachineDescriptorApi.java"
+        )
+        descriptor = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MachineDescriptor.java"
+        )
+        table = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MachineEnergyTable.java"
+        )
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        packet = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MachineDescriptorStatePacket.java"
+        )
+        core = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
+        )
+
+        self.assertIn("REGISTRY_KEY", api)
+        self.assertIn("createDeferredRegister", api)
+        self.assertRegex(api, r"MAX_DESCRIPTORS\s*=\s*256")
+        self.assertIn("Ingredient", descriptor)
+        self.assertIn("ConsumableValue", descriptor)
+        self.assertIn("writeSnapshot", table)
+        self.assertIn("readSnapshot", table)
+        self.assertIn(
+            "MACHINE_SLOT_COUNT = MachineDescriptorApi.MAX_DESCRIPTORS",
+            menu,
+        )
+        self.assertIn("playToClient", self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java"
+        ))
+        self.assertIn("descriptorId", packet)
+        self.assertIn('TAG_MACHINE_DESCRIPTORS = "machineDescriptors"', core)
+        self.assertIn("recoverUnregisteredMachine", core)
+
+    def test_storage_core_breaking_is_tool_independent_creative_safe_and_recoverable(self):
+        registration = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java"
+        )
+        block = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlock.java"
+        )
+        item = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockItem.java"
+        )
+        recovery = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreRecoverySavedData.java"
+        )
+        wrench = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/WrenchActions.java"
+        )
+
+        core_registration = self.java_block(
+            registration,
+            r"\bpublic\s+static\s+final\s+DeferredBlock<Block>\s+STORAGE_CORE\b",
+            "Storage Core registration",
+        )
+        self.assertNotIn("requiresCorrectToolForDrops", core_registration)
+        self.assertIn("playerWillDestroy", block)
+        self.assertIn("prepareRecoveryDrop", block)
+        self.assertIn("onExplosionHit", block)
+        self.assertIn("RECOVERY_ID", item)
+        self.assertIn("CoreRecoverySavedData", item)
+        self.assertIn("extends SavedData", recovery)
+        self.assertIn("reissueLatest", recovery)
+        self.assertIn("RegisterCommandsEvent", registration)
+        self.assertIn("prepareRecoveryDrop", wrench)
+
+    def test_remote_terminal_uses_its_own_container_title(self):
+        remote = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/RemoteTerminalItem.java"
+        )
+        en_us = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/en_us.json"
+        ))
+        zh_tw = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/zh_tw.json"
+        ))
+        self.assertIn('Component.translatable("container.magic_storage.remote_terminal")', remote)
+        self.assertEqual("Remote Terminal", en_us["container.magic_storage.remote_terminal"])
+        self.assertEqual("遠端終端機", zh_tw["container.magic_storage.remote_terminal"])
+
+    def test_texture_family_encodes_distinct_roles_direction_and_declared_symmetry(self):
+        art = ROOT / "art/texture-generation/20260714-terminal-family"
+        manifest = json.loads((art / "selection.json").read_text())
+        members = manifest["members"]
+
+        def member_pixels(texture_id: str):
+            path = ROOT / members[texture_id]["runtime"]
+            width, height, pixels = self.rgba_png_pixels(path)
+            self.assertEqual((16, 16), (width, height), texture_id)
+            return pixels
+
+        x_symmetric = [
+            "magic_storage:block/storage_core",
+            "magic_storage:block/storage_terminal",
+            "magic_storage:block/crafting_terminal",
+            *[f"magic_storage:block/storage_unit_t{tier}" for tier in range(1, 7)],
+            "magic_storage:block/import_bus_top",
+            "magic_storage:block/import_bus_side",
+            "magic_storage:block/import_bus_front",
+            "magic_storage:block/export_bus_top",
+            "magic_storage:block/export_bus_side",
+            "magic_storage:block/export_bus_front",
+        ]
+        for texture_id in x_symmetric:
+            self.assertIn("x", members[texture_id].get("symmetry_axes", []), texture_id)
+            pixels = member_pixels(texture_id)
+            self.assertTrue(all(
+                pixels[y * 16 + x] == pixels[y * 16 + 15 - x]
+                for y in range(16) for x in range(8)
+            ), texture_id)
+
+        terminal_ids = [
+            "magic_storage:block/storage_core",
+            "magic_storage:block/storage_terminal",
+            "magic_storage:block/crafting_terminal",
+        ]
+        for left_index, left_id in enumerate(terminal_ids):
+            for right_id in terminal_ids[left_index + 1:]:
+                changed = sum(
+                    left != right
+                    for left, right in zip(member_pixels(left_id), member_pixels(right_id))
+                )
+                self.assertGreaterEqual(changed, 24, f"{left_id} and {right_id} are too similar")
+
+        for tier in range(1, 6):
+            left = member_pixels(f"magic_storage:block/storage_unit_t{tier}")
+            right = member_pixels(f"magic_storage:block/storage_unit_t{tier + 1}")
+            self.assertGreaterEqual(
+                sum(a != b for a, b in zip(left, right)),
+                8,
+                f"adjacent storage tiers {tier}/{tier + 1} need a readable main-face change",
+            )
+
+        for face in ("top", "side"):
+            imported = member_pixels(f"magic_storage:block/import_bus_{face}")
+            exported = member_pixels(f"magic_storage:block/export_bus_{face}")
+            self.assertGreaterEqual(
+                sum(a != b for a, b in zip(imported, exported)),
+                8,
+                f"Import and Export Bus {face} faces must remain distinguishable",
+            )
 
 
 if __name__ == "__main__":
