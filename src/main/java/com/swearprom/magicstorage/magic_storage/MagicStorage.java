@@ -4,11 +4,14 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.core.Registry;
+import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -17,11 +20,16 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 
 import org.slf4j.Logger;
 
@@ -55,14 +63,22 @@ public class MagicStorage {
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
     public static final DeferredRegister<MenuType<?>> MENUS =
             DeferredRegister.create(Registries.MENU, MODID);
+    public static final DeferredRegister<MachineDescriptor> MACHINE_DESCRIPTORS =
+            MachineDescriptorApi.createDeferredRegister(MODID);
+    public static final Registry<MachineDescriptor> MACHINE_DESCRIPTOR_REGISTRY =
+            MACHINE_DESCRIPTORS.makeRegistry(builder -> builder.maxId(MachineDescriptorApi.MAX_DESCRIPTORS - 1));
+
+    static {
+        MachineEnergyTable.registerBuiltIns(MACHINE_DESCRIPTORS);
+    }
 
     // === Core Block ===
     public static final DeferredBlock<Block> STORAGE_CORE = BLOCKS.register("storage_core",
             () -> new StorageCoreBlock(BlockBehaviour.Properties.of()
-                    .strength(3.0F, 6.0F)
-                    .requiresCorrectToolForDrops()));
-    public static final DeferredItem<BlockItem> STORAGE_CORE_ITEM =
-            ITEMS.registerSimpleBlockItem("storage_core", STORAGE_CORE);
+                    .strength(3.0F, 6.0F)));
+    public static final DeferredItem<StorageCoreBlockItem> STORAGE_CORE_ITEM =
+            ITEMS.register("storage_core", () -> new StorageCoreBlockItem(
+                    STORAGE_CORE.get(), new Item.Properties()));
 
     // === Storage Unit Blocks (6 tiers: 10/25/50/100/200/400 type slots) ===
     public static final DeferredBlock<Block> STORAGE_UNIT_T1 = BLOCKS.register("storage_unit_t1",
@@ -120,6 +136,10 @@ public class MagicStorage {
 
     public static final DeferredItem<Item> REMOTE_TERMINAL = ITEMS.register("remote_terminal",
             () -> new RemoteTerminalItem(new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<Item> WRENCH = ITEMS.register("wrench",
+            () -> new Item(new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<Item> GUIDE_BOOK = ITEMS.register("guide_book",
+            () -> new GuideBookItem(new Item.Properties().stacksTo(1)));
 
     // === Menu Types ===
     public static final DeferredHolder<MenuType<?>, MenuType<StorageTerminalMenu>> STORAGE_TERMINAL_MENU =
@@ -160,6 +180,8 @@ public class MagicStorage {
                                 output.accept(STORAGE_TERMINAL_ITEM.get());
                                 output.accept(CRAFTING_TERMINAL_ITEM.get());
                                 output.accept(REMOTE_TERMINAL.get());
+                                output.accept(WRENCH.get());
+                                output.accept(GUIDE_BOOK.get());
                                 output.accept(IMPORT_BUS_ITEM.get());
                                 output.accept(EXPORT_BUS_ITEM.get());
                             }).build());
@@ -170,6 +192,11 @@ public class MagicStorage {
         BLOCK_ENTITIES.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         MENUS.register(modEventBus);
+        MACHINE_DESCRIPTORS.register(modEventBus);
+        NeoForge.EVENT_BUS.addListener(WrenchActions::onRightClickBlock);
+        NeoForge.EVENT_BUS.addListener(this::registerCommands);
+        modEventBus.addListener(this::registerCapabilities);
+        modEventBus.addListener(this::commonSetup);
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientSetup.register(modEventBus);
         }
@@ -180,9 +207,48 @@ public class MagicStorage {
             registrar.playToServer(TerminalScrollPacket.TYPE, TerminalScrollPacket.STREAM_CODEC, this::handleTerminalScroll);
             registrar.playToServer(CraftingRecipeSelectionPacket.TYPE, CraftingRecipeSelectionPacket.STREAM_CODEC,
                     this::handleCraftingRecipeSelection);
+            registrar.playToClient(MachineDescriptorStatePacket.TYPE, MachineDescriptorStatePacket.STREAM_CODEC,
+                    this::handleMachineDescriptorState);
         });
-        SelfTest.runAll();
         LOGGER.info("Magic Storage initialized.");
+    }
+
+    private void commonSetup(FMLCommonSetupEvent event) {
+        event.enqueueWork(SelfTest::runAll);
+    }
+
+    private void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                IMPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveItemHandler());
+    }
+
+    private void registerCommands(RegisterCommandsEvent event) {
+        event.getDispatcher().register(Commands.literal(MODID)
+                .then(Commands.literal("recover_core")
+                        .executes(context -> {
+                            var player = context.getSource().getPlayerOrException();
+                            var summary = CoreRecoverySavedData.get(player.serverLevel())
+                                    .reissueLatest(player.getUUID());
+                            if (summary.isEmpty()) {
+                                context.getSource().sendFailure(Component.translatable(
+                                        "msg.magic_storage.core_recovery_none"));
+                                return 0;
+                            }
+                            ItemStack stack = StorageCoreBlockItem.createRecoveryStack(summary.get());
+                            if (!player.getInventory().add(stack)) {
+                                player.drop(stack, false);
+                            }
+                            player.inventoryMenu.broadcastChanges();
+                            context.getSource().sendSuccess(
+                                    () -> Component.translatable(
+                                            "msg.magic_storage.core_recovery_reissued",
+                                            summary.get().typeCount(),
+                                            summary.get().itemCount()),
+                                    false);
+                            return 1;
+                        })));
     }
 
     private void handleSearchFilter(SearchFilterPacket packet, net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
@@ -193,6 +259,19 @@ public class MagicStorage {
             StorageCoreBlockEntity core = menu.getCore(player.level());
             if (core != null && menu.applyFilter(core, packet.filter())) {
                 menu.broadcastChanges();
+            }
+        });
+    }
+
+    private void handleMachineDescriptorState(
+            MachineDescriptorStatePacket packet,
+            net.neoforged.neoforge.network.handling.IPayloadContext ctx
+    ) {
+        ctx.enqueueWork(() -> {
+            var player = ctx.player();
+            if (player != null && player.containerMenu instanceof CraftingTerminalMenu menu
+                    && menu.containerId == packet.containerId()) {
+                menu.applyDescriptorStates(packet.states());
             }
         });
     }

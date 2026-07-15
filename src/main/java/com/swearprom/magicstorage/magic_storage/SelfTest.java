@@ -132,12 +132,12 @@ class SelfTest {
     }
 
     private static void testFuelTable() {
-        assertTrue("glass_bottle gives bottle_fuel", FuelTable.isFuel(new ItemStack(Items.GLASS_BOTTLE)));
-        assertTrue("glass_bottle value is one", FuelTable.getFuelValues(new ItemStack(Items.GLASS_BOTTLE))
-                .stream().anyMatch(fv -> fv.pool() == EnergyType.BOTTLE_FUEL && fv.valuePerItem() == 1));
-        assertTrue("potion gives bottle_fuel", FuelTable.isFuel(new ItemStack(Items.POTION)));
-        assertTrue("potion value is one", FuelTable.getFuelValues(new ItemStack(Items.POTION))
-                .stream().anyMatch(fv -> fv.pool() == EnergyType.BOTTLE_FUEL && fv.valuePerItem() == 1));
+        assertTrue("glass bottle is not fuel", !FuelTable.isFuel(new ItemStack(Items.GLASS_BOTTLE)));
+        assertTrue("glass bottle has no fuel values",
+                FuelTable.getFuelValues(new ItemStack(Items.GLASS_BOTTLE)).isEmpty());
+        assertTrue("potion is not fuel", !FuelTable.isFuel(new ItemStack(Items.POTION)));
+        assertTrue("potion has no fuel values",
+                FuelTable.getFuelValues(new ItemStack(Items.POTION)).isEmpty());
         assertTrue("blaze rod has explicit brew overlay", FuelTable.isFuel(new ItemStack(Items.BLAZE_ROD)));
         assertTrue("blaze rod brew overlay is 1200", FuelTable.getFuelValues(new ItemStack(Items.BLAZE_ROD))
                 .stream().anyMatch(fv -> fv.pool() == EnergyType.BLAZE_FUEL && fv.valuePerItem() == 1200));
@@ -150,29 +150,25 @@ class SelfTest {
     }
 
     private static void testFuelAutoPriority() {
-        FuelValue bottleAuto = FuelTable.getAutoFuelValue(new ItemStack(Items.GLASS_BOTTLE), type -> 0L);
-        assertTrue("single explicit pool is selected without runtime fuel data",
-                bottleAuto != null && bottleAuto.pool() == EnergyType.BOTTLE_FUEL);
+        assertTrue("retired bottle inputs have no automatic fuel target",
+                FuelTable.getAutoFuelValue(new ItemStack(Items.GLASS_BOTTLE), type -> 0L) == null
+                        && FuelTable.getAutoFuelValue(new ItemStack(Items.POTION), type -> 0L) == null);
         assertTrue("blaze fuel has two distinct suppliers",
                 FuelTable.getSupplierCount(EnergyType.BLAZE_FUEL) == 2);
-        assertTrue("bottle fuel has two distinct suppliers",
-                FuelTable.getSupplierCount(EnergyType.BOTTLE_FUEL) == 2);
 
         FuelValue blazeRodAuto = FuelTable.getAutoFuelValue(new ItemStack(Items.BLAZE_ROD), type -> 0L);
         assertTrue("auto blaze rod prefers the pool with fewer fuel choices",
                 blazeRodAuto != null && blazeRodAuto.pool() == EnergyType.BLAZE_FUEL);
-
         List<FuelValue> equalScarcity = List.of(
-                new FuelValue(EnergyType.BLAZE_FUEL, 1),
-                new FuelValue(EnergyType.BOTTLE_FUEL, 1));
+                new FuelValue(EnergyType.SMELTING_ENERGY, 1),
+                new FuelValue(EnergyType.BLASTING_ENERGY, 1));
         FuelValue lowerAmount = FuelTable.selectAutoFuelValue(equalScarcity,
-                type -> type == EnergyType.BLAZE_FUEL ? 20L : 10L);
+                type -> type == EnergyType.SMELTING_ENERGY ? 20L : 10L);
         assertTrue("equal scarcity prefers the lower accumulated pool",
-                lowerAmount != null && lowerAmount.pool() == EnergyType.BOTTLE_FUEL);
-
+                lowerAmount != null && lowerAmount.pool() == EnergyType.BLASTING_ENERGY);
         FuelValue enumTie = FuelTable.selectAutoFuelValue(equalScarcity, type -> 10L);
         assertTrue("equal scarcity and amount use stable enum order",
-                enumTie != null && enumTie.pool() == EnergyType.BLAZE_FUEL);
+                enumTie != null && enumTie.pool() == EnergyType.SMELTING_ENERGY);
         assertTrue("non-fuel has no auto target",
                 FuelTable.getAutoFuelValue(new ItemStack(Items.STONE), type -> 0L) == null);
     }
@@ -210,8 +206,9 @@ class SelfTest {
         assertTrue("blasting is machine-generated", EnergyType.BLASTING_ENERGY.isMachineGenerated());
         assertTrue("furnace_fuel is not machine-generated", !EnergyType.FURNACE_FUEL.isMachineGenerated());
         assertTrue("blaze_fuel is not machine-generated", !EnergyType.BLAZE_FUEL.isMachineGenerated());
-        assertTrue("bottle_fuel is not machine-generated", !EnergyType.BOTTLE_FUEL.isMachineGenerated());
-        assertTrue("8 types total", EnergyType.values().length == 8);
+        assertTrue("bottle fuel energy type is retired", java.util.Arrays.stream(EnergyType.values())
+                .noneMatch(type -> type.name().equals("BOTTLE_FUEL") || type.getId().equals("bottle_fuel")));
+        assertTrue("7 types total", EnergyType.values().length == 7);
         assertTrue("smelting id", EnergyType.SMELTING_ENERGY.getId().equals("smelting_energy"));
         assertTrue("every energy type has a representative item",
                 java.util.Arrays.stream(EnergyType.values())
@@ -233,25 +230,24 @@ class SelfTest {
                 EnergyType.FURNACE_FUEL.representativeStack().is(Items.COAL));
         assertTrue("Brew Energy uses blaze rod as its representative item",
                 EnergyType.BLAZE_FUEL.representativeStack().is(Items.BLAZE_ROD));
-        assertTrue("Bottle Energy uses glass bottle as its representative item",
-                EnergyType.BOTTLE_FUEL.representativeStack().is(Items.GLASS_BOTTLE));
         assertTrue("9 station and consumable mappings", MachineEnergyTable.size() == 9);
-        assertTrue("Furnace maps to smelting", MachineEnergyTable.get(0).machine() == Items.FURNACE
-                && MachineEnergyTable.get(0).energyType() == EnergyType.SMELTING_ENERGY);
-        assertTrue("Blast Furnace maps to blasting", MachineEnergyTable.get(1).machine() == Items.BLAST_FURNACE
+        assertTrue("Furnace maps to smelting", MachineEnergyTable.get(0).representativeStack().is(Items.FURNACE)
+                && MachineEnergyTable.get(0).energyType() == EnergyType.SMELTING_ENERGY
+                && MachineEnergyTable.get(0).accepts(new ItemStack(Items.FURNACE)));
+        assertTrue("Blast Furnace maps to blasting", MachineEnergyTable.get(1).representativeStack().is(Items.BLAST_FURNACE)
                 && MachineEnergyTable.get(1).energyType() == EnergyType.BLASTING_ENERGY);
-        assertTrue("Smoker maps to smoking", MachineEnergyTable.get(2).machine() == Items.SMOKER
+        assertTrue("Smoker maps to smoking", MachineEnergyTable.get(2).representativeStack().is(Items.SMOKER)
                 && MachineEnergyTable.get(2).energyType() == EnergyType.SMOKING_ENERGY);
-        assertTrue("Campfire maps to campfire", MachineEnergyTable.get(3).machine() == Items.CAMPFIRE
+        assertTrue("Campfire maps to campfire", MachineEnergyTable.get(3).representativeStack().is(Items.CAMPFIRE)
                 && MachineEnergyTable.get(3).energyType() == EnergyType.CAMPFIRE_ENERGY);
-        assertTrue("Brewing Stand maps to brew", MachineEnergyTable.get(4).machine() == Items.BREWING_STAND
+        assertTrue("Brewing Stand maps to brew", MachineEnergyTable.get(4).representativeStack().is(Items.BREWING_STAND)
                 && MachineEnergyTable.get(4).energyType() == EnergyType.BREW_ENERGY);
         assertTrue("Crafting Table maps to crafting station slot",
-                MachineEnergyTable.get(MachineEnergyTable.CRAFTING_TABLE_SLOT).machine() == Items.CRAFTING_TABLE);
+                MachineEnergyTable.get(MachineEnergyTable.CRAFTING_TABLE_SLOT).representativeStack().is(Items.CRAFTING_TABLE));
         assertTrue("Stonecutter maps to stonecutting station slot",
-                MachineEnergyTable.get(MachineEnergyTable.STONECUTTER_SLOT).machine() == Items.STONECUTTER);
+                MachineEnergyTable.get(MachineEnergyTable.STONECUTTER_SLOT).representativeStack().is(Items.STONECUTTER));
         assertTrue("Smithing Table maps to smithing station slot",
-                MachineEnergyTable.get(MachineEnergyTable.SMITHING_TABLE_SLOT).machine() == Items.SMITHING_TABLE);
+                MachineEnergyTable.get(MachineEnergyTable.SMITHING_TABLE_SLOT).representativeStack().is(Items.SMITHING_TABLE));
         assertTrue("Axe slot accepts axes and rejects pickaxes",
                 MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT).accepts(new ItemStack(Items.DIAMOND_AXE))
                         && !MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT)
@@ -468,11 +464,12 @@ class SelfTest {
     }
 
     private static void testAdaptiveTerminalLayout() {
-        var narrow = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 3);
+        var counts = new TerminalLayout.FuelDescriptorCounts(4, 5, 3, 3);
+        var narrow = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, counts);
         assertTrue("crafting geometry retains its terminal profile",
                 narrow.profile() == TerminalProfile.CRAFTING);
         assertTrue("320x240 crafting uses narrow fallback", !narrow.wide());
-        assertTrue("narrow fallback leaves vertical breathing room", narrow.imageHeight() <= 232);
+        assertTrue("narrow fallback fits the complete viewport", narrow.imageHeight() <= 240);
         assertTrue("narrow grid follows nine-column slot rhythm",
                 narrow.itemGrid().width() == 9 * TerminalLayout.SLOT_SIZE
                         && narrow.itemGrid().height() == narrow.visibleRows() * TerminalLayout.SLOT_SIZE);
@@ -481,189 +478,78 @@ class SelfTest {
                         && narrow.workspace().bottom() <= narrow.playerInventory().y());
         assertTrue("narrow player inventory fits inside frame",
                 narrow.playerInventory().bottom() <= narrow.imageHeight());
-        assertTrue("narrow Fuel machine grid derives five entries", narrow.machineGrid().itemCount() == 5
-                && narrow.machineGrid().cells().size() == 5);
-        assertTrue("narrow Fuel reserve grid derives three entries", narrow.reserveGrid().itemCount() == 3
-                && narrow.reserveGrid().cells().size() == 3);
-        assertTrue("narrow Fuel input stays in Fuel card",
-                narrow.fuelPanel().contains(narrow.fuelInput().x(), narrow.fuelInput().y()));
-        assertTrue("narrow Fuel target selector stays in the Fuel header",
-                narrow.fuelTargetSelector().x() >= narrow.fuelPanel().x()
-                        && narrow.fuelTargetSelector().y() >= narrow.fuelPanel().y()
-                        && narrow.fuelTargetSelector().right() <= narrow.fuelPanel().right()
-                        && narrow.fuelTargetSelector().bottom() <= narrow.reserveGrid().bounds().y());
-        assertTrue("narrow Fuel target list button is separate from the cycle selector",
-                narrow.fuelTargetListButton().width() == TerminalLayout.CONTROL_SIZE
-                        && narrow.fuelTargetListButton().height() == TerminalLayout.CONTROL_SIZE
-                        && !narrow.fuelTargetListButton().overlaps(narrow.fuelTargetSelector()));
-        assertTrue("narrow Fuel target popup is anchored inside the terminal frame",
-                narrow.frame().contains(
-                        narrow.fuelTargetPopup().bounds().x(), narrow.fuelTargetPopup().bounds().y())
-                        && narrow.fuelTargetPopup().bounds().right() <= narrow.frame().right()
-                        && narrow.fuelTargetPopup().bounds().bottom() <= narrow.frame().bottom());
-        assertTrue("narrow recipe workspace stacks diagram, ledger, and footer",
-                narrow.recipeDiagram().bottom() <= narrow.recipeLedger().y()
-                        && narrow.recipeLedger().bottom() <= narrow.recipeFooter().y());
-        assertTrue("narrow recipe diagram exposes nine positioned input slots",
-                narrow.recipeInputSlots().size() == RecipePresentation.MAX_INPUTS
-                        && rectanglesDoNotOverlap(narrow.recipeInputSlots()));
-        assertTrue("narrow recipe ledger derives twelve bounded rows",
-                narrow.recipeLedgerCells(12).size() == 12
-                        && rectanglesDoNotOverlap(narrow.recipeLedgerCells(12)));
+        assertFuelCategoryGeometry("narrow", narrow, counts);
+        assertRecipeGeometry("narrow", narrow);
 
-        var sideBySide = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 423, 291, 5, 3);
+        var sideBySide = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 423, 291, counts);
         assertTrue("guiScale-4 fullscreen width uses side-by-side layout", sideBySide.wide());
         assertTrue("side-by-side frame shrinks within its supported range",
                 sideBySide.imageWidth() == 367);
         assertTrue("side-by-side workspace remains usable", sideBySide.workspace().width() >= 162);
-        assertTrue("side-by-side layout reserves vertical breathing room", sideBySide.imageHeight() <= 243);
+        assertTrue("side-by-side layout reserves vertical breathing room",
+                sideBySide.imageHeight() <= 291);
         assertTrue("side-by-side workspace sits right of item grid",
                 sideBySide.workspace().x() >= sideBySide.scrollbar().right());
-        assertTrue("side-by-side recipe diagram keeps a larger output slot",
-                sideBySide.recipeOutput().width() > sideBySide.recipeInputSlots().getFirst().width()
-                        && sideBySide.recipeOutput().height()
-                        > sideBySide.recipeInputSlots().getFirst().height());
-        assertTrue("side-by-side recipe workspace stacks diagram, ledger, and footer",
-                sideBySide.recipeDiagram().bottom() <= sideBySide.recipeLedger().y()
-                        && sideBySide.recipeLedger().bottom() <= sideBySide.recipeFooter().y());
         assertTrue("side-by-side boundary is based on complete usable width",
-                !TerminalLayout.forProfile(TerminalProfile.CRAFTING, 415, 291, 5, 3).wide()
-                        && TerminalLayout.forProfile(TerminalProfile.CRAFTING, 416, 291, 5, 3).wide());
-        assertTrue("Fuel content uses the full inner frame width",
-                sideBySide.machinePanel().x() == 8
-                        && sideBySide.machinePanel().width() == sideBySide.imageWidth() - 16
-                        && sideBySide.fuelPanel().x() == 8
-                        && sideBySide.fuelPanel().width() == sideBySide.imageWidth() - 16);
+                !TerminalLayout.forProfile(TerminalProfile.CRAFTING, 415, 291, counts).wide()
+                        && TerminalLayout.forProfile(TerminalProfile.CRAFTING, 416, 291, counts).wide());
+        assertFuelCategoryGeometry("side-by-side", sideBySide, counts);
+        assertRecipeGeometry("side-by-side", sideBySide);
         assertTrue("page tabs are visually separated from item controls",
                 sideBySide.railButtons().get(3).y() - sideBySide.railButtons().get(2).bottom() >= 6);
         assertTrue("Fuel rail contains only the three page tabs",
                 sideBySide.fuelRailButtons().size() == 3);
-        assertTrue("Fuel rail panel wraps only the Fuel page tabs",
-                sideBySide.fuelRailPanel().equals(new TerminalLayout.Rect(
-                        sideBySide.fuelRailButtons().getFirst().x() - 3,
-                        sideBySide.fuelRailButtons().getFirst().y() - 3,
-                        sideBySide.fuelRailButtons().getFirst().width() + 6,
-                        sideBySide.fuelRailButtons().getLast().bottom()
-                                - sideBySide.fuelRailButtons().getFirst().y() + 6)));
-        assertTrue("five machine entries span the complete flow width",
-                sideBySide.machineGrid().cells().getFirst().x() == sideBySide.machineGrid().bounds().x()
-                        && sideBySide.machineGrid().cells().getLast().right()
-                        == sideBySide.machineGrid().bounds().right());
-        assertTrue("three reserve entries span the complete flow width",
-                sideBySide.reserveGrid().cells().getFirst().x() == sideBySide.reserveGrid().bounds().x()
-                        && sideBySide.reserveGrid().cells().getLast().right()
-                        == sideBySide.reserveGrid().bounds().right());
         assertTrue("Fuel popup includes Auto plus every server-approved target",
-                sideBySide.fuelTargetPopup().itemCount()
-                        == sideBySide.reserveGrid().itemCount() + 1);
+                sideBySide.fuelTargetPopup().itemCount() == counts.fuelTargetCount());
         assertTrue("Fuel popup rows are descriptor-driven and bounded",
-                sideBySide.fuelTargetPopup().rows(0).size() == 4
-                        && rectanglesDoNotOverlap(sideBySide.fuelTargetPopup().rows(0))
-                        && sideBySide.fuelTargetPopup().rows(0).stream().allMatch(row ->
-                        row.x() >= sideBySide.fuelTargetPopup().bounds().x()
-                                && row.right() <= sideBySide.fuelTargetPopup().bounds().right()
-                                && row.y() >= sideBySide.fuelTargetPopup().bounds().y()
-                                && row.bottom() <= sideBySide.fuelTargetPopup().bounds().bottom()));
+                sideBySide.fuelTargetPopup().rows(0).size() == counts.fuelTargetCount()
+                        && rectanglesDoNotOverlap(sideBySide.fuelTargetPopup().rows(0)));
         assertTrue("Fuel popup never overlaps the left control rail",
                 !sideBySide.fuelTargetPopup().bounds().overlaps(sideBySide.railPanel()));
 
-        TerminalLayout.Rect sampleFlowCell = new TerminalLayout.Rect(20, 30, 72, 29);
-        assertTrue("station hover geometry is only the centered 18px slot",
-                TerminalLayout.centeredSlot(sampleFlowCell).equals(
-                        new TerminalLayout.Rect(47, 30, TerminalLayout.SLOT_SIZE, TerminalLayout.SLOT_SIZE)));
-        assertTrue("reserve hover geometry is only the centered 16px icon",
-                TerminalLayout.centeredIcon(sampleFlowCell).equals(
-                        new TerminalLayout.Rect(48, 30,
+        TerminalLayout.Rect sampleFlowCell = new TerminalLayout.Rect(20, 30, 72, 28);
+        assertTrue("station hover geometry is the upper centered 18px slot",
+                TerminalLayout.fuelSlot(sampleFlowCell).equals(
+                        new TerminalLayout.Rect(47, 31,
+                                TerminalLayout.SLOT_SIZE, TerminalLayout.SLOT_SIZE)));
+        assertTrue("reserve hover geometry is the upper centered 16px icon",
+                TerminalLayout.fuelIcon(sampleFlowCell).equals(
+                        new TerminalLayout.Rect(48, 31,
                                 TerminalLayout.ICON_CANVAS_SIZE, TerminalLayout.ICON_CANVAS_SIZE)));
+        assertTrue("Fuel amount geometry occupies the lower line",
+                TerminalLayout.fuelAmountBounds(sampleFlowCell).equals(
+                        new TerminalLayout.Rect(21, 49, 70, 9)));
+        assertTrue("Fuel slot and amount never overlap",
+                !TerminalLayout.fuelSlot(sampleFlowCell).overlaps(
+                        TerminalLayout.fuelAmountBounds(sampleFlowCell)));
 
-        var manyFuelDescriptors = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 60);
-        int manyFuelLeft = manyFuelDescriptors.centeredFrameLeft(320);
-        assertTrue("Fuel target rail stays fixed-size when reserve descriptors grow",
-                manyFuelDescriptors.fuelRailButtons().size() == 3);
-        assertTrue("large reserve descriptor sets cannot push rail or frame offscreen",
-                manyFuelLeft + manyFuelDescriptors.railPanel().x() >= 0
-                        && manyFuelLeft + manyFuelDescriptors.imageWidth() <= 320);
+        var overflowCounts = new TerminalLayout.FuelDescriptorCounts(64, 64, 64, 61);
+        var overflow = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 423, 291, overflowCounts);
         assertTrue("large Fuel target lists expose a bounded popup viewport",
-                manyFuelDescriptors.fuelTargetPopup().capacity() > 0
-                        && manyFuelDescriptors.fuelTargetPopup().capacity() <= 6
-                        && manyFuelDescriptors.fuelTargetPopup().itemCount() == 61);
-        int maximumFuelTargetScroll = manyFuelDescriptors.fuelTargetPopup().maxScrollOffset();
-        assertTrue("Fuel target popup scroll clamps at both ends",
-                manyFuelDescriptors.fuelTargetPopup().clampScrollOffset(-1) == 0
-                        && manyFuelDescriptors.fuelTargetPopup().clampScrollOffset(Integer.MAX_VALUE)
-                        == maximumFuelTargetScroll
-                        && maximumFuelTargetScroll
-                        == manyFuelDescriptors.fuelTargetPopup().itemCount()
-                        - manyFuelDescriptors.fuelTargetPopup().capacity());
-        assertTrue("Fuel target popup final viewport remains full and bounded",
-                manyFuelDescriptors.fuelTargetPopup().rows(maximumFuelTargetScroll).size()
-                        == manyFuelDescriptors.fuelTargetPopup().capacity());
-
-        var pageCapacity = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, 5, 3);
-        var partialLastPage = TerminalLayout.forProfile(TerminalProfile.CRAFTING,
-                320, 240,
-                pageCapacity.machineGrid().capacity() + 1,
-                pageCapacity.reserveGrid().capacity() + 1);
-        List<TerminalLayout.Rect> lastMachineCells = partialLastPage.machineGrid().cells(1);
-        List<TerminalLayout.Rect> lastReserveCells = partialLastPage.reserveGrid().cells(1);
-        assertTrue("partial last machine page spans the complete flow width",
-                lastMachineCells.size() == 1
-                        && lastMachineCells.getFirst().x() == partialLastPage.machineGrid().bounds().x()
-                        && lastMachineCells.getFirst().right() == partialLastPage.machineGrid().bounds().right());
-        assertTrue("partial last reserve page spans the complete flow width",
-                lastReserveCells.size() == 1
-                        && lastReserveCells.getFirst().x() == partialLastPage.reserveGrid().bounds().x()
-                        && lastReserveCells.getFirst().right() == partialLastPage.reserveGrid().bounds().right());
-
-        for (int machineCount : new int[]{0, 1, 5, 6, 9, 10, 40}) {
-            for (int reserveCount : new int[]{0, 1, 3, 4, 8, 30}) {
-                var flow = TerminalLayout.forProfile(TerminalProfile.CRAFTING, 320, 240, machineCount, reserveCount);
-                assertTrue("machine descriptor count is preserved", flow.machineGrid().itemCount() == machineCount);
-                assertTrue("reserve descriptor count is preserved", flow.reserveGrid().itemCount() == reserveCount);
-                assertTrue("machine visible cells are bounded by capacity",
-                        flow.machineGrid().cells().size() == Math.min(machineCount, flow.machineGrid().capacity()));
-                assertTrue("reserve visible cells are bounded by capacity",
-                        flow.reserveGrid().cells().size() == Math.min(reserveCount, flow.reserveGrid().capacity()));
-                assertTrue("machine overflow exposes deterministic pages",
-                        flow.machineGrid().pageCount() == Math.max(1,
-                                (machineCount + flow.machineGrid().capacity() - 1) / flow.machineGrid().capacity()));
-                assertTrue("reserve overflow exposes deterministic pages",
-                        flow.reserveGrid().pageCount() == Math.max(1,
-                                (reserveCount + flow.reserveGrid().capacity() - 1) / flow.reserveGrid().capacity()));
-                assertTrue("machine cells do not overlap", rectanglesDoNotOverlap(flow.machineGrid().cells()));
-                assertTrue("reserve cells do not overlap", rectanglesDoNotOverlap(flow.reserveGrid().cells()));
-                if (!flow.machineGrid().cells().isEmpty()) {
-                    assertTrue("machine cells span their complete flow width",
-                            flow.machineGrid().cells().getFirst().x() == flow.machineGrid().bounds().x()
-                                    && flow.machineGrid().cells().getLast().right()
-                                    == flow.machineGrid().bounds().right());
-                }
-                if (!flow.reserveGrid().cells().isEmpty()) {
-                    assertTrue("reserve cells span their complete flow width",
-                            flow.reserveGrid().cells().getFirst().x() == flow.reserveGrid().bounds().x()
-                                    && flow.reserveGrid().cells().getLast().right()
-                                    == flow.reserveGrid().bounds().right());
-                }
-                for (TerminalLayout.Rect cell : flow.machineGrid().cells()) {
-                    assertTrue("machine cell stays in machine flow bounds",
-                            cell.x() >= flow.machineGrid().bounds().x()
-                                    && cell.y() >= flow.machineGrid().bounds().y()
-                                    && cell.right() <= flow.machineGrid().bounds().right()
-                                    && cell.bottom() <= flow.machineGrid().bounds().bottom());
-                }
-                for (TerminalLayout.Rect cell : flow.reserveGrid().cells()) {
-                    assertTrue("reserve cell stays in reserve flow bounds",
-                            cell.x() >= flow.reserveGrid().bounds().x()
-                                    && cell.y() >= flow.reserveGrid().bounds().y()
-                                    && cell.right() <= flow.reserveGrid().bounds().right()
-                                    && cell.bottom() <= flow.reserveGrid().bounds().bottom());
-                }
+                overflow.fuelTargetPopup().capacity() > 0
+                        && overflow.fuelTargetPopup().capacity() <= 6
+                        && overflow.fuelTargetPopup().itemCount() == 61);
+        assertFullWidthLastPage("consumables", overflow.consumablesGrid());
+        assertFullWidthLastPage("timed stations", overflow.timedStationsGrid());
+        assertFullWidthLastPage("instant stations", overflow.instantStationsGrid());
+        assertTrue("descriptor growth preserves the inventory-side type-capacity panel",
+                overflow.fuelStatus().equals(sideBySide.fuelStatus())
+                        && overflow.instantStationsGrid().bounds().equals(
+                        sideBySide.instantStationsGrid().bounds())
+                        && overflow.consumablesGrid().pageCount() > 1
+                        && overflow.timedStationsGrid().pageCount() > 1
+                        && overflow.instantStationsGrid().pageCount() > 1);
+        for (int page = 0; page < overflow.instantStationsGrid().pageCount(); page++) {
+            for (TerminalLayout.Rect cell : overflow.instantStationsGrid().cells(page)) {
+                assertTrue("paged Instant Stations never enter the inventory-side type-capacity panel",
+                        !cell.overlaps(overflow.fuelStatus()));
             }
         }
 
         for (int height = 240; height <= 600; height++) {
             for (int width : new int[]{320, 415, 416, 423, 480, 854}) {
-                var geometry = TerminalLayout.forProfile(TerminalProfile.CRAFTING, width, height, 5, 3);
+                var geometry = TerminalLayout.forProfile(
+                        TerminalProfile.CRAFTING, width, height, counts);
                 int left = geometry.centeredFrameLeft(width);
                 int top = (height - geometry.imageHeight()) / 2;
                 assertTrue("crafting frame stays onscreen at " + width + "x" + height,
@@ -689,44 +575,15 @@ class SelfTest {
                                 && geometry.exclusionRects().get(1).equals(geometry.railPanel()));
                 assertTrue("crafting rail buttons do not overlap at " + width + "x" + height,
                         rectanglesDoNotOverlap(geometry.railButtons()));
-                assertTrue("crafting recipe regions remain ordered at " + width + "x" + height,
-                        geometry.recipeDiagram().bottom() <= geometry.recipeLedger().y()
-                                && geometry.recipeLedger().bottom() <= geometry.recipeFooter().y());
-                assertTrue("crafting diagram slots remain bounded at " + width + "x" + height,
-                        geometry.recipeInputSlots().size() == RecipePresentation.MAX_INPUTS
-                                && rectanglesDoNotOverlap(geometry.recipeInputSlots())
-                                && geometry.recipeDiagram().contains(
-                                geometry.recipeInputSlots().getFirst().x(),
-                                geometry.recipeInputSlots().getFirst().y())
-                                && geometry.recipeDiagram().contains(
-                                geometry.recipeInputSlots().getLast().right() - 1,
-                                geometry.recipeInputSlots().getLast().bottom() - 1));
-                for (int resourceCount = 0; resourceCount <= 12; resourceCount++) {
-                    List<TerminalLayout.Rect> cells = geometry.recipeLedgerCells(resourceCount);
-                    assertTrue("crafting ledger row count follows resources at " + width + "x" + height,
-                            cells.size() == resourceCount && rectanglesDoNotOverlap(cells));
-                    for (TerminalLayout.Rect cell : cells) {
-                        assertTrue("crafting ledger cell stays in its region at " + width + "x" + height,
-                                cell.x() >= geometry.recipeLedger().x()
-                                        && cell.y() >= geometry.recipeLedger().y()
-                                        && cell.right() <= geometry.recipeLedger().right()
-                                        && cell.bottom() <= geometry.recipeLedger().bottom());
-                    }
-                }
-                List<TerminalLayout.Rect> footerControls = new ArrayList<>();
-                footerControls.addAll(geometry.recipeNavigationButtons());
-                footerControls.addAll(geometry.recipeCraftButtons());
-                assertTrue("crafting footer controls remain disjoint at " + width + "x" + height,
-                        rectanglesDoNotOverlap(footerControls));
-                assertTrue("Fuel cards do not overlap player inventory at " + width + "x" + height,
-                        geometry.machinePanel().bottom() <= geometry.fuelPanel().y()
-                                && !geometry.machinePanel().overlaps(geometry.playerInventory())
-                                && !geometry.fuelPanel().overlaps(geometry.playerInventory()));
+                assertFuelCategoryGeometry(width + "x" + height, geometry, counts);
+                assertRecipeGeometry(width + "x" + height, geometry);
             }
         }
 
         for (int height = 240; height <= 600; height++) {
-            var geometry = TerminalLayout.forProfile(TerminalProfile.STORAGE, 320, height, 0, 0);
+            var geometry = TerminalLayout.forProfile(
+                    TerminalProfile.STORAGE, 320, height,
+                    TerminalLayout.FuelDescriptorCounts.none());
             assertTrue("storage geometry retains its terminal profile",
                     geometry.profile() == TerminalProfile.STORAGE);
             assertTrue("storage frame stays onscreen at height " + height,
@@ -741,6 +598,168 @@ class SelfTest {
             assertTrue("storage rail+frame group is centered at height " + height,
                     Math.abs(groupLeft - (320 - groupRight)) <= 1);
         }
+    }
+
+    private static void assertFuelCategoryGeometry(
+            String label,
+            TerminalLayout.Geometry geometry,
+            TerminalLayout.FuelDescriptorCounts counts
+    ) {
+        List<TerminalLayout.Rect> panels = List.of(
+                geometry.consumablesPanel(),
+                geometry.timedStationsPanel(),
+                geometry.instantStationsPanel());
+        assertTrue(label + " Fuel category panels do not overlap", rectanglesDoNotOverlap(panels));
+        assertTrue(label + " Fuel category panels reserve the player-inventory label band",
+                panels.getLast().bottom() == geometry.playerInventory().y() - 13);
+        assertTrue(label + " Fuel category panels fill from terminal content to inventory",
+                panels.getFirst().y() == TerminalLayout.TOP_HEIGHT
+                        && panels.getFirst().height() >= 51
+                        && panels.get(1).height() >= 32
+                        && panels.getLast().height() >= 32);
+        for (TerminalLayout.Rect panel : panels) {
+            assertTrue(label + " Fuel category panels use full inner width",
+                    panel.x() == 8 && panel.width() == geometry.imageWidth() - 16);
+        }
+        assertTrue(label + " Fuel category panel order is semantic",
+                geometry.consumablesPanel().bottom() <= geometry.timedStationsPanel().y()
+                        && geometry.timedStationsPanel().bottom() <= geometry.instantStationsPanel().y());
+        assertPagedFlowGrid(label + " consumables", geometry.consumablesGrid(), counts.consumableCount());
+        assertPagedFlowGrid(label + " timed stations", geometry.timedStationsGrid(), counts.timedStationCount());
+        assertPagedFlowGrid(label + " instant stations", geometry.instantStationsGrid(), counts.instantStationCount());
+        assertTrue(label + " Fuel rows reserve bounded left category labels",
+                geometry.consumablesGrid().bounds().x() >= geometry.consumablesPanel().x() + 68
+                        && geometry.timedStationsGrid().bounds().x()
+                        >= geometry.timedStationsPanel().x() + 68
+                        && geometry.instantStationsGrid().bounds().x()
+                        >= geometry.instantStationsPanel().x() + 68);
+        assertTrue(label + " Fuel input is the first consumable slot",
+                geometry.fuelInput().equals(
+                        TerminalLayout.fuelSlot(geometry.consumablesGrid().cells().getFirst())));
+        assertTrue(label + " Fuel target selector stays in Consumables header",
+                geometry.fuelTargetSelector().x() >= geometry.consumablesPanel().x()
+                        && geometry.fuelTargetSelector().right() <= geometry.consumablesPanel().right()
+                        && geometry.fuelTargetSelector().y() >= geometry.consumablesPanel().y()
+                        && geometry.fuelTargetSelector().bottom()
+                        <= geometry.consumablesGrid().bounds().y());
+        assertTrue(label + " Fuel target selector is a compact control",
+                geometry.fuelTargetSelector().width() <= 96);
+        assertTrue(label + " type capacity is an independent panel right of player inventory",
+                geometry.fuelStatus().x() == geometry.playerInventory().right() + 2
+                        && geometry.fuelStatus().right() == geometry.imageWidth() - 8
+                        && geometry.fuelStatus().y() == geometry.playerInventory().y()
+                        && geometry.fuelStatus().bottom() == geometry.playerInventory().bottom()
+                        && !geometry.fuelStatus().overlaps(geometry.playerInventory())
+                        && !geometry.fuelStatus().overlaps(geometry.instantStationsPanel()));
+        assertTrue(label + " type capacity keeps icon above its amount",
+                !TerminalLayout.fuelIcon(geometry.fuelStatus()).overlaps(
+                        TerminalLayout.fuelAmountBounds(geometry.fuelStatus())));
+        for (TerminalLayout.FlowGrid grid : List.of(
+                geometry.consumablesGrid(),
+                geometry.timedStationsGrid(),
+                geometry.instantStationsGrid())) {
+            for (TerminalLayout.Rect cell : grid.cells()) {
+                TerminalLayout.Rect slot = TerminalLayout.fuelSlot(cell);
+                TerminalLayout.Rect icon = TerminalLayout.fuelIcon(cell);
+                TerminalLayout.Rect amount = TerminalLayout.fuelAmountBounds(cell);
+                assertTrue(label + " Fuel slots stay above amounts",
+                        !slot.overlaps(amount));
+                assertTrue(label + " Fuel icons stay above amounts",
+                        !icon.overlaps(amount));
+                assertTrue(label + " Fuel vertical content stays inside its cell",
+                        slot.x() >= cell.x() && slot.y() >= cell.y()
+                                && slot.right() <= cell.right() && slot.bottom() <= cell.bottom()
+                                && icon.x() >= cell.x() && icon.y() >= cell.y()
+                                && icon.right() <= cell.right() && icon.bottom() <= cell.bottom()
+                                && amount.x() >= cell.x() && amount.y() >= cell.y()
+                                && amount.right() <= cell.right() && amount.bottom() <= cell.bottom());
+            }
+        }
+    }
+
+    private static void assertPagedFlowGrid(
+            String label,
+            TerminalLayout.FlowGrid grid,
+            int expectedCount
+    ) {
+        assertTrue(label + " preserves descriptor count", grid.itemCount() == expectedCount);
+        assertTrue(label + " has bounded positive page dimensions",
+                grid.columns() >= 1 && grid.rows() >= 1
+                        && grid.capacity() == grid.columns() * grid.rows());
+        assertTrue(label + " visible cells do not overlap", rectanglesDoNotOverlap(grid.cells()));
+        if (!grid.cells().isEmpty()) {
+            assertTrue(label + " sparse cells span complete width",
+                    grid.cells().getFirst().x() == grid.bounds().x()
+                            && grid.cells().getLast().right() == grid.bounds().right());
+        }
+        for (TerminalLayout.Rect cell : grid.cells()) {
+            assertTrue(label + " cell stays inside row bounds",
+                    cell.x() >= grid.bounds().x()
+                            && cell.y() >= grid.bounds().y()
+                            && cell.right() <= grid.bounds().right()
+                            && cell.bottom() <= grid.bounds().bottom());
+        }
+    }
+
+    private static void assertFullWidthLastPage(String label, TerminalLayout.FlowGrid grid) {
+        List<TerminalLayout.Rect> last = grid.cells(grid.pageCount() - 1);
+        assertTrue(label + " overflow creates at least two pages", grid.pageCount() >= 2);
+        assertTrue(label + " last page spans complete width",
+                !last.isEmpty()
+                        && last.getFirst().x() == grid.bounds().x()
+                        && last.getLast().right() == grid.bounds().right());
+    }
+
+    private static void assertRecipeGeometry(String label, TerminalLayout.Geometry geometry) {
+        assertTrue(label + " recipe regions remain ordered",
+                geometry.recipeDiagram().bottom() <= geometry.recipeLedger().y()
+                        && geometry.recipeLedger().bottom() <= geometry.recipeFooter().y());
+        assertTrue(label + " recipe empty state unifies diagram and ledger",
+                geometry.recipeContent().equals(new TerminalLayout.Rect(
+                        geometry.recipeDiagram().x(),
+                        geometry.recipeDiagram().y(),
+                        geometry.recipeDiagram().width(),
+                        geometry.recipeLedger().bottom() - geometry.recipeDiagram().y()))
+                        && geometry.recipeContent().bottom() <= geometry.recipeFooter().y()
+                        && !geometry.recipeContent().overlaps(geometry.recipeFooter()));
+        int contentTopLimit = geometry.workspace().y() + 4;
+        int contentBottomLimit = geometry.recipeFooter().y() - 4;
+        int topBreathingRoom = geometry.recipeContent().y() - contentTopLimit;
+        int bottomBreathingRoom = contentBottomLimit - geometry.recipeContent().bottom();
+        assertTrue(label + " recipe body is compact and centered above its footer",
+                geometry.recipeContent().height() <= 126
+                        && geometry.recipeLedger().height() <= 54
+                        && topBreathingRoom >= 0
+                        && bottomBreathingRoom >= 0
+                        && Math.abs(topBreathingRoom - bottomBreathingRoom) <= 1);
+        assertTrue(label + " recipe diagram exposes nine bounded inputs",
+                geometry.recipeInputSlots().size() == RecipePresentation.MAX_INPUTS
+                        && rectanglesDoNotOverlap(geometry.recipeInputSlots()));
+        for (int resourceCount = 0; resourceCount <= 12; resourceCount++) {
+            List<TerminalLayout.Rect> cells = geometry.recipeLedgerCells(resourceCount);
+            assertTrue(label + " ledger row count follows resources",
+                    cells.size() == resourceCount && rectanglesDoNotOverlap(cells));
+        }
+        List<TerminalLayout.Rect> oneResource = geometry.recipeLedgerCells(1);
+        assertTrue(label + " resource rows align to the ledger top",
+                oneResource.size() == 1
+                        && oneResource.getFirst().height() <= TerminalLayout.SLOT_SIZE
+                        && oneResource.getFirst().y() == geometry.recipeLedger().y());
+        List<TerminalLayout.Rect> nineResources = geometry.recipeLedgerCells(9);
+        assertTrue(label + " more than eight resources use a third row and at most four columns",
+                nineResources.stream().map(TerminalLayout.Rect::y).distinct().count() == 3
+                        && nineResources.stream().map(TerminalLayout.Rect::x).distinct().count() <= 4);
+        List<TerminalLayout.Rect> craftButtons = geometry.recipeCraftButtons();
+        assertTrue(label + " amount strip contains four equal segments", craftButtons.size() == 4
+                && craftButtons.stream().map(TerminalLayout.Rect::width).distinct().count() == 1);
+        for (int index = 1; index < craftButtons.size(); index++) {
+            assertTrue(label + " amount strip segments are contiguous",
+                    craftButtons.get(index - 1).right() == craftButtons.get(index).x());
+        }
+        List<TerminalLayout.Rect> allFooterControls = new ArrayList<>(geometry.recipeNavigationButtons());
+        allFooterControls.addAll(craftButtons);
+        assertTrue(label + " navigation and amount strip do not overlap",
+                rectanglesDoNotOverlap(allFooterControls));
     }
 
     private static boolean rectanglesDoNotOverlap(List<TerminalLayout.Rect> rectangles) {

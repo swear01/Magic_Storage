@@ -22,6 +22,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     static final int NEXT_SEARCH_MODE_BUTTON = 13;
     static final int PREVIOUS_SORT_MODE_BUTTON = 17;
     static final int PREVIOUS_SEARCH_MODE_BUTTON = 18;
+    static final int RESET_SORT_ORDER_BUTTON = 21;
+    static final int RESET_SORT_MODE_BUTTON = 22;
+    static final int RESET_SEARCH_MODE_BUTTON = 23;
 
     public static final int MAX_DISPLAY_ROWS = 9;
     public static final int DISPLAY_COLS = 9;
@@ -123,6 +126,18 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     }
 
     StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, StorageCoreBlockEntity core, BlockPos accessPos, boolean remoteAccess) {
+        this(menuType, containerId, playerInv, core, accessPos, remoteAccess, false);
+    }
+
+    protected StorageTerminalMenu(
+            MenuType<?> menuType,
+            int containerId,
+            Inventory playerInv,
+            StorageCoreBlockEntity core,
+            BlockPos accessPos,
+            boolean remoteAccess,
+            boolean deferInitialization
+    ) {
         super(menuType, containerId);
         this.corePos = core.getBlockPos();
         this.accessPos = accessPos;
@@ -131,14 +146,20 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         this.coreDimension = core.getLevel() != null ? core.getLevel().dimension() : playerInv.player.level().dimension();
         this.displayInventory = createDisplayInventory();
         this.scrollOffset = 0;
-        setupSlots(playerInv);
-        refreshDisplayItems(core);
-        addTypeDataSlots();
-        observedCore = core;
-        observedCore.addListener(storageListener);
+        if (!deferInitialization) initializeStorageMenu(playerInv, core);
     }
 
     protected StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, RegistryFriendlyByteBuf buf) {
+        this(menuType, containerId, playerInv, buf, false);
+    }
+
+    protected StorageTerminalMenu(
+            MenuType<?> menuType,
+            int containerId,
+            Inventory playerInv,
+            RegistryFriendlyByteBuf buf,
+            boolean deferInitialization
+    ) {
         super(menuType, containerId);
         this.corePos = buf.readBlockPos();
         this.accessPos = buf.readBlockPos();
@@ -147,8 +168,17 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         this.coreDimension = playerInv.player.level().dimension();
         this.displayInventory = createDisplayInventory();
         this.scrollOffset = 0;
+        if (!deferInitialization) initializeStorageMenu(playerInv, null);
+    }
+
+    protected final void initializeStorageMenu(Inventory playerInv, StorageCoreBlockEntity core) {
         setupSlots(playerInv);
+        if (core != null) refreshDisplayItems(core);
         addTypeDataSlots();
+        if (core != null) {
+            observedCore = core;
+            observedCore.addListener(storageListener);
+        }
     }
 
     private static SimpleContainer createDisplayInventory() {
@@ -352,7 +382,10 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                 && buttonId != NEXT_SORT_MODE_BUTTON
                 && buttonId != NEXT_SEARCH_MODE_BUTTON
                 && buttonId != PREVIOUS_SORT_MODE_BUTTON
-                && buttonId != PREVIOUS_SEARCH_MODE_BUTTON) {
+                && buttonId != PREVIOUS_SEARCH_MODE_BUTTON
+                && buttonId != RESET_SORT_ORDER_BUTTON
+                && buttonId != RESET_SORT_MODE_BUTTON
+                && buttonId != RESET_SEARCH_MODE_BUTTON) {
             return false;
         }
         if (!player.level().isClientSide()) {
@@ -366,6 +399,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case NEXT_SEARCH_MODE_BUTTON -> searchMode = searchMode.next();
                     case PREVIOUS_SORT_MODE_BUTTON -> sortMode = sortMode.previous();
                     case PREVIOUS_SEARCH_MODE_BUTTON -> searchMode = searchMode.previous();
+                    case RESET_SORT_ORDER_BUTTON -> sortOrder = SortOrder.ASCENDING;
+                    case RESET_SORT_MODE_BUTTON -> sortMode = SortMode.NAME;
+                    case RESET_SEARCH_MODE_BUTTON -> searchMode = SearchMode.NORMAL;
                 }
                 refreshDisplayItems(core);
             }

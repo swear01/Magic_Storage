@@ -16,7 +16,9 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.items.IItemHandler;
 
 @GameTestHolder(MagicStorage.MODID)
 public class TerminalFlowTests {
@@ -540,6 +542,15 @@ public class TerminalFlowTests {
             menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON);
             if (menu.getSearchMode() != SearchMode.MOD)
                 helper.fail("previous search button should wrap NORMAL to MOD, got " + menu.getSearchMode());
+            menu.clickMenuButton(player, StorageTerminalMenu.RESET_SORT_ORDER_BUTTON);
+            menu.clickMenuButton(player, StorageTerminalMenu.RESET_SORT_MODE_BUTTON);
+            menu.clickMenuButton(player, StorageTerminalMenu.RESET_SEARCH_MODE_BUTTON);
+            if (menu.getSortOrder() != SortOrder.ASCENDING
+                    || menu.getSortMode() != SortMode.NAME
+                    || menu.getSearchMode() != SearchMode.NORMAL) {
+                helper.fail("Middle-reset actions must restore Ascending, Name, and Normal defaults");
+                return;
+            }
             helper.succeed();
         });
     }
@@ -563,6 +574,7 @@ public class TerminalFlowTests {
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBoolean(false);
+            MachineEnergyTable.writeSnapshot(byteBuf, MachineEnergyTable.entries());
             StorageTerminalMenu bufMenu;
             try {
                 var ctor = StorageTerminalMenu.class.getDeclaredConstructor(
@@ -620,6 +632,7 @@ public class TerminalFlowTests {
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBoolean(false);
+            MachineEnergyTable.writeSnapshot(byteBuf, MachineEnergyTable.entries());
             StorageTerminalMenu clientMenu;
             try {
                 var ctor = StorageTerminalMenu.class.getDeclaredConstructor(
@@ -687,6 +700,7 @@ public class TerminalFlowTests {
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBoolean(false);
+            MachineEnergyTable.writeSnapshot(byteBuf, MachineEnergyTable.entries());
             StorageTerminalMenu clientMenu;
             try {
                 var ctor = StorageTerminalMenu.class.getDeclaredConstructor(
@@ -1513,6 +1527,229 @@ public class TerminalFlowTests {
     }
 
     @GameTest(template = "platform")
+    public static void import_bus_item_handler_is_available_on_all_sides_and_simulation_is_insert_only(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var busPos = corePos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.IMPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            IItemHandler handler = null;
+            for (Direction side : Direction.values()) {
+                IItemHandler sided = level.getCapability(Capabilities.ItemHandler.BLOCK, busPos, side);
+                if (sided == null) {
+                    helper.fail("Import Bus must expose ItemHandler capability on side " + side);
+                    return;
+                }
+                if (handler != null && handler != sided) {
+                    helper.fail("Import Bus must expose one stable all-side ItemHandler instance");
+                    return;
+                }
+                handler = sided;
+            }
+            IItemHandler unsided = level.getCapability(Capabilities.ItemHandler.BLOCK, busPos, null);
+            if (unsided != handler) {
+                helper.fail("Unsided Import Bus capability must use the same passive input handler");
+                return;
+            }
+            if (handler.getSlots() != 1 || handler.getSlotLimit(0) < 64
+                    || !handler.isItemValid(0, new ItemStack(Items.STONE))) {
+                helper.fail("Import Bus ItemHandler must expose one full-stack insertion slot");
+                return;
+            }
+            ItemStack input = new ItemStack(Items.STONE, 17);
+            ItemStack remainder = handler.insertItem(0, input, true);
+            if (!remainder.isEmpty() || input.getCount() != 17
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 0) {
+                helper.fail("Simulated Import Bus insertion must predict full acceptance without mutation: remainder="
+                        + remainder + " input=" + input.getCount());
+                return;
+            }
+            if (!handler.getStackInSlot(0).isEmpty()
+                    || !handler.extractItem(0, 64, true).isEmpty()
+                    || !handler.extractItem(0, 64, false).isEmpty()) {
+                helper.fail("Import Bus ItemHandler must remain insert-only");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void import_bus_item_handler_executes_exact_full_and_partial_remainders(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var busPos = corePos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.IMPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, busPos, Direction.WEST);
+            if (handler == null) {
+                helper.fail("Import Bus ItemHandler capability missing");
+                return;
+            }
+            ItemStack fullInput = new ItemStack(Items.STONE, 13);
+            ItemStack fullRemainder = handler.insertItem(0, fullInput, false);
+            if (!fullRemainder.isEmpty() || fullInput.getCount() != 13
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 13) {
+                helper.fail("Import Bus execute must insert the exact accepted stack: remainder="
+                        + fullRemainder + " stored=" + core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))));
+                return;
+            }
+
+            var entry = new CompoundTag();
+            entry.put("item", new ItemStack(Items.STONE).save(level.registryAccess()));
+            entry.putLong("count", Long.MAX_VALUE - 3);
+            var inventory = new ListTag();
+            inventory.add(entry);
+            var tag = new CompoundTag();
+            tag.put("inventory", inventory);
+            core.loadAdditional(tag, level.registryAccess());
+            ItemStack partialInput = new ItemStack(Items.STONE, 8);
+            ItemStack partialRemainder = handler.insertItem(0, partialInput, false);
+            if (!partialRemainder.is(Items.STONE) || partialRemainder.getCount() != 5
+                    || partialInput.getCount() != 8
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != Long.MAX_VALUE) {
+                helper.fail("Import Bus execute must return the exact five-item partial remainder: remainder="
+                        + partialRemainder + " stored=" + core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void import_bus_item_handler_rejects_without_core_and_during_conflict(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var isolatedBusPos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var firstCorePos = helper.absolutePos(new BlockPos(4, 3, 1));
+        var conflictedBusPos = firstCorePos.east();
+        var secondCorePos = conflictedBusPos.east();
+        level.setBlock(isolatedBusPos, MagicStorage.IMPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(firstCorePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(firstCorePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(conflictedBusPos, MagicStorage.IMPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(secondCorePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            IItemHandler isolated = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, isolatedBusPos, Direction.NORTH);
+            if (isolated == null) {
+                helper.fail("Isolated Import Bus must still expose ItemHandler capability");
+                return;
+            }
+            ItemStack noCoreInput = new ItemStack(Items.STONE, 9);
+            ItemStack noCoreRemainder = isolated.insertItem(0, noCoreInput, false);
+            if (!noCoreRemainder.is(Items.STONE) || noCoreRemainder.getCount() != 9
+                    || noCoreInput.getCount() != 9) {
+                helper.fail("Import Bus without a Core must return the full input stack");
+                return;
+            }
+            if (!(level.getBlockEntity(firstCorePos) instanceof StorageCoreBlockEntity first)
+                    || !(level.getBlockEntity(secondCorePos) instanceof StorageCoreBlockEntity second)) {
+                helper.fail("Conflicted Core fixture missing");
+                return;
+            }
+            first.rebuildNetwork(level);
+            second.rebuildNetwork(level);
+            if (!first.isConflicted() || !second.isConflicted()) {
+                helper.fail("Import Bus conflict fixture did not conflict both Cores");
+                return;
+            }
+            IItemHandler conflicted = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, conflictedBusPos, Direction.SOUTH);
+            if (conflicted == null) {
+                helper.fail("Conflicted Import Bus must still expose ItemHandler capability");
+                return;
+            }
+            ItemStack conflictInput = new ItemStack(Items.STONE, 11);
+            ItemStack conflictRemainder = conflicted.insertItem(0, conflictInput, false);
+            if (!conflictRemainder.is(Items.STONE) || conflictRemainder.getCount() != 11
+                    || conflictInput.getCount() != 11
+                    || first.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 0
+                    || second.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 0) {
+                helper.fail("Conflicted Import Bus must return the full input without mutating either Core");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void import_bus_passive_missing_core_lookup_is_throttled(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var busPos = corePos.east();
+        level.setBlock(busPos, MagicStorage.IMPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            IItemHandler handler = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, busPos, Direction.WEST);
+            if (handler == null) {
+                helper.fail("Import Bus ItemHandler capability missing");
+                return;
+            }
+            ItemStack first = new ItemStack(Items.STONE, 3);
+            ItemStack firstRemainder = handler.insertItem(0, first, false);
+            if (!firstRemainder.is(Items.STONE) || firstRemainder.getCount() != 3) {
+                helper.fail("Initial passive insertion without a Core must return the full stack");
+                return;
+            }
+
+            level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+            level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found after placement");
+                return;
+            }
+            core.rebuildNetwork(level);
+            ItemStack immediate = new ItemStack(Items.STONE, 4);
+            ItemStack immediateRemainder = handler.insertItem(0, immediate, false);
+            if (!immediateRemainder.is(Items.STONE) || immediateRemainder.getCount() != 4
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 0) {
+                helper.fail("Passive missing-Core lookup must remain negatively cached for its cooldown");
+            }
+        });
+
+        helper.runAfterDelay(13, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core missing after passive lookup cooldown");
+                return;
+            }
+            IItemHandler handler = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, busPos, Direction.WEST);
+            if (handler == null) {
+                helper.fail("Import Bus ItemHandler capability missing after cooldown");
+                return;
+            }
+            ItemStack afterCooldown = new ItemStack(Items.STONE, 5);
+            ItemStack remainder = handler.insertItem(0, afterCooldown, false);
+            if (!remainder.isEmpty()
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 5) {
+                helper.fail("Passive insertion must discover and use the Core after the lookup cooldown");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void import_bus_stops_after_network_disconnect(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -2314,6 +2551,7 @@ public class TerminalFlowTests {
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBlockPos(corePos);
             byteBuf.writeBoolean(false);
+            MachineEnergyTable.writeSnapshot(byteBuf, MachineEnergyTable.entries());
             var bufMenu = new CraftingTerminalMenu(35, player.getInventory(), byteBuf);
             if (!serverMenu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON)
                     || serverMenu.getOutputDestination() != TerminalOutputDestination.STORAGE) {
@@ -2342,8 +2580,9 @@ public class TerminalFlowTests {
                 helper.fail("Client menu did not receive exact finite Axe Energy state");
                 return;
             }
-            if (serverMenu.slots.size() != 149 || bufMenu.slots.size() != 149) {
-                helper.fail("crafting menu requires exact 149-slot parity, server="
+            int expectedSlots = 149 - 9 + MachineDescriptorApi.MAX_DESCRIPTORS;
+            if (serverMenu.slots.size() != expectedSlots || bufMenu.slots.size() != expectedSlots) {
+                helper.fail("crafting menu requires fixed descriptor-bank slot parity, server="
                         + serverMenu.slots.size() + " buf=" + bufMenu.slots.size());
                 return;
             }
@@ -2385,7 +2624,7 @@ public class TerminalFlowTests {
                     return;
                 }
             }
-            int metadataStart = machineStart + machines.length;
+            int metadataStart = machineStart + CraftingTerminalMenu.MACHINE_SLOT_COUNT;
             int metadataSlots = serverMenu.slots.size() - metadataStart;
             if (metadataSlots != 22) { helper.fail("crafting presentation metadata should be 22 hidden slots after machine equipment, got " + metadataSlots); return; }
             for (int i = metadataStart; i < serverMenu.slots.size(); i++) {

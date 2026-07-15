@@ -3,14 +3,19 @@ package com.swearprom.magicstorage.magic_storage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -23,8 +28,11 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     private static final String TAG_NETWORK_ID = "networkId";
     private static final String TAG_MACHINES = "machines";
+    private static final String TAG_MACHINE_DESCRIPTORS = "machineDescriptors";
+    private static final String TAG_DESCRIPTOR_CONSUMABLES = "descriptorConsumables";
     private static final String TAG_AXE_ENERGY = "axeEnergy";
     private static final String TAG_INFINITE_AXE_ENERGY = "infiniteAxeEnergy";
+    private static final String LEGACY_BOTTLE_FUEL_ID = "bottle_fuel";
 
     private final Set<BlockPos> connectedBlocks = new HashSet<>();
     private UUID networkId = UUID.randomUUID();
@@ -33,12 +41,16 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private int totalTypeSlots = 0;
     private int typeCount = 0;
     private long machineRevision;
-    private long axeEnergy;
-    private boolean infiniteAxeEnergy;
+    private final Map<ResourceLocation, Long> descriptorAmounts = new HashMap<>();
+    private final Set<ResourceLocation> infiniteDescriptors = new HashSet<>();
+    private final List<CompoundTag> unresolvedMachineDescriptors = new ArrayList<>();
+    private final List<CompoundTag> unresolvedInventoryEntries = new ArrayList<>();
+    private long legacyBottleFuel;
+    private UUID preparedRecoveryId;
 
     // Energy
     private final Map<EnergyType, Long> energy = new HashMap<>();
-    private final SimpleContainer machines = new SimpleContainer(MachineEnergyTable.size()) {
+    private final SimpleContainer machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS) {
         @Override
         public int getMaxStackSize() {
             return 64;
@@ -46,8 +58,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
         @Override
         public boolean canPlaceItem(int slot, ItemStack stack) {
-            MachineEnergyTable.Entry entry = MachineEnergyTable.get(slot);
-            return entry != null && entry.maxInstalledCount() > 0 && entry.accepts(stack);
+            MachineDescriptor descriptor = MachineEnergyTable.get(slot);
+            return descriptor != null && descriptor.maxInstalledCount() > 0 && descriptor.accepts(stack);
         }
 
         @Override
@@ -76,8 +88,9 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public void tick() {
         if (level == null || level.isClientSide() || conflicted) return;
         boolean changed = false;
-        for (int slot = 0; slot < machines.getContainerSize(); slot++) {
-            MachineEnergyTable.Entry entry = MachineEnergyTable.get(slot);
+        List<MachineDescriptor> descriptors = MachineEnergyTable.entries();
+        for (int slot = 0; slot < descriptors.size(); slot++) {
+            MachineDescriptor entry = MachineEnergyTable.get(slot);
             ItemStack machineStack = machines.getItem(slot);
             if (entry == null || !entry.generatesEnergy() || !entry.accepts(machineStack)) continue;
             long increment = (long) machineStack.getCount() * entry.energyPerTick();
@@ -101,35 +114,60 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long getAxeEnergy() {
-        return axeEnergy;
+        return getDescriptorAmount(MachineEnergyTable.AXE_ID);
     }
 
     public boolean hasInfiniteAxeEnergy() {
-        return infiniteAxeEnergy;
+        return hasInfiniteDescriptor(MachineEnergyTable.AXE_ID);
     }
 
     public boolean hasAxeEnergy(long amount) {
-        return amount > 0 && (infiniteAxeEnergy || axeEnergy >= amount);
+        return hasDescriptorAmount(MachineEnergyTable.AXE_ID, amount);
     }
 
     public boolean canAddAxeEnergy(ItemStack stack) {
-        if (stack.isEmpty() || conflicted || infiniteAxeEnergy || !AxeEnergy.accepts(stack)) return false;
-        if (AxeEnergy.isInfinite(stack)) return true;
-        try {
-            long amount = AxeEnergy.finiteValue(stack);
-            return amount > 0 && axeEnergy <= Long.MAX_VALUE - amount;
-        } catch (ArithmeticException e) {
-            return false;
-        }
+        return canAddDescriptorConsumable(MachineEnergyTable.AXE_ID, stack);
     }
 
     public boolean addAxeEnergy(ItemStack stack) {
-        if (!canAddAxeEnergy(stack)) return false;
-        if (AxeEnergy.isInfinite(stack)) {
-            axeEnergy = 0;
-            infiniteAxeEnergy = true;
+        return addDescriptorConsumable(MachineEnergyTable.AXE_ID, stack);
+    }
+
+    public boolean consumeAxeEnergy(long amount) {
+        return consumeDescriptor(MachineEnergyTable.AXE_ID, amount);
+    }
+
+    public long getDescriptorAmount(ResourceLocation descriptorId) {
+        return descriptorAmounts.getOrDefault(descriptorId, 0L);
+    }
+
+    public boolean hasInfiniteDescriptor(ResourceLocation descriptorId) {
+        return infiniteDescriptors.contains(descriptorId);
+    }
+
+    public boolean hasDescriptorAmount(ResourceLocation descriptorId, long amount) {
+        return amount > 0 && (hasInfiniteDescriptor(descriptorId)
+                || getDescriptorAmount(descriptorId) >= amount);
+    }
+
+    public boolean canAddDescriptorConsumable(ResourceLocation descriptorId, ItemStack stack) {
+        if (stack.isEmpty() || conflicted || hasInfiniteDescriptor(descriptorId)) return false;
+        MachineDescriptor descriptor = MachineEnergyTable.get(descriptorId);
+        if (descriptor == null || descriptor.category() != MachineEnergyTable.Category.CONSUMABLE
+                || !descriptor.accepts(stack)) return false;
+        MachineDescriptor.ConsumableAmount value = descriptor.valueOf(stack);
+        return value.infinite() || value.amount() > 0
+                && getDescriptorAmount(descriptorId) <= Long.MAX_VALUE - value.amount();
+    }
+
+    public boolean addDescriptorConsumable(ResourceLocation descriptorId, ItemStack stack) {
+        if (!canAddDescriptorConsumable(descriptorId, stack)) return false;
+        MachineDescriptor.ConsumableAmount value = MachineEnergyTable.get(descriptorId).valueOf(stack);
+        if (value.infinite()) {
+            descriptorAmounts.remove(descriptorId);
+            infiniteDescriptors.add(descriptorId);
         } else {
-            axeEnergy = Math.addExact(axeEnergy, AxeEnergy.finiteValue(stack));
+            descriptorAmounts.merge(descriptorId, value.amount(), Math::addExact);
         }
         stack.setCount(0);
         machineRevision++;
@@ -137,9 +175,13 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return true;
     }
 
-    public boolean consumeAxeEnergy(long amount) {
-        if (!hasAxeEnergy(amount)) return false;
-        if (!infiniteAxeEnergy) axeEnergy -= amount;
+    public boolean consumeDescriptor(ResourceLocation descriptorId, long amount) {
+        if (!hasDescriptorAmount(descriptorId, amount)) return false;
+        if (!hasInfiniteDescriptor(descriptorId)) {
+            long remaining = getDescriptorAmount(descriptorId) - amount;
+            if (remaining == 0) descriptorAmounts.remove(descriptorId);
+            else descriptorAmounts.put(descriptorId, remaining);
+        }
         machineRevision++;
         setChanged();
         return true;
@@ -214,6 +256,52 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return networkId;
     }
 
+    public long getTotalStoredItemCount() {
+        long total = 0;
+        for (var variants : inventory.values()) {
+            for (var entry : variants.object2LongEntrySet()) {
+                long amount = entry.getLongValue();
+                if (total > Long.MAX_VALUE - amount) return Long.MAX_VALUE;
+                total += amount;
+            }
+        }
+        for (CompoundTag unresolved : unresolvedInventoryEntries) {
+            long amount = Math.max(0, unresolved.getLong("count"));
+            if (total > Long.MAX_VALUE - amount) return Long.MAX_VALUE;
+            total += amount;
+        }
+        return total;
+    }
+
+    public boolean hasRecoverableContents() {
+        if (!inventory.isEmpty() || !machines.isEmpty() || !descriptorAmounts.isEmpty()
+                || !infiniteDescriptors.isEmpty()
+                || !unresolvedMachineDescriptors.isEmpty()
+                || !unresolvedInventoryEntries.isEmpty()
+                || legacyBottleFuel > 0) return true;
+        for (long amount : energy.values()) {
+            if (amount > 0) return true;
+        }
+        return false;
+    }
+
+    UUID prepareRecoveryDrop(ServerLevel serverLevel, UUID owner) {
+        if (preparedRecoveryId != null) return preparedRecoveryId;
+        CompoundTag contents = new CompoundTag();
+        saveAdditional(contents, serverLevel.registryAccess());
+        preparedRecoveryId = CoreRecoverySavedData.get(serverLevel).create(
+                contents,
+                owner,
+                typeCount,
+                getTotalStoredItemCount(),
+                serverLevel.getGameTime());
+        return preparedRecoveryId;
+    }
+
+    Optional<UUID> getPreparedRecoveryId() {
+        return Optional.ofNullable(preparedRecoveryId);
+    }
+
     private void rebuildCache() {
         if (!cacheDirty) return;
         flatCache.clear();
@@ -268,6 +356,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     void endMutationBatch() {
         if (mutationBatchDepth <= 0) throw new IllegalStateException("No active storage mutation batch");
+        if (mutationBatchDepth == 1) recoverLegacyBottleFuel();
         mutationBatchDepth--;
         if (mutationBatchDepth > 0) return;
         List<Runnable> events = List.copyOf(deferredListenerEvents);
@@ -343,6 +432,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             cacheDirty = true;
             setChanged();
             fireChanged(key, -extracted, Math.max(remaining, 0), actor);
+            if (mutationBatchDepth == 0 && key.equals(plainGlassBottleKey())) recoverLegacyBottleFuel();
         }
         return extracted;
     }
@@ -464,13 +554,35 @@ public class StorageCoreBlockEntity extends BlockEntity {
         for (Map.Entry<EnergyType, Long> entry : energy.entrySet()) {
             energyTag.putLong(entry.getKey().getId(), entry.getValue());
         }
+        if (legacyBottleFuel > 0) energyTag.putLong(LEGACY_BOTTLE_FUEL_ID, legacyBottleFuel);
         tag.put("energy", energyTag);
-        tag.putLong(TAG_AXE_ENERGY, axeEnergy);
-        tag.putBoolean(TAG_INFINITE_AXE_ENERGY, infiniteAxeEnergy);
+        ListTag consumablesTag = new ListTag();
+        Set<ResourceLocation> consumableIds = new TreeSet<>(Comparator.comparing(ResourceLocation::toString));
+        consumableIds.addAll(descriptorAmounts.keySet());
+        consumableIds.addAll(infiniteDescriptors);
+        for (ResourceLocation descriptorId : consumableIds) {
+            CompoundTag entryTag = new CompoundTag();
+            entryTag.putString("descriptorId", descriptorId.toString());
+            entryTag.putLong("amount", getDescriptorAmount(descriptorId));
+            entryTag.putBoolean("infinite", hasInfiniteDescriptor(descriptorId));
+            consumablesTag.add(entryTag);
+        }
+        tag.put(TAG_DESCRIPTOR_CONSUMABLES, consumablesTag);
 
-        CompoundTag machinesTag = new CompoundTag();
-        ContainerHelper.saveAllItems(machinesTag, machines.getItems(), registries);
-        tag.put(TAG_MACHINES, machinesTag);
+        ListTag machineDescriptorsTag = new ListTag();
+        List<MachineDescriptor> descriptors = MachineEnergyTable.entries();
+        for (int slot = 0; slot < descriptors.size(); slot++) {
+            ItemStack stack = machines.getItem(slot);
+            if (stack.isEmpty()) continue;
+            CompoundTag entryTag = new CompoundTag();
+            entryTag.putString("descriptorId", descriptors.get(slot).id().toString());
+            entryTag.put("item", stack.save(registries));
+            machineDescriptorsTag.add(entryTag);
+        }
+        for (CompoundTag unresolved : unresolvedMachineDescriptors) {
+            machineDescriptorsTag.add(unresolved.copy());
+        }
+        tag.put(TAG_MACHINE_DESCRIPTORS, machineDescriptorsTag);
 
         ListTag invTag = new ListTag();
         for (var entry : inventory.entrySet()) {
@@ -480,6 +592,9 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 entryTag.putLong("count", variantEntry.getLongValue());
                 invTag.add(entryTag);
             }
+        }
+        for (CompoundTag unresolved : unresolvedInventoryEntries) {
+            invTag.add(unresolved.copy());
         }
         tag.put("inventory", invTag);
     }
@@ -492,41 +607,45 @@ public class StorageCoreBlockEntity extends BlockEntity {
         }
         CompoundTag energyTag = tag.getCompound("energy");
         for (EnergyType type : EnergyType.values()) {
+            energy.put(type, 0L);
             if (energyTag.contains(type.getId())) {
                 energy.put(type, Math.max(0, energyTag.getLong(type.getId())));
             }
         }
-        axeEnergy = Math.max(0, tag.getLong(TAG_AXE_ENERGY));
-        infiniteAxeEnergy = tag.getBoolean(TAG_INFINITE_AXE_ENERGY);
-        if (infiniteAxeEnergy) axeEnergy = 0;
+        legacyBottleFuel = Math.max(0, energyTag.getLong(LEGACY_BOTTLE_FUEL_ID));
+        descriptorAmounts.clear();
+        infiniteDescriptors.clear();
+        if (tag.contains(TAG_DESCRIPTOR_CONSUMABLES, Tag.TAG_LIST)) {
+            ListTag consumablesTag = tag.getList(TAG_DESCRIPTOR_CONSUMABLES, Tag.TAG_COMPOUND);
+            for (int i = 0; i < consumablesTag.size(); i++) {
+                CompoundTag entryTag = consumablesTag.getCompound(i);
+                ResourceLocation descriptorId = ResourceLocation.tryParse(entryTag.getString("descriptorId"));
+                if (descriptorId == null) continue;
+                if (entryTag.getBoolean("infinite")) infiniteDescriptors.add(descriptorId);
+                else {
+                    long amount = Math.max(0, entryTag.getLong("amount"));
+                    if (amount > 0) descriptorAmounts.put(descriptorId, amount);
+                }
+            }
+        } else {
+            long legacyAxeEnergy = Math.max(0, tag.getLong(TAG_AXE_ENERGY));
+            if (tag.getBoolean(TAG_INFINITE_AXE_ENERGY)) infiniteDescriptors.add(MachineEnergyTable.AXE_ID);
+            else if (legacyAxeEnergy > 0) descriptorAmounts.put(MachineEnergyTable.AXE_ID, legacyAxeEnergy);
+        }
 
         machines.clearContent();
-        if (tag.contains(TAG_MACHINES, Tag.TAG_COMPOUND)) {
-            ContainerHelper.loadAllItems(tag.getCompound(TAG_MACHINES), machines.getItems(), registries);
-        }
-        Map<Integer, Integer> legacyInstantOverflow = new LinkedHashMap<>();
-        for (int slot = 0; slot < machines.getContainerSize(); slot++) {
-            MachineEnergyTable.Entry entry = MachineEnergyTable.get(slot);
-            ItemStack installed = machines.getItem(slot);
-            if (entry != null && entry.category() == MachineEnergyTable.Category.INSTANT
-                    && installed.getCount() > entry.maxInstalledCount()) {
-                legacyInstantOverflow.put(slot, installed.getCount() - entry.maxInstalledCount());
-            }
-        }
-        ItemStack legacyAxe = machines.getItem(MachineEnergyTable.AXE_SLOT);
-        if (!legacyAxe.isEmpty()) {
-            ItemStack migration = legacyAxe.copy();
-            if (addAxeEnergy(migration)) {
-                machines.setItem(MachineEnergyTable.AXE_SLOT, ItemStack.EMPTY);
-            }
-        }
+        unresolvedMachineDescriptors.clear();
 
         inventory.clear();
+        unresolvedInventoryEntries.clear();
         ListTag invTag = tag.getList("inventory", Tag.TAG_COMPOUND);
         for (int i = 0; i < invTag.size(); i++) {
             CompoundTag entryTag = invTag.getCompound(i);
-            ItemStack stack = ItemStack.parse(registries, entryTag.getCompound("item")).orElse(ItemStack.EMPTY);
-            if (stack.isEmpty()) continue;
+            ItemStack stack = parsePersistedItem(entryTag.getCompound("item"), registries);
+            if (stack.isEmpty()) {
+                unresolvedInventoryEntries.add(entryTag.copy());
+                continue;
+            }
             long count = entryTag.getLong("count");
             if (count <= 0) continue;
             ItemKey key = ItemKey.of(stack);
@@ -536,25 +655,128 @@ public class StorageCoreBlockEntity extends BlockEntity {
             long merged = existing > Long.MAX_VALUE - count ? Long.MAX_VALUE : existing + count;
             variants.put(key, merged);
         }
-        for (Map.Entry<Integer, Integer> overflow : legacyInstantOverflow.entrySet()) {
-            ItemStack installed = machines.getItem(overflow.getKey());
-            ItemKey key = ItemKey.of(installed);
-            Item primary = key.item();
-            var variants = inventory.get(primary);
-            long existing = variants != null ? variants.getLong(key) : 0;
-            int recovered = (int) Math.min((long) overflow.getValue(), Long.MAX_VALUE - existing);
-            if (recovered <= 0) continue;
-            if (variants == null) {
-                variants = new Object2LongOpenHashMap<>();
-                inventory.put(primary, variants);
-            }
-            variants.put(key, existing + recovered);
-            installed.shrink(recovered);
-            machines.setChanged();
+        if (tag.contains(TAG_MACHINE_DESCRIPTORS, Tag.TAG_LIST)) {
+            loadMachineDescriptors(tag.getList(TAG_MACHINE_DESCRIPTORS, Tag.TAG_COMPOUND), registries);
+        } else if (tag.contains(TAG_MACHINES, Tag.TAG_COMPOUND)) {
+            loadLegacyMachines(tag.getCompound(TAG_MACHINES), registries);
         }
         typeCount = 0;
         for (var variants : inventory.values()) typeCount += variants.size();
         cacheDirty = true;
+        recoverLegacyBottleFuel();
+    }
+
+    private void loadMachineDescriptors(ListTag descriptorTags, HolderLookup.Provider registries) {
+        for (int i = 0; i < descriptorTags.size(); i++) {
+            CompoundTag entryTag = descriptorTags.getCompound(i);
+            ItemStack stack = parsePersistedItem(entryTag.getCompound("item"), registries);
+            if (stack.isEmpty()) {
+                unresolvedMachineDescriptors.add(entryTag.copy());
+                continue;
+            }
+            ResourceLocation descriptorId = ResourceLocation.tryParse(entryTag.getString("descriptorId"));
+            int slot = descriptorId != null ? MachineEnergyTable.findSlot(descriptorId) : -1;
+            MachineDescriptor descriptor = slot >= 0 ? MachineEnergyTable.get(slot) : null;
+            if (descriptor == null || !descriptor.accepts(stack)) {
+                recoverUnregisteredMachine(stack);
+                continue;
+            }
+            if (descriptor.category() == MachineEnergyTable.Category.CONSUMABLE) {
+                ItemStack consumable = stack.copy();
+                if (!addDescriptorConsumable(descriptor.id(), consumable)) {
+                    recoverUnregisteredMachine(stack);
+                }
+                continue;
+            }
+            ItemStack existing = machines.getItem(slot);
+            int room = descriptor.maxInstalledCount() - existing.getCount();
+            int installed = Math.min(Math.max(0, room), stack.getCount());
+            if (installed > 0) {
+                ItemStack merged = stack.copyWithCount(existing.getCount() + installed);
+                machines.setItem(slot, merged);
+                stack.shrink(installed);
+            }
+            recoverUnregisteredMachine(stack);
+        }
+    }
+
+    private static ItemStack parsePersistedItem(
+            CompoundTag itemTag,
+            HolderLookup.Provider registries
+    ) {
+        ResourceLocation itemId = ResourceLocation.tryParse(itemTag.getString("id"));
+        if (itemId == null || registries.lookupOrThrow(Registries.ITEM)
+                .get(ResourceKey.create(Registries.ITEM, itemId)).isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+        return ItemStack.parse(registries, itemTag).orElse(ItemStack.EMPTY);
+    }
+
+    private void loadLegacyMachines(CompoundTag machinesTag, HolderLookup.Provider registries) {
+        SimpleContainer legacy = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
+        ContainerHelper.loadAllItems(machinesTag, legacy.getItems(), registries);
+        int legacySlots = Math.min(9, legacy.getContainerSize());
+        for (int slot = 0; slot < legacySlots; slot++) {
+            ItemStack stack = legacy.getItem(slot);
+            if (stack.isEmpty()) continue;
+            MachineDescriptor descriptor = MachineEnergyTable.get(slot);
+            if (descriptor == null || !descriptor.accepts(stack)) {
+                recoverUnregisteredMachine(stack);
+                continue;
+            }
+            if (descriptor.category() == MachineEnergyTable.Category.CONSUMABLE) {
+                ItemStack migration = stack.copy();
+                if (!addDescriptorConsumable(descriptor.id(), migration)) {
+                    machines.setItem(slot, stack.copy());
+                }
+                continue;
+            }
+            int installed = Math.min(stack.getCount(), descriptor.maxInstalledCount());
+            machines.setItem(slot, stack.copyWithCount(installed));
+            if (stack.getCount() > installed) {
+                recoverUnregisteredMachine(stack.copyWithCount(stack.getCount() - installed));
+            }
+        }
+        for (int slot = legacySlots; slot < legacy.getContainerSize(); slot++) {
+            recoverUnregisteredMachine(legacy.getItem(slot));
+        }
+    }
+
+    private void recoverUnregisteredMachine(ItemStack stack) {
+        if (stack.isEmpty()) return;
+        ItemKey key = ItemKey.of(stack);
+        Item primary = key.item();
+        var variants = inventory.computeIfAbsent(primary, ignored -> new Object2LongOpenHashMap<>());
+        long existing = variants.getLong(key);
+        long recovered = Math.min((long) stack.getCount(), Long.MAX_VALUE - existing);
+        if (recovered <= 0) return;
+        variants.put(key, existing + recovered);
+        cacheDirty = true;
+    }
+
+    private static ItemKey plainGlassBottleKey() {
+        return ItemKey.of(new ItemStack(Items.GLASS_BOTTLE));
+    }
+
+    private void recoverLegacyBottleFuel() {
+        if (legacyBottleFuel <= 0) return;
+        ItemKey key = plainGlassBottleKey();
+        Item primary = key.item();
+        var variants = inventory.get(primary);
+        long existing = variants != null ? variants.getLong(key) : 0;
+        long recovered = Math.min(legacyBottleFuel, Long.MAX_VALUE - existing);
+        if (recovered <= 0) return;
+        if (variants == null) {
+            variants = new Object2LongOpenHashMap<>();
+            inventory.put(primary, variants);
+        }
+        if (existing == 0) typeCount++;
+        long updated = existing + recovered;
+        variants.put(key, updated);
+        legacyBottleFuel -= recovered;
+        cacheDirty = true;
+        setChanged();
+        fireChanged(key, recovered, updated, Actor.EMPTY);
     }
 
     // ===== Network =====

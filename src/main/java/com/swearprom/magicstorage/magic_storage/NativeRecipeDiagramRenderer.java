@@ -26,8 +26,9 @@ public final class NativeRecipeDiagramRenderer implements RecipeDiagramRenderer 
             float partialTick
     ) {
         renderInputs(graphics, presentation, geometry, left, top);
-        drawArrow(graphics, geometry.arrow(), left, top, 0xFF5A5A5A);
-        renderStation(graphics, presentation.station(), geometry.station(), left, top);
+        drawArrow(
+                graphics, geometry.arrow(), left, top,
+                0xFF606060);
         if (presentation.shapeless()) {
             renderShapelessMarker(graphics, geometry.shapelessMarker(), left, top);
         }
@@ -61,10 +62,6 @@ public final class NativeRecipeDiagramRenderer implements RecipeDiagramRenderer 
         ItemStack input = inputAt(presentation, geometry, localX, localY);
         if (!input.isEmpty()) {
             graphics.renderTooltip(font, input, mouseX, mouseY);
-            return true;
-        }
-        if (geometry.station().contains(localX, localY)) {
-            graphics.renderTooltip(font, presentation.station(), mouseX, mouseY);
             return true;
         }
         return false;
@@ -135,24 +132,8 @@ public final class NativeRecipeDiagramRenderer implements RecipeDiagramRenderer 
         if (!stack.isEmpty()) graphics.renderItem(stack, itemX, itemY);
     }
 
-    private static void renderStation(
-            GuiGraphics graphics,
-            ItemStack station,
-            Rect bounds,
-            int left,
-            int top
-    ) {
-        int itemX = left + bounds.x() + 1;
-        int itemY = top + bounds.y() + 1;
-        drawSlotFrame(graphics, itemX, itemY);
-        graphics.renderItem(station, itemX, itemY);
-    }
-
     private static void drawSlotFrame(GuiGraphics graphics, int x, int y) {
-        graphics.fill(x - 1, y - 1, x + 17, y + 17, 0xFF373737);
-        graphics.fill(x, y, x + 17, y + 17, 0xFF8B8B8B);
-        graphics.fill(x + 16, y, x + 17, y + 17, 0xFFFFFFFF);
-        graphics.fill(x, y + 16, x + 17, y + 17, 0xFFFFFFFF);
+        StorageTerminalScreen.drawVanillaSlot(graphics, x, y);
     }
 
     private static void drawLargeSlotFrame(
@@ -161,14 +142,12 @@ public final class NativeRecipeDiagramRenderer implements RecipeDiagramRenderer 
             int left,
             int top
     ) {
-        int x = left + bounds.x();
-        int y = top + bounds.y();
-        graphics.fill(x, y, x + bounds.width(), y + bounds.height(), 0xFF373737);
-        graphics.fill(x + 1, y + 1, x + bounds.width() - 1, y + bounds.height() - 1, 0xFF8B8B8B);
-        graphics.fill(x + bounds.width() - 2, y + 1,
-                x + bounds.width() - 1, y + bounds.height() - 1, 0xFFFFFFFF);
-        graphics.fill(x + 1, y + bounds.height() - 2,
-                x + bounds.width() - 1, y + bounds.height() - 1, 0xFFFFFFFF);
+        StorageTerminalScreen.drawRaisedPanel(
+                graphics,
+                left,
+                top,
+                new TerminalLayout.Rect(
+                        bounds.x(), bounds.y(), bounds.width(), bounds.height()));
     }
 
     private static void renderShapelessMarker(
@@ -179,7 +158,7 @@ public final class NativeRecipeDiagramRenderer implements RecipeDiagramRenderer 
     ) {
         int x = left + bounds.x();
         int y = top + bounds.y();
-        int color = 0xFF5A5A5A;
+        int color = 0xFF606060;
         graphics.fill(x, y + 2, x + 7, y + 3, color);
         graphics.fill(x + 6, y + 1, x + 8, y + 4, color);
         graphics.fill(x + 2, y + 7, x + 9, y + 8, color);

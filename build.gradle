@@ -94,6 +94,7 @@ repositories {
 
 dependencies {
     compileOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
+    runtimeOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
     compileOnly "dev.emi:emi-neoforge:${emi_version}:api"
     clientRuntimeRuntimeOnly "dev.emi:emi-neoforge:${emi_version}"
     emiRuntime "dev.emi:emi-neoforge:${emi_version}"

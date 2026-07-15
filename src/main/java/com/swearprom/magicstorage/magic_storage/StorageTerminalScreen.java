@@ -57,19 +57,15 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     protected TerminalLayout.Geometry createGeometry() {
         return TerminalLayout.forProfile(
-                terminalProfile(), this.width, this.height, layoutMachineCount(), layoutReserveCount());
+                terminalProfile(), this.width, this.height, fuelDescriptorCounts());
     }
 
     protected TerminalProfile terminalProfile() {
         return TerminalProfile.STORAGE;
     }
 
-    protected int layoutMachineCount() {
-        return 0;
-    }
-
-    protected int layoutReserveCount() {
-        return 0;
+    protected TerminalLayout.FuelDescriptorCounts fuelDescriptorCounts() {
+        return TerminalLayout.FuelDescriptorCounts.none();
     }
 
     protected void addTerminalProfileControls() {
@@ -124,21 +120,24 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
                 TerminalControlIcon.SORT_ASCENDING,
                 Component.translatable("tooltip.magic_storage.sort_order"),
                 railButton(viewStart),
-                direction -> sendButton(StorageTerminalMenu.SORT_ORDER_BUTTON));
+                direction -> sendButton(StorageTerminalMenu.SORT_ORDER_BUTTON),
+                () -> sendButton(StorageTerminalMenu.RESET_SORT_ORDER_BUTTON));
         sortModeBtn = addCycleButton(
                 TerminalControlIcon.SORT_NAME,
                 Component.translatable("tooltip.magic_storage.sort_mode"),
                 railButton(viewStart + 1),
                 direction -> sendButton(direction == TerminalCycleDirection.NEXT
                         ? StorageTerminalMenu.NEXT_SORT_MODE_BUTTON
-                        : StorageTerminalMenu.PREVIOUS_SORT_MODE_BUTTON));
+                        : StorageTerminalMenu.PREVIOUS_SORT_MODE_BUTTON),
+                () -> sendButton(StorageTerminalMenu.RESET_SORT_MODE_BUTTON));
         searchModeBtn = addCycleButton(
                 TerminalControlIcon.SEARCH,
                 Component.translatable("tooltip.magic_storage.search_mode"),
                 railButton(viewStart + 2),
                 direction -> sendButton(direction == TerminalCycleDirection.NEXT
                         ? StorageTerminalMenu.NEXT_SEARCH_MODE_BUTTON
-                        : StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON));
+                        : StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON),
+                () -> sendButton(StorageTerminalMenu.RESET_SEARCH_MODE_BUTTON));
 
         updateViewSettingButtons();
         setItemViewControlsVisible(isItemViewActive());
@@ -296,11 +295,12 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
             TerminalControlIcon icon,
             Component narration,
             TerminalLayout.Rect bounds,
-            Consumer<TerminalCycleDirection> action
+            Consumer<TerminalCycleDirection> action,
+            Runnable resetAction
     ) {
         TerminalCycleButton button = new TerminalCycleButton(
                 leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
-                narration, action, icon, ItemStack.EMPTY);
+                narration, action, resetAction, icon, ItemStack.EMPTY);
         addRenderableWidget(button);
         return button;
     }
@@ -309,11 +309,12 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
             ItemStack icon,
             Component narration,
             TerminalLayout.Rect bounds,
-            Consumer<TerminalCycleDirection> action
+            Consumer<TerminalCycleDirection> action,
+            Runnable resetAction
     ) {
         TerminalCycleButton button = new TerminalCycleButton(
                 leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
-                narration, action, null, icon.copyWithCount(1));
+                narration, action, resetAction, null, icon.copyWithCount(1));
         addRenderableWidget(button);
         return button;
     }
@@ -321,11 +322,12 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     protected TerminalCycleButton addTextCycleButton(
             Component message,
             TerminalLayout.Rect bounds,
-            Consumer<TerminalCycleDirection> action
+            Consumer<TerminalCycleDirection> action,
+            Runnable resetAction
     ) {
         TerminalCycleButton button = new TerminalCycleButton(
                 leftPos + bounds.x(), topPos + bounds.y(), bounds.width(), bounds.height(),
-                message, action, null, ItemStack.EMPTY);
+                message, action, resetAction, null, ItemStack.EMPTY);
         addRenderableWidget(button);
         return button;
     }
@@ -388,8 +390,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     protected static Tooltip createCycleTooltip(String controlKey, Component currentValue) {
         Component message = Component.translatable(controlKey).append(": ").append(currentValue);
-        return Tooltip.create(message.copy().append("\n")
-                .append(Component.translatable("tooltip.magic_storage.cycle_hint")));
+        return Tooltip.create(message);
     }
 
     private void sendSettings() {
@@ -475,6 +476,10 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         graphics.fill(left, top, left + 1, bottom, 0xFF373737);
         graphics.fill(left, bottom - 1, right, bottom, 0xFFFFFFFF);
         graphics.fill(right - 1, top, right, bottom, 0xFFFFFFFF);
+    }
+
+    protected static void drawVanillaSlot(GuiGraphics graphics, int x, int y) {
+        drawInsetPanel(graphics, x - 1, y - 1, new TerminalLayout.Rect(0, 0, 18, 18));
     }
 
     @Override
@@ -738,7 +743,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     protected static class TerminalIconButton extends Button {
         private TerminalControlIcon icon;
-        private final ItemStack itemIcon;
+        private ItemStack itemIcon;
 
         protected TerminalIconButton(
                 int x,
@@ -765,6 +770,13 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
             this.icon = icon;
         }
 
+        protected void setItemIcon(ItemStack itemIcon) {
+            if (icon != null && !itemIcon.isEmpty()) {
+                throw new IllegalStateException("Cannot replace an atlas control with an item icon");
+            }
+            this.itemIcon = itemIcon.isEmpty() ? ItemStack.EMPTY : itemIcon.copyWithCount(1);
+        }
+
         @Override
         public void renderString(GuiGraphics graphics, Font font, int color) {
             if (icon == null && itemIcon.isEmpty()) {
@@ -789,6 +801,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     protected static final class TerminalCycleButton extends TerminalIconButton {
         private final Consumer<TerminalCycleDirection> action;
+        private final Runnable resetAction;
 
         private TerminalCycleButton(
                 int x,
@@ -797,22 +810,28 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
                 int height,
                 Component narration,
                 Consumer<TerminalCycleDirection> action,
+                Runnable resetAction,
                 TerminalControlIcon icon,
                 ItemStack itemIcon
         ) {
             super(x, y, width, height, narration,
                     button -> action.accept(TerminalCycleDirection.NEXT), icon, itemIcon);
             this.action = action;
+            this.resetAction = resetAction;
         }
 
         @Override
         protected boolean isValidClickButton(int button) {
-            return button == 0 || button == 1;
+            return button == 0 || button == 1 || button == 2;
         }
 
         @Override
         public void onClick(double mouseX, double mouseY, int button) {
-            action.accept(TerminalCycleDirection.fromMouseButton(button));
+            if (button == 2) {
+                resetAction.run();
+            } else {
+                action.accept(TerminalCycleDirection.fromMouseButton(button));
+            }
         }
 
         @Override

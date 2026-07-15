@@ -1,14 +1,18 @@
 package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -16,8 +20,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 public class ExportBusBlock extends Block implements EntityBlock, IStorageNetworkBlock {
 
@@ -46,6 +54,16 @@ public class ExportBusBlock extends Block implements EntityBlock, IStorageNetwor
         return defaultBlockState().setValue(FACING, ctx.getNearestLookingDirection().getOpposite());
     }
 
+    @Override
+    protected BlockState rotate(BlockState state, Rotation rotation) {
+        return state.setValue(FACING, rotation.rotate(state.getValue(FACING)));
+    }
+
+    @Override
+    protected BlockState mirror(BlockState state, Mirror mirror) {
+        return state.setValue(FACING, mirror.mirror(state.getValue(FACING)));
+    }
+
     @Nullable
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
@@ -70,6 +88,24 @@ public class ExportBusBlock extends Block implements EntityBlock, IStorageNetwor
             bus.setFilter(player.getItemInHand(hand).copy());
         }
         return ItemInteractionResult.sidedSuccess(level.isClientSide());
+    }
+
+    @Override
+    protected List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
+        List<ItemStack> drops = super.getDrops(state, params);
+        if (!(params.getOptionalParameter(LootContextParams.BLOCK_ENTITY) instanceof ExportBusBlockEntity bus)
+                || bus.getFilter() == null) {
+            return drops;
+        }
+
+        var tag = new CompoundTag();
+        tag.put("filter", bus.getFilter().toStack(1).save(params.getLevel().registryAccess()));
+        for (ItemStack drop : drops) {
+            if (drop.is(MagicStorage.EXPORT_BUS_ITEM.get())) {
+                BlockItem.setBlockEntityData(drop, MagicStorage.EXPORT_BUS_BE.get(), tag.copy());
+            }
+        }
+        return drops;
     }
 
     @Override

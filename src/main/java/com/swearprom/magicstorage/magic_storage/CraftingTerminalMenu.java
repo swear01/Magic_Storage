@@ -29,6 +29,8 @@ import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.minecraft.world.item.crafting.SmokingRecipe;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.level.Level;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -180,7 +182,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private static final int MAX_RECIPE_REQUEST = 64;
     public static final int FUEL_INPUT_SLOT = DISPLAY_SLOTS + PLAYER_INVENTORY_SLOTS;
     public static final int MACHINE_SLOT_START = FUEL_INPUT_SLOT + 1;
-    public static final int MACHINE_SLOT_COUNT = MachineEnergyTable.size();
+    public static final int MACHINE_SLOT_COUNT = MachineDescriptorApi.MAX_DESCRIPTORS;
     private static final int MACHINE_SLOT_END = MACHINE_SLOT_START + MACHINE_SLOT_COUNT;
     private static final int MACHINE_SLOT_X = 18;
     private static final int MACHINE_SLOT_Y = 42;
@@ -194,12 +196,16 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     static final int FUEL_PAGE_BUTTON = 15;
     static final int AUTO_FUEL_TARGET_BUTTON = 16;
     private static final int FUEL_TARGET_BUTTON_BASE = 19;
-    private static final List<EnergyType> FUEL_TARGETS = Arrays.stream(EnergyType.values())
-            .filter(type -> !type.isMachineGenerated())
-            .toList();
+    static final int RESET_OUTPUT_DESTINATION_BUTTON = 24;
+    static final int RESET_PLAYER_INVENTORY_BUTTON = 25;
+    private static final List<EnergyType> FUEL_TARGETS = List.of(
+            EnergyType.FURNACE_FUEL,
+            EnergyType.BLAZE_FUEL);
     private static final int FUEL_TARGET_BUTTON_COUNT = FUEL_TARGETS.size();
     private static final int ENERGY_DATA_START = 8;
-    private static final int ENERGY_DATA_SLOTS = EnergyType.values().length * 4;
+    private static final int LIVE_ENERGY_DATA_SLOTS = EnergyType.values().length * 4;
+    private static final int RETIRED_ENERGY_DATA_SLOTS = 4;
+    private static final int ENERGY_DATA_SLOTS = LIVE_ENERGY_DATA_SLOTS + RETIRED_ENERGY_DATA_SLOTS;
     private static final int INGREDIENT_AVAILABLE_DATA_START = ENERGY_DATA_START + ENERGY_DATA_SLOTS;
     private static final int PROCESS_REQUIRED_DATA_START = INGREDIENT_AVAILABLE_DATA_START + MAX_INGREDIENTS * 4;
     private static final int FUEL_REQUIRED_DATA_START = PROCESS_REQUIRED_DATA_START + 4;
@@ -223,8 +229,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private ResourceLocation selectedRecipeId;
     private SimpleContainer selectionContainer;
     private SimpleContainer fuelContainer;
-    private SimpleContainer axeInputContainer;
+    private SimpleContainer consumableInputContainer;
     private Container machineContainer;
+    private final List<MachineDescriptor> descriptorSnapshot;
+    private final Map<ResourceLocation, MachineDescriptorStatePacket.State> descriptorStates = new HashMap<>();
     private final List<RecipeHolder<?>> currentRecipes = new ArrayList<>();
     private final CraftableRecipeCatalog craftableRecipeCatalog = new CraftableRecipeCatalog();
     private final AxeTransformationCatalog axeTransformationCatalog = new AxeTransformationCatalog();
@@ -246,7 +254,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private long axeEnergyAmount;
     private boolean infiniteAxeEnergy;
     private boolean processingFuelInput;
-    private boolean processingAxeInput;
+    private boolean processingConsumableInput;
     private int lastPlayerInventoryFingerprint;
     private long lastTopologyRevision;
     private long lastMachineRevision;
@@ -256,8 +264,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     public CraftingTerminalMenu(int containerId, Inventory playerInv, StorageCoreBlockEntity core, BlockPos accessPos, boolean remoteAccess) {
-        super(MagicStorage.CRAFTING_TERMINAL_MENU.get(), containerId, playerInv, core, accessPos, remoteAccess);
+        super(MagicStorage.CRAFTING_TERMINAL_MENU.get(), containerId, playerInv, core, accessPos, remoteAccess, true);
         this.playerInventory = playerInv;
+        this.descriptorSnapshot = MachineEnergyTable.entries();
+        initializeStorageMenu(playerInv, core);
         this.lastPlayerInventoryFingerprint = playerInventoryFingerprint();
         this.lastTopologyRevision = core.getTopologyRevision();
         this.lastMachineRevision = core.getMachineRevision();
@@ -267,8 +277,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     public CraftingTerminalMenu(int containerId, Inventory playerInv, RegistryFriendlyByteBuf buf) {
-        super(MagicStorage.CRAFTING_TERMINAL_MENU.get(), containerId, playerInv, buf);
+        super(MagicStorage.CRAFTING_TERMINAL_MENU.get(), containerId, playerInv, buf, true);
         this.playerInventory = playerInv;
+        this.descriptorSnapshot = MachineEnergyTable.readSnapshot(buf);
+        initializeStorageMenu(playerInv, null);
         this.lastPlayerInventoryFingerprint = playerInventoryFingerprint();
         addContainerData();
     }
@@ -315,6 +327,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private int getPreviewData(int index) {
         if (index >= ENERGY_DATA_START && index < INGREDIENT_AVAILABLE_DATA_START) {
             int relative = index - ENERGY_DATA_START;
+            if (relative >= LIVE_ENERGY_DATA_SLOTS) return 0;
             EnergyType type = ENERGY_SYNC_ORDER[relative / 4];
             return getLongPart(energyAmounts[type.ordinal()], relative % 4);
         }
@@ -340,6 +353,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private void setPreviewData(int index, int value) {
         if (index >= ENERGY_DATA_START && index < INGREDIENT_AVAILABLE_DATA_START) {
             int relative = index - ENERGY_DATA_START;
+            if (relative >= LIVE_ENERGY_DATA_SLOTS) return;
             EnergyType type = ENERGY_SYNC_ORDER[relative / 4];
             int energyIndex = type.ordinal();
             energyAmounts[energyIndex] = setLongPart(energyAmounts[energyIndex], relative % 4, value);
@@ -442,20 +456,20 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         machineContainer = core != null
                 ? core.getMachineContainer()
                 : new SimpleContainer(MACHINE_SLOT_COUNT);
-        axeInputContainer = new SimpleContainer(1) {
+        consumableInputContainer = new SimpleContainer(MACHINE_SLOT_COUNT) {
             @Override
             public void setChanged() {
                 super.setChanged();
-                onAxeInputChanged();
+                onConsumableInputsChanged();
             }
         };
         for (int machineSlot = 0; machineSlot < MACHINE_SLOT_COUNT; machineSlot++) {
             int mappedSlot = machineSlot;
-            MachineEnergyTable.Entry descriptor = MachineEnergyTable.get(mappedSlot);
+            MachineDescriptor descriptor = descriptorAt(mappedSlot);
             boolean consumable = descriptor != null
                     && descriptor.category() == MachineEnergyTable.Category.CONSUMABLE;
-            Container slotContainer = consumable ? axeInputContainer : machineContainer;
-            int containerSlot = consumable ? 0 : mappedSlot;
+            Container slotContainer = consumable ? consumableInputContainer : machineContainer;
+            int containerSlot = mappedSlot;
             this.addSlot(new Slot(slotContainer, containerSlot,
                     MACHINE_SLOT_X + mappedSlot * MACHINE_SLOT_GAP, MACHINE_SLOT_Y) {
                 private boolean hasRetainedLegacyInput() {
@@ -487,25 +501,25 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
                 @Override
                 public boolean isActive() {
-                    return page == CraftingTerminalPage.FUEL;
+                    return descriptorAt(mappedSlot) != null && page == CraftingTerminalPage.FUEL;
                 }
 
                 @Override
                 public boolean mayPlace(ItemStack stack) {
                     if (page != CraftingTerminalPage.FUEL) return false;
                     StorageCoreBlockEntity currentCore = getCore(playerInv.player.level());
-                    MachineEnergyTable.Entry entry = MachineEnergyTable.get(mappedSlot);
+                    MachineDescriptor entry = descriptorAt(mappedSlot);
                     if (currentCore == null || currentCore.isConflicted()
                             || entry == null || !entry.accepts(stack)) return false;
                     if (hasRetainedLegacyInput()) return false;
                     return entry.category() == MachineEnergyTable.Category.CONSUMABLE
-                            ? currentCore.canAddAxeEnergy(stack)
+                            ? currentCore.canAddDescriptorConsumable(entry.id(), stack)
                             : entry.maxInstalledCount() > 0;
                 }
 
                 @Override
                 public int getMaxStackSize(ItemStack stack) {
-                    MachineEnergyTable.Entry entry = MachineEnergyTable.get(mappedSlot);
+                    MachineDescriptor entry = descriptorAt(mappedSlot);
                     if (entry == null) return 0;
                     if (entry.category() == MachineEnergyTable.Category.CONSUMABLE) {
                         return Math.min(64, stack.getMaxStackSize());
@@ -573,7 +587,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         for (int item = 0; item < metadata.itemResourceCount(); item++) {
             ItemStack stack = selectionContainer.getItem(ITEM_RESOURCE_SLOT_START + item);
             if (stack.isEmpty()) {
-                throw new IllegalStateException("Recipe presentation item resource is missing");
+                return RecipePresentation.empty();
             }
             resources.add(RecipePresentation.Resource.item(
                     stack.copyWithCount(1), ingredientAvailable[item], stack.getCount()));
@@ -585,7 +599,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (metadata.toolRequired() > 0) {
             ItemStack tool = selectionContainer.getItem(PRESENTATION_TOOL_SLOT);
             if (tool.isEmpty()) {
-                throw new IllegalStateException("Recipe presentation tool resource is missing");
+                return RecipePresentation.empty();
             }
             resources.add(RecipePresentation.Resource.tool(
                     tool, metadata.toolAvailable(), metadata.toolRequired(), metadata.toolInfinite()));
@@ -668,11 +682,47 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     public long getAxeEnergyAmount() {
-        return axeEnergyAmount;
+        return getDescriptorAmount(MachineEnergyTable.AXE_ID);
     }
 
     public boolean hasInfiniteAxeEnergy() {
-        return infiniteAxeEnergy;
+        return hasInfiniteDescriptor(MachineEnergyTable.AXE_ID);
+    }
+
+    public List<MachineDescriptor> getMachineDescriptors() {
+        return descriptorSnapshot;
+    }
+
+    private MachineDescriptor descriptorAt(int slot) {
+        return slot >= 0 && slot < descriptorSnapshot.size() ? descriptorSnapshot.get(slot) : null;
+    }
+
+    private int findDescriptorSlot(ItemStack stack) {
+        for (int slot = 0; slot < descriptorSnapshot.size(); slot++) {
+            if (descriptorSnapshot.get(slot).accepts(stack)) return slot;
+        }
+        return -1;
+    }
+
+    public long getDescriptorAmount(ResourceLocation descriptorId) {
+        MachineDescriptorStatePacket.State state = descriptorStates.get(descriptorId);
+        if (state != null) return state.amount();
+        return descriptorId.equals(MachineEnergyTable.AXE_ID) ? axeEnergyAmount : 0;
+    }
+
+    public boolean hasInfiniteDescriptor(ResourceLocation descriptorId) {
+        MachineDescriptorStatePacket.State state = descriptorStates.get(descriptorId);
+        if (state != null) return state.infinite();
+        return descriptorId.equals(MachineEnergyTable.AXE_ID) && infiniteAxeEnergy;
+    }
+
+    void applyDescriptorStates(List<MachineDescriptorStatePacket.State> states) {
+        descriptorStates.clear();
+        for (MachineDescriptorStatePacket.State state : states) {
+            if (descriptorSnapshot.stream().anyMatch(descriptor -> descriptor.id().equals(state.descriptorId()))) {
+                descriptorStates.put(state.descriptorId(), state);
+            }
+        }
     }
 
     static int fuelTargetButtonId(EnergyType target) {
@@ -714,24 +764,28 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
     }
 
-    private void onAxeInputChanged() {
-        if (processingAxeInput || axeInputContainer == null || playerInventory == null
+    private void onConsumableInputsChanged() {
+        if (processingConsumableInput || consumableInputContainer == null || playerInventory == null
                 || page != CraftingTerminalPage.FUEL) return;
         Player player = playerInventory.player;
         if (player.level().isClientSide()) return;
         StorageCoreBlockEntity core = getCore(player.level());
         if (core == null) return;
-        ItemStack stack = axeInputContainer.getItem(0);
-        if (stack.isEmpty() || !core.addAxeEnergy(stack)) return;
-
-        processingAxeInput = true;
+        boolean changed = false;
+        processingConsumableInput = true;
         try {
-            axeInputContainer.removeItemNoUpdate(0);
-            axeInputContainer.setChanged();
+            for (int slot = 0; slot < descriptorSnapshot.size(); slot++) {
+                MachineDescriptor descriptor = descriptorAt(slot);
+                if (descriptor == null || descriptor.category() != MachineEnergyTable.Category.CONSUMABLE) continue;
+                ItemStack stack = consumableInputContainer.getItem(slot);
+                if (stack.isEmpty() || !core.addDescriptorConsumable(descriptor.id(), stack)) continue;
+                consumableInputContainer.removeItemNoUpdate(slot);
+                changed = true;
+            }
         } finally {
-            processingAxeInput = false;
+            processingConsumableInput = false;
         }
-        refreshEnergyAmounts(core);
+        if (changed) refreshEnergyAmounts(core);
     }
 
     private boolean convertFuelStack(
@@ -837,13 +891,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             ItemStack original = slot.getItem().copy();
             if (!player.level().isClientSide()) {
                 StorageCoreBlockEntity core = getCore(player.level());
-                int machineSlot = MachineEnergyTable.findSlot(slot.getItem());
+                int machineSlot = findDescriptorSlot(slot.getItem());
                 if (machineSlot >= 0) {
                     if (core == null || core.isConflicted()) return ItemStack.EMPTY;
                     ItemStack stack = slot.getItem();
-                    MachineEnergyTable.Entry entry = MachineEnergyTable.get(machineSlot);
+                    MachineDescriptor entry = descriptorAt(machineSlot);
                     if (entry != null && entry.category() == MachineEnergyTable.Category.CONSUMABLE) {
-                        if (!core.addAxeEnergy(stack)) return ItemStack.EMPTY;
+                        if (!core.addDescriptorConsumable(entry.id(), stack)) return ItemStack.EMPTY;
                         if (stack.isEmpty()) slot.set(ItemStack.EMPTY);
                         else slot.setChanged();
                         refreshEnergyAmounts(core);
@@ -1485,6 +1539,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     private void clearRecipePresentation() {
         if (selectionContainer != null) selectionContainer.clearContent();
+        if (selectionContainer != null && selectedKey != null) {
+            selectionContainer.setItem(PRESENTATION_OUTPUT_SLOT, selectedKey.toStack(1));
+        }
         Arrays.fill(ingredientAvailable, 0);
         processRequired = 0;
         fuelRequired = 0;
@@ -1577,7 +1634,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return AxeEnergy.representativeStack();
         }
         int stationSlot = CraftingStationTable.requiredSlot(recipe.getType());
-        MachineEnergyTable.Entry station = MachineEnergyTable.get(stationSlot);
+        MachineDescriptor station = MachineEnergyTable.get(stationSlot);
         if (station == null) throw new IllegalStateException("Recipe presentation has no station descriptor");
         ItemStack installed = core.getMachineContainer().getItem(stationSlot);
         if (!station.accepts(installed)) {
@@ -2213,6 +2270,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     @Override
     public void broadcastChanges() {
+        boolean sendDescriptorState = false;
         if (playerInventory != null && !playerInventory.player.level().isClientSide()) {
             int fingerprint = playerInventoryFingerprint();
             boolean playerInventoryChanged = fingerprint != lastPlayerInventoryFingerprint;
@@ -2223,6 +2281,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (topologyChanged) lastTopologyRevision = core.getTopologyRevision();
             boolean machinesChanged = core != null && core.getMachineRevision() != lastMachineRevision;
             if (machinesChanged) lastMachineRevision = core.getMachineRevision();
+            sendDescriptorState = machinesChanged;
 
             if (core != null && (topologyChanged || machinesChanged
                     || playerInventoryChanged && usePlayerInventory)) {
@@ -2234,6 +2293,28 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             }
         }
         super.broadcastChanges();
+        if (sendDescriptorState) sendDescriptorStates();
+    }
+
+    @Override
+    public void sendAllDataToRemote() {
+        super.sendAllDataToRemote();
+        sendDescriptorStates();
+    }
+
+    private void sendDescriptorStates() {
+        if (!(playerInventory.player instanceof ServerPlayer serverPlayer)) return;
+        StorageCoreBlockEntity core = getCore(serverPlayer.level());
+        if (core == null) return;
+        List<MachineDescriptorStatePacket.State> states = new ArrayList<>();
+        for (MachineDescriptor descriptor : descriptorSnapshot) {
+            if (descriptor.category() != MachineEnergyTable.Category.CONSUMABLE) continue;
+            states.add(new MachineDescriptorStatePacket.State(
+                    descriptor.id(),
+                    core.getDescriptorAmount(descriptor.id()),
+                    core.hasInfiniteDescriptor(descriptor.id())));
+        }
+        PacketDistributor.sendToPlayer(serverPlayer, new MachineDescriptorStatePacket(containerId, states));
     }
 
     private int playerInventoryFingerprint() {
@@ -2253,6 +2334,14 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
         axeEnergyAmount = core.getAxeEnergy();
         infiniteAxeEnergy = core.hasInfiniteAxeEnergy();
+        descriptorStates.clear();
+        for (MachineDescriptor descriptor : descriptorSnapshot) {
+            if (descriptor.category() != MachineEnergyTable.Category.CONSUMABLE) continue;
+            descriptorStates.put(descriptor.id(), new MachineDescriptorStatePacket.State(
+                    descriptor.id(),
+                    core.getDescriptorAmount(descriptor.id()),
+                    core.hasInfiniteDescriptor(descriptor.id())));
+        }
     }
 
     @Override
@@ -2277,6 +2366,11 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 outputDestination = outputDestination.next();
                 return true;
             }
+            if (buttonId == RESET_OUTPUT_DESTINATION_BUTTON) {
+                if (!page.isItemPage()) return false;
+                outputDestination = TerminalOutputDestination.PLAYER;
+                return true;
+            }
             if (page == CraftingTerminalPage.FUEL) return false;
             StorageCoreBlockEntity core = getCore(player.level());
             switch (buttonId) {
@@ -2285,7 +2379,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                      NEXT_SORT_MODE_BUTTON,
                      NEXT_SEARCH_MODE_BUTTON,
                      PREVIOUS_SORT_MODE_BUTTON,
-                     PREVIOUS_SEARCH_MODE_BUTTON -> {
+                     PREVIOUS_SEARCH_MODE_BUTTON,
+                     RESET_SORT_ORDER_BUTTON,
+                     RESET_SORT_MODE_BUTTON,
+                     RESET_SEARCH_MODE_BUTTON -> {
                     if (core != null) {
                         return super.clickMenuButton(player, buttonId);
                     }
@@ -2296,11 +2393,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 case 4 -> craftItem(64, player);
                 case MAX_CRAFT_BUTTON -> craftMaximum(player);
                 case 7 -> toggleUsePlayerInventory();
+                case RESET_PLAYER_INVENTORY_BUTTON -> usePlayerInventory = false;
                 case 8 -> prevRecipe();
                 case 9 -> nextRecipe();
                 default -> { return false; }
             }
-            if (core != null && buttonId >= 7 && buttonId <= 9) {
+            if (core != null && (buttonId >= 7 && buttonId <= 9
+                    || buttonId == RESET_PLAYER_INVENTORY_BUTTON)) {
                 refreshDisplayItems(core);
                 updatePreview(core, player);
             }
@@ -2329,18 +2428,20 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     private void returnTransientInputs(Player player) {
         returnTransientInput(player, fuelContainer);
-        returnTransientInput(player, axeInputContainer);
+        returnTransientInput(player, consumableInputContainer);
     }
 
     private static void returnTransientInput(Player player, SimpleContainer container) {
         if (container == null) return;
-        ItemStack leftover = container.removeItemNoUpdate(0);
-        if (leftover.isEmpty()) return;
-        if (!player.isAlive() || player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
-                && serverPlayer.hasDisconnected()) {
-            player.drop(leftover, false);
-        } else {
-            player.getInventory().placeItemBackInInventory(leftover);
+        for (int slot = 0; slot < container.getContainerSize(); slot++) {
+            ItemStack leftover = container.removeItemNoUpdate(slot);
+            if (leftover.isEmpty()) continue;
+            if (!player.isAlive() || player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
+                    && serverPlayer.hasDisconnected()) {
+                player.drop(leftover, false);
+            } else {
+                player.getInventory().placeItemBackInInventory(leftover);
+            }
         }
     }
 

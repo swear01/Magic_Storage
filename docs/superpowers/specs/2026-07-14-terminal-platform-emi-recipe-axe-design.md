@@ -1,5 +1,7 @@
 # Shared Terminal Platform, EMI-First Recipes, and Axe Energy Design
 
+> Partial replacement: visual assets, Fuel-page layout, cycle reset/status grammar, progression recipes, wrench/connected casing, and Patchouli guide are now specified by `2026-07-14-connected-progression-fuel-guide-design.md`. Server-authoritative crafting/storage/EMI/Axe transaction contracts below remain current.
+
 ## Goal
 
 Replace the split Storage/Crafting Terminal presentation with one capability-driven terminal platform, present selected recipes through EMI widgets when EMI is available with an explicit native fallback, correct Craftable-grid quantities and sorting, add a safe craft-output destination, and replace the installed axe with a consumable finite-or-infinite Axe Energy reserve.
@@ -23,7 +25,7 @@ The common cycle contract is:
 - left click selects the next value;
 - right click selects the previous value;
 - wheel down selects next and wheel up selects previous when the control is hovered;
-- the tooltip names only the control and current value, plus the left/right interaction hint;
+- the tooltip names only the control and current value;
 - it never enumerates every possible value.
 
 Recipe alternatives use two explicit left/right arrow buttons rather than a cycle glyph. Search, sorting, and player-inventory-source icons are redrawn; procedural Unicode and filled-shape rail glyphs are removed.
@@ -64,13 +66,17 @@ The workspace is split vertically:
 
 Crafting uses a positioned 3x3 grid, a processing arrow, a large output slot, and a shapeless marker where applicable. Cooking, stonecutting, smithing transform, and synthetic axe transformations have dedicated presentations matching their real input roles. The output slot displays the exact result count. Empty space is not divided into nine fixed resource cells.
 
-Item-resource rows use the neutral panel palette. Energy and tool-resource rows use a distinct dark-red background and border. Availability still controls the green/red amount text; background color communicates resource kind rather than success.
+The selected station is shown once as a subdued lower-right badge so it supplies context without reading as another ingredient. Selecting an item with no supported recipe keeps that item selected and shows a neutral localized no-recipe message instead of an error state.
+
+When no presentation exists, the diagram and ledger bounds form one continuous neutral empty-state surface and the wrapped prompt is centered in that union. The darker ledger divider appears only for a valid recipe with resource rows; an empty ledger must not look like a second unexplained panel.
+
+All resource rows use vanilla light raised panels. Availability controls the green/red amount text; resource kind remains identifiable from its icon and tooltip rather than a custom dark background.
 
 ## EMI-first renderer with explicit fallback
 
-EMI is a required client-only dependency in released metadata with Maven range `[1.1.24,2)`. The exact `1.1.24+1.21.1` coordinate remains only the reproducible minimum compile/development baseline; dedicated servers do not require EMI. CI compiles that minimum and the newest compatible Minecraft 1.21.1 EMI release, while client smoke stages the newest compatible full jar.
+EMI is a required client-only dependency in released metadata with Maven range `[1.1.24,2)`. The exact `1.1.24+1.21.1` coordinate remains only the reproducible minimum compile/development baseline; dedicated servers do not require EMI. CI compiles against that minimum and the newest compatible Minecraft 1.21.1 EMI release, while client smoke stages the newest compatible full jar.
 
-The base screen references only a Magic Storage client renderer interface. A guarded EMI compatibility bootstrap is loaded only when NeoForge reports EMI present, keeping dedicated servers free of EMI class references.
+The base screen references only a Magic Storage client renderer interface. A guarded EMI compatibility bootstrap is loaded only when NeoForge reports EMI present, keeping dedicated-server classloading free of EMI references and preserving an explicit failure boundary during development.
 
 For a selected standard recipe:
 
@@ -80,7 +86,7 @@ For a selected standard recipe:
 4. Magic Storage translates and renders those widgets, forwards bounded mouse/key input, and renders their tooltips;
 5. the native server-synced resource ledger and craft controls remain authoritative.
 
-The native renderer is selected only for two approved capability cases: EMI is not installed, or the exact selected recipe has no compatible EMI representation, including internal synthetic axe recipes. Runtime exceptions do not silently switch renderers; they surface through the normal client error path. No EMI internal screen or `WidgetGroup` class is linked.
+The native renderer is selected only when the exact selected recipe has no compatible EMI representation, including internal synthetic axe recipes. A released client missing EMI is rejected by NeoForge dependency validation rather than silently changing product behavior. Runtime exceptions do not silently switch renderers; they surface through the normal client error path. No EMI internal screen or `WidgetGroup` class is linked.
 
 ## Craft output destination
 
@@ -88,6 +94,8 @@ Crafting Terminal has a server-synced session toggle independent of `Use Player 
 
 - Player: use the post-ingredient player inventory first and plan any remainder into Core, preserving the existing no-drop safety contract.
 - Storage: put all primary output and crafting remainders into Core only.
+
+The control uses a Player Head icon for Player and the Storage Core icon for Storage; its tooltip supplies the localized destination name.
 
 If the selected destination cannot accept the complete batch, the entire operation is a no-op. Direct buttons, Max, and exact EMI requests continue to use simulate-then-commit and exact recipe identity. EMI's explicit Cursor/Inventory destination remains authoritative for an EMI-initiated action; the terminal toggle governs the terminal's own craft buttons.
 
@@ -121,7 +129,21 @@ The old persisted axe station slot is migrated once. A valid finite or Unbreakab
 
 The current target cycle remains available and gains a separate list button. The anchored popup is generated from the ordered server-approved target descriptors and shows representative item, localized name, and selected state. It supports bounded scrolling, outside-click close, Escape close, page-leave focus cleanup, and an EMI exclusion rectangle. While open, its rectangle consumes pointer/scroll input and suppresses covered container-slot tooltips instead of clicking or describing the UI underneath it.
 
+The popup is an input widget but renders exactly once in a foreground layer above the container screen, slots, and ordinary tooltips. It must not be registered as a second independently rendered screen child.
+
 Station tooltips trigger only over the actual station slot or representative icon bounds. Hovering unused padding in a flow cell produces no station tooltip. Paging and future descriptor growth continue to use panel-local flow geometry.
+
+Every Fuel descriptor cell uses a compact vertical grammar: the 18-pixel station slot or 16-pixel representative icon is centered in the upper area, and its amount is centered and width-scaled in a separate lower line. Current panel filling, multi-row paging, and the inventory-side type-capacity information panel are defined by the replacement Fuel-layout design linked at the top of this document; Instant Stations no longer reserves a status cell.
+
+## Retired Bottle Energy migration
+
+Bottle Energy is not a live target or recipe resource. Glass Bottles and Potions remain normal storage items. On Core load, the historical `bottle_fuel` value migrates one-for-one into plain Glass Bottles. If that exact item variant is already at `Long.MAX_VALUE`, the unconverted amount remains in a persisted legacy escrow and fills newly available bottle count space after later extraction. During a mutation batch, refill waits until the outermost batch ends so crafting commit and rollback retain the capacity predicted during simulation. The retired four-word menu data region remains zero-filled to preserve client/server data-slot parity.
+
+## Bus direction contract
+
+Import Bus keeps its directional active pull from the front-adjacent non-network inventory. It also exposes one stable insert-only item capability on every face and the null side so external automation can passively insert into the server-owned Core. Passive insertion stores no local stack, never permits extraction, never mutates the caller stack, and uses simulate-then-commit with the exact remainder. Active and passive resolution share a 10-tick negative cache after a missing-Core BFS so repeated automation probes cannot rescan the bounded network every call.
+
+Export Bus remains directional: it pushes only into the inventory on its front face. A future directionless export mode is outside this revision.
 
 ## Texture and icon system
 
@@ -133,7 +155,11 @@ Runtime block/item textures remain native 16x16 pixels. The next asset pass uses
 4. review one nearest-neighbor contact sheet before selecting runtime files;
 5. retain generation metadata/previews only under `art/texture-generation/`.
 
-The semantic families are Core rune crystal; Storage Unit cell plus tier bars; Storage Terminal item-grid display; Crafting Terminal derived display plus crafting mark; blue inward Import arrow; orange outward Export arrow; and handheld Remote display. Referenced faces must be visually distinct while retaining the common casing. Obsolete unreferenced runtime textures and all non-16x16 model-referenced textures are removed.
+The semantic families are Core rune crystal; Storage Unit cell plus tier bars; Storage Terminal 2x2 item-grid display; Crafting Terminal 3x3 crafting display; cyan inward Import flow; orange outward Export conduit; and handheld Remote display. Referenced faces must be visually distinct while retaining the common casing. Bus front/side/top faces must communicate their flow direction without depending on color alone.
+
+Every centered block motif is mirrored about the even-grid axis at x=7.5 instead of pretending a single center pixel exists. Storage tiers use six visibly different fill bands. The centered Name-sort A and all other atlas glyphs use measured bounding boxes on their fixed 16x16 cells. Obsolete unreferenced runtime textures and all non-16x16 model-referenced textures are removed.
+
+All player-facing runtime labels and tooltips use localization keys, with exact English and Traditional Chinese key parity. Player-facing controls follow the project-wide simple-is-better rule: labels communicate state and intent, while discoverable mouse gestures and implementation details stay in the guide rather than persistent tooltips.
 
 ## Testing and delivery
 
@@ -145,18 +171,24 @@ Required coverage includes:
 - Craftable zero/positive/long stored amounts, stored-and-craftable union, synthetic no-extraction, and metadata stripping;
 - shared Name/Quantity/Mod/ID ordering and deterministic ties;
 - shaped, shapeless, cooking, stonecutting, smithing, and axe presentation metadata plus exact output count;
-- EMI-present public-widget path, no-EMI native path, known unsupported-recipe native path, and no broad exception fallback;
+- unified neutral no-recipe surface, one dim station badge, destination-specific icons, and foreground popup ordering;
+- EMI-present public-widget path, no-EMI development/dedicated-server classloading boundary, known unsupported-recipe native path, and no broad exception fallback;
 - Player/Core destination capacity, remainders, direct craft, Max, exact EMI requests, rollback, single-mutation long-count commits, and `Long.MAX_VALUE` reservations;
 - process stack rates, instant station max-one plus legacy-overstack recovery, finite/multiple/Unbreaking/overflow axes, explicit finite-vs-infinite presentation, save/load, and recoverable old-slot migration;
 - exact station hover bounds, scalable popup geometry/input, and no rail overlap;
-- one count scale, slot-local text bounds, 16x16 referenced textures, semantic asset families, and no generation artifacts in runtime resources.
+- retired Bottle Energy migration, transaction-safe overflow escrow recovery, live-energy reset, and preserved data-slot parity;
+- directional active buses plus all-side insert-only passive Import capability, atomic remainder handling, and no caller mutation;
+- English/Traditional-Chinese localization parity;
+- one count scale, slot-local text bounds, centered Name glyph, 16x16 x-symmetric referenced textures, semantic asset families, and no generation artifacts in runtime resources.
 
 Final gates are compileJava, build, dedicated GameTest server, all Python tests, runData plus datagen drift, JSON/model/texture checks, automatic patch-version bump, transactional Prism deployment, and a current-run fullscreen visual checklist owned by the user.
 
 ## Out of scope
 
 - RS2 recursive pattern trees, crafting jobs, or crafting monitors.
-- Bundling EMI in the Magic Storage jar or accepting EMI 2.x without an explicit compatibility review.
+- Bundling EMI in the Magic Storage jar or requiring it on dedicated servers.
 - Client-side storage authority or a complete client mirror of the network inventory.
 - Arbitrary modded durability-effect valuation without a future server-owned descriptor API.
 - A public third-party station/fuel registration API in this revision.
+
+The first and last items are future work rather than rejected product goals; their current architecture and TDD phases are defined in `../plans/2026-07-14-modded-recipes-multistep-crafting.md`.

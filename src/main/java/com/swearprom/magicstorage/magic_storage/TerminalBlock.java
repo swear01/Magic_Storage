@@ -43,6 +43,7 @@ public class TerminalBlock extends Block implements IStorageNetworkBlock {
                         buf.writeBlockPos(core.getBlockPos());
                         buf.writeBlockPos(pos);
                         buf.writeBoolean(false);
+                        MachineEnergyTable.writeSnapshot(buf, MachineEnergyTable.entries());
                     });
                 } else {
                     player.openMenu(new SimpleMenuProvider(

@@ -1075,6 +1075,60 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
+    public static void legacy_bottle_escrow_waits_for_storage_craft_transaction(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            var inventory = new net.minecraft.nbt.ListTag();
+            var bottleEntry = new net.minecraft.nbt.CompoundTag();
+            bottleEntry.put("item", new ItemStack(Items.GLASS_BOTTLE).save(level.registryAccess()));
+            bottleEntry.putLong("count", Long.MAX_VALUE);
+            inventory.add(bottleEntry);
+            var energy = new net.minecraft.nbt.CompoundTag();
+            energy.putLong("bottle_fuel", 1);
+            var legacy = new net.minecraft.nbt.CompoundTag();
+            legacy.put("inventory", inventory);
+            legacy.put("energy", energy);
+            core.loadAdditional(legacy, level.registryAccess());
+            installAllRecipeStations(core);
+
+            var recipe = new ShapelessRecipe(
+                    "",
+                    CraftingBookCategory.MISC,
+                    new ItemStack(Items.GLASS_BOTTLE),
+                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.GLASS_BOTTLE))
+            );
+            var holder = new RecipeHolder<>(
+                    ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "legacy_bottle_escrow_transaction_test"),
+                    recipe
+            );
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(175, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
+            withTemporaryRegisteredRecipe(level, holder, () -> {
+                menu.getCurrentRecipes().add(holder);
+                menu.craftItem(1, player);
+                var saved = new net.minecraft.nbt.CompoundTag();
+                core.saveAdditional(saved, level.registryAccess());
+                if (core.getItemCount(ItemKey.of(new ItemStack(Items.GLASS_BOTTLE))) != Long.MAX_VALUE
+                        || saved.getCompound("energy").getLong("bottle_fuel") != 1
+                        || countInInventory(player, Items.GLASS_BOTTLE) != 0) {
+                    helper.fail("Storage craft must preserve saturated bottles and legacy escrow atomically");
+                    return;
+                }
+                helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void direct_storage_destination_rejects_one_item_short_without_mutation(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -1655,13 +1709,16 @@ public class CraftingTests {
                 helper.fail("Output destination must not mutate the full-identity grid");
                 return;
             }
-            if (!menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON)
-                    || menu.getOutputDestination() != TerminalOutputDestination.PLAYER) {
-                helper.fail("Second output destination click must return to Player");
+            if (!menu.clickMenuButton(player, CraftingTerminalMenu.RESET_OUTPUT_DESTINATION_BUTTON)
+                    || !menu.clickMenuButton(player, CraftingTerminalMenu.RESET_PLAYER_INVENTORY_BUTTON)
+                    || menu.getOutputDestination() != TerminalOutputDestination.PLAYER
+                    || menu.isUsePlayerInventory()) {
+                helper.fail("Middle-reset actions must restore Player output and Core-only ingredients");
                 return;
             }
             menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
             if (menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON)
+                    || menu.clickMenuButton(player, CraftingTerminalMenu.RESET_OUTPUT_DESTINATION_BUTTON)
                     || menu.getOutputDestination() != TerminalOutputDestination.PLAYER) {
                 helper.fail("Fuel page must reject forged output-destination changes");
                 return;
@@ -2417,6 +2474,58 @@ public class CraftingTests {
                 if (menu.getCurrentRecipes().get(r).value().getType() == RecipeType.SMELTING) foundSmelting = true;
             }
             if (!foundSmelting) helper.fail("Recipes should still resolve iron ingot (smelting) after reorder");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void selecting_item_without_supported_recipe_keeps_identity_and_empty_presentation(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            ItemStack unsupported = new ItemStack(Items.BARRIER);
+            unsupported.set(DataComponents.CUSTOM_NAME, Component.literal("No Recipe Identity"));
+            if (core.insertItem(unsupported.copy()) != 1) {
+                helper.fail("Could not seed unsupported selected item");
+                return;
+            }
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(167, player.getInventory(), core);
+            menu.refreshDisplayItems(core);
+            int displaySlot = -1;
+            for (int slot = 0; slot < StorageTerminalMenu.DISPLAY_SLOTS; slot++) {
+                ItemStack displayed = TerminalDisplayStack.strip(menu.getSlot(slot).getItem());
+                if (ItemStack.isSameItemSameComponents(displayed, unsupported)) {
+                    displaySlot = slot;
+                    break;
+                }
+            }
+            if (displaySlot < 0) {
+                helper.fail("Unsupported item identity not found in terminal display");
+                return;
+            }
+
+            menu.clicked(displaySlot, 0, ClickType.PICKUP, player);
+            ItemStack selected = menu.getSelectedStack();
+            RecipePresentation presentation = menu.getRecipePresentation();
+            if (!ItemStack.isSameItemSameComponents(selected, unsupported)
+                    || selected.getCount() != 1
+                    || menu.getRecipeCount() != 0
+                    || !presentation.isEmpty()) {
+                helper.fail("Unsupported item selection must retain exact identity with an empty presentation: selected="
+                        + selected + " recipes=" + menu.getRecipeCount() + " presentation=" + presentation.kind());
+                return;
+            }
             helper.succeed();
         });
     }

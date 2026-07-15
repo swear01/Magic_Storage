@@ -1,12 +1,14 @@
 # Shared Terminal Platform, EMI-First Recipe UI, and Axe Energy Implementation Plan
 
+> Task 1–10 automated baseline is complete. Its failed 0.1.17 fullscreen visual follow-up is replaced by `2026-07-14-connected-progression-fuel-guide.md`; do not use this plan as the current GUI/asset/recipe/guide task list.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `using-superpowers` and execute this plan task-by-task with strict `test-driven-development`. Do not edit production code until the task's focused test has failed for the expected reason.
 
 **Goal:** Make Storage Terminal and Crafting Terminal share one adaptive UI platform, correct server-owned grid quantities and sorting, render exact recipes through EMI's public widgets with an explicit native fallback, add atomic output routing, and replace installed axes with finite-or-infinite Axe Energy.
 
 **Architecture:** Preserve separate menu registrations but introduce shared profile-driven terminal geometry, controls, display metadata, and comparators. The server remains authoritative for inventory, recipe identity, recipe presentation, destination, station state, and tool energy. Client-only EMI code is isolated behind a Magic Storage renderer interface and a guarded compatibility bootstrap.
 
-**Tech Stack:** Java 21, Minecraft 1.21.1, NeoForge 21.1, Gradle ModDev, EMI 1.1.24 public API, NeoForge GameTest, project SelfTest, Python static regression tests, Replicate texture workflow.
+**Tech Stack:** Java 21, Minecraft 1.21.1, NeoForge 21.1, Gradle ModDev, EMI public API with minimum baseline 1.1.24 and release range `[1.1.24,2)`, NeoForge GameTest, project SelfTest, Python static regression tests, Replicate texture workflow.
 
 ---
 
@@ -91,7 +93,7 @@
 
 ## Task 4: EMI-first public-widget renderer with explicit native fallback
 
-> Status: complete. Five focused static failures established the missing runtime/boundary/public-widget/exact-selection/bounded-no-catch contracts. GREEN is compileJava, build, SelfTest 222946/222946, GameTest 231/231, focused Python 48/48, full Python 95/95, runData without drift, and `runClient --dry-run`; full EMI originally used development `runtimeOnly`. Release metadata was optional when this task completed, but the 2026-07-15 compatibility correction supersedes that product policy with client-only required `[1.1.24,2)`, retains the exact coordinate only as the minimum dev baseline, and isolates the full mod from dedicated GameTest. The local Maven full-jar transfer required a user-approved same-URL range-prefetch into Gradle cache and did not change project or CI dependency sources.
+> Status: complete. Five focused static failures established the missing runtime/boundary/public-widget/exact-selection/bounded-no-catch contracts. GREEN is compileJava, build, SelfTest 222946/222946, GameTest 231/231, focused Python 48/48, full Python 95/95, runData without drift, and `runClient --dry-run`; full EMI originally used development `runtimeOnly`. Release metadata was optional when this task completed, but the 2026-07-15 compatibility correction supersedes that product policy with client-only required `[1.1.24,2)`, retains the exact coordinate only as the minimum dev baseline, and moves the full mod to isolated `fusionRuntimeRuntimeOnly` so dedicated GameTest does not load it. The local Maven full-jar transfer required a user-approved same-URL range-prefetch into Gradle cache and did not change project or CI dependency sources.
 
 **Files:**
 
@@ -107,7 +109,7 @@
 - Modify: `docs/notes.md`
 - Modify: `docs/rs2-design-gap.md`
 
-**RED:** Add static/compile contracts proving the development client includes the full EMI mod, the base screen and renderer interface do not import EMI, the guarded bootstrap is the only client linkage point, only public `EmiRecipe`, `Widget`, and `WidgetHolder` APIs are used, no internal `WidgetGroup`/recipe-screen class is referenced, and there is no broad catch-and-native-fallback path. Add renderer-selection tests for EMI present, EMI absent, exact standard recipe found, and known unsupported/synthetic recipe. Run the Python test and `./gradlew compileJava` and observe missing adapter/runtime coverage.
+**RED:** Add static/compile contracts proving the development client includes the full EMI mod, the base screen and renderer interface do not import EMI, the guarded bootstrap is the only linkage point, only public `EmiRecipe`, `Widget`, and `WidgetHolder` APIs are used, no internal `WidgetGroup`/recipe-screen class is referenced, and there is no broad catch-and-native-fallback path. Add renderer-selection tests for EMI present, EMI absent in the development boundary, exact standard recipe found, and known unsupported/synthetic recipe. Run the Python test and `./gradlew compileJava` and observe missing adapter/runtime coverage.
 
 **GREEN:** Implement a bounded public-API `WidgetHolder`, translate/render the widgets from `EmiRecipe#addWidgets`, forward input/tooltips only inside the diagram bounds, and keep the native ledger/craft controls authoritative. Select native rendering only when EMI is absent or the exact recipe has no compatible public representation. Let unexpected EMI exceptions surface. Run `./gradlew compileJava`, focused Python tests, and `./gradlew runClient --dry-run`.
 
@@ -238,11 +240,46 @@
 6. Run JSON/model/texture validation and the project pre-push review.
 7. Bump the patch version transactionally through the project deployment script; never hand-edit a deployed jar/version mismatch.
 8. Rebuild the void-lab baseline only if the changed station/data model requires migration, deploy the unique jar to Prism dev, and launch the offline scenario runner.
-9. Stop automation at `MS_GUI_TEST_READY`; the user enters native fullscreen and owns the visual verdict for Storage/Craftable/Fuel layouts, recipe diagram, all counts, popup, focus, output destination, station categories, infinity display, icons, and block/item family textures.
+9. Stop automation at `MS_GUI_TEST_READY`; the runner has already entered Minecraft F11 fullscreen, and the user confirms that gate and owns the visual verdict for Storage/Craftable/Fuel layouts, recipe diagram, all counts, popup, focus, output destination, station categories, infinity display, icons, and block/item family textures. macOS native fullscreen is forbidden.
 10. Close every terminal/process window opened by automation after the handoff or failure path.
 
 **Commit:** `chore: finalize terminal platform release`
 
+## Task 10: Retire Bottle Energy, passive Import input, concise recipe UX, and directional texture revision
+
+> Automated status: complete. `compileJava`, `build`, SelfTest 222956/222956, GameTest 262/262, Python 110/110, `runData` no-new-drift, `runClient --dry-run`, 78 JSON resources, and diff checks are green. Version 0.1.17 is transactionally deployed with an exact build/deployed SHA-256 match; current-run READY and the user-owned fullscreen verdict remain pending.
+
+**Files:**
+
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/EnergyType.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/FuelTable.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/ImportBusBlockEntity.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/NativeRecipeDiagramRenderer.java`
+- Modify: `src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java`
+- Modify: `src/main/resources/assets/magic_storage/lang/en_us.json`
+- Modify: `src/main/resources/assets/magic_storage/lang/zh_tw.json`
+- Modify: `src/main/resources/assets/magic_storage/patchouli_books/guide/en_us/entries/*.json`
+- Modify: `scripts/prepare_prism_gui_world.py`
+- Modify: `scripts/run_prism_gui_session.py`
+- Modify: `scripts/test_prepare_prism_gui_world.py`
+- Modify: `scripts/test_static_regressions.py`
+- Modify: `art/texture-generation/20260714-terminal-family/*`
+- Modify: runtime block/control textures selected by the family manifest
+- Modify: `AGENTS.md`, `README.md`, `PLAN.md`, and touched active docs
+
+**RED:** Add dist-neutral, GameTest, and static contracts before production edits. The first run must prove Bottle Energy still exists in enum/Fuel/UI/NBT behavior; legacy conversion/overflow recovery and missing-live-energy reset are absent; Import Bus has no all-side stable insert-only capability; popup ordering, neutral no-recipe state, station badge, destination icon, concise localized tooltips, even-grid Name A, role differentiation, direction grammar, and symmetry are not satisfied. Record the focused failures, then separately change the GUI-lab/checklist tests to reject `bottle_fuel` and confirm the generated baseline/checklist still fail.
+
+**GREEN:** Remove Bottle Energy from live enum, fuel mappings, targets, labels, guide, and test world. Preserve the existing 100-data-slot menu wire with one retired zero-filled four-word region. Migrate legacy NBT one-for-one into plain Glass Bottles and keep any `Long.MAX_VALUE` collision in an escrow that drains as bottle count space opens; defer refill until the outermost mutation batch ends so crafting commit/rollback remains atomic. Register one stable Import Bus item handler on all faces/null side; it accepts insert only, never stores a stack, never mutates caller input, follows Core simulate-then-commit exact remainder semantics, and shares the active path's 10-tick missing-Core negative cache while the original front pull remains. Render the Fuel popup once after container foreground; show a neutral no-recipe state, one dim lower-right station badge, and destination-specific player-head/Core icons; remove interaction-hint text and keep all runtime keys at exact English/Traditional-Chinese parity. Revise the 16×16 family with fixed revision seeds, x-axis symmetry, stronger terminal/tier differentiation, and cyan-in/orange-out bus grammar. Run every focused test and then the complete gates.
+
+**Visual boundary:** Static pixel/geometry tests cannot approve actual Minecraft appearance. Run the deployed 0.1.17 through `crafting-fuel-page`, stop at `MS_GUI_TEST_READY`, and let the user verify fullscreen popup layering, recipe station/no-recipe/output icons, centered controls, and the differentiated symmetric block/bus family.
+
+**Commit:** `feat: refine fuel automation and terminal visuals`
+
 ## Completion boundary
 
-Automated completion requires every task commit and every final gate above to pass. GUI completion remains pending until the user records a current-run fullscreen verdict. Do not claim EMI/no-EMI or visual behavior from dedicated GameTests alone.
+Automated completion requires every task commit and every final gate above to pass. GUI completion remains pending until the user records a current-run fullscreen verdict. Do not claim EMI client rendering, EMI-absent dedicated-server classloading, or visual behavior from dedicated GameTests alone.

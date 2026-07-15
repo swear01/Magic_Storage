@@ -68,11 +68,12 @@ public class RemoteTerminalItem extends Item {
 
             player.openMenu(new SimpleMenuProvider(
                     (containerId, inv, p) -> new CraftingTerminalMenu(containerId, inv, core, core.getBlockPos(), true),
-                    Component.translatable("container.magic_storage.crafting_terminal")
+                    Component.translatable("container.magic_storage.remote_terminal")
             ), buf -> {
                 buf.writeBlockPos(core.getBlockPos());
                 buf.writeBlockPos(core.getBlockPos());
                 buf.writeBoolean(true);
+                MachineEnergyTable.writeSnapshot(buf, MachineEnergyTable.entries());
             });
         }
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());

@@ -91,5 +91,5 @@ Before this task is complete:
 1. Bump and deploy exactly 0.1.15 through `python3 scripts/deploy_prism_dev.py` so the version increase and jar replacement remain transactional.
 2. Pass `./gradlew build`, `./gradlew runGameTestServer`, Python unittest discovery, `./gradlew runData`, JSON parsing, datagen drift, and pre-push review on the final tree.
 3. Launch `crafting-fuel-page` through the offline native Prism runner and hand control to the user.
-4. The user must enter native fullscreen and verify two Installed Stations rows, the occupied lower-right Fuel control panel, the recipe workspace, × buttons, focus clearing, all relevant tooltips, and the new 16×16 world/item textures.
+4. The runner must start in automatic Minecraft F11 fullscreen; the user verifies the gate, two Installed Stations rows, the occupied lower-right Fuel control panel, the recipe workspace, × buttons, focus clearing, all relevant tooltips, and the new 16×16 world/item textures. macOS native fullscreen is forbidden.
 5. Do not mark GUI verified until that user verdict is recorded.

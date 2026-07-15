@@ -966,6 +966,8 @@ public class BehavioralTests {
         var machinesTag = new CompoundTag();
         machinesTag.put("Items", items);
         var root = new CompoundTag();
+        core.saveAdditional(root, helper.getLevel().registryAccess());
+        root.remove("machineDescriptors");
         root.put("machines", machinesTag);
         core.loadAdditional(root, helper.getLevel().registryAccess());
     }

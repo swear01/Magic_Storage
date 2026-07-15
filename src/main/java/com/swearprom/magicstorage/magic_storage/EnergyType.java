@@ -11,8 +11,7 @@ public enum EnergyType {
     CAMPFIRE_ENERGY("campfire_energy", true, Items.CAMPFIRE),
     BREW_ENERGY("brew_energy", true, Items.BREWING_STAND),
     FURNACE_FUEL("furnace_fuel", false, Items.COAL),
-    BLAZE_FUEL("blaze_fuel", false, Items.BLAZE_ROD),
-    BOTTLE_FUEL("bottle_fuel", false, Items.GLASS_BOTTLE);
+    BLAZE_FUEL("blaze_fuel", false, Items.BLAZE_ROD);
 
     private final String id;
     private final boolean machineGenerated;

@@ -20,8 +20,6 @@ public final class FuelTable {
     static {
         add(Items.BLAZE_POWDER, new FuelValue(EnergyType.BLAZE_FUEL, 600));
         add(Items.BLAZE_ROD, new FuelValue(EnergyType.BLAZE_FUEL, 1200));
-        add(Items.GLASS_BOTTLE, new FuelValue(EnergyType.BOTTLE_FUEL, 1));
-        add(Items.POTION, new FuelValue(EnergyType.BOTTLE_FUEL, 1));
     }
 
     private static void add(Item item, FuelValue... values) {

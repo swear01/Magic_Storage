@@ -22,9 +22,57 @@ public class ImportBusBlockEntity extends BlockEntity {
     private StorageCoreBlockEntity cachedCore;
     private List<BlockPos> cachedPath = List.of();
     private int cooldown = 0;
+    private long nextCoreSearchTick = Long.MIN_VALUE;
+    private final IItemHandler passiveItemHandler = new IItemHandler() {
+        @Override
+        public int getSlots() {
+            return 1;
+        }
+
+        @Override
+        public ItemStack getStackInSlot(int slot) {
+            return ItemStack.EMPTY;
+        }
+
+        @Override
+        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+            if (slot != 0 || stack.isEmpty() || level == null || level.isClientSide()) return stack.copy();
+            StorageCoreBlockEntity core = resolveCore();
+            if (core == null || core.isConflicted()) return stack.copy();
+            Actor actor = Actor.bus(getBlockPos());
+            ItemStack probe = stack.copy();
+            long accepted = core.insertItem(probe, Action.SIMULATE, actor);
+            if (accepted <= 0) return stack.copy();
+            if (!simulate) {
+                ItemStack committed = stack.copyWithCount((int) Math.min(accepted, stack.getCount()));
+                accepted = core.insertItem(committed, Action.EXECUTE, actor);
+            }
+            if (accepted >= stack.getCount()) return ItemStack.EMPTY;
+            return stack.copyWithCount(stack.getCount() - (int) accepted);
+        }
+
+        @Override
+        public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            return ItemStack.EMPTY;
+        }
+
+        @Override
+        public int getSlotLimit(int slot) {
+            return 64;
+        }
+
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+            return slot == 0 && !stack.isEmpty();
+        }
+    };
 
     public ImportBusBlockEntity(BlockPos pos, BlockState state) {
         super(MagicStorage.IMPORT_BUS_BE.get(), pos, state);
+    }
+
+    IItemHandler passiveItemHandler() {
+        return passiveItemHandler;
     }
 
     public void tick() {
@@ -86,6 +134,11 @@ public class ImportBusBlockEntity extends BlockEntity {
             cachedPath = MagicStorage.findLoadedNetworkPath(level, getBlockPos(), cachedCore.getBlockPos());
             if (!cachedPath.isEmpty()) return cachedCore;
         }
+        cachedCore = null;
+        cachedPath = List.of();
+        corePos = null;
+        long gameTime = level.getGameTime();
+        if (gameTime < nextCoreSearchTick) return null;
         cachedCore = MagicStorage.bfsFindCore(level, getBlockPos());
         if (cachedCore != null && !cachedCore.getConnectedBlocks().contains(getBlockPos())) {
             cachedCore = null;
@@ -95,6 +148,7 @@ public class ImportBusBlockEntity extends BlockEntity {
                 : List.of();
         if (cachedCore != null && cachedPath.isEmpty()) cachedCore = null;
         corePos = cachedCore != null ? cachedCore.getBlockPos() : null;
+        nextCoreSearchTick = cachedCore == null ? gameTime + COOLDOWN_TICKS : Long.MIN_VALUE;
         return cachedCore;
     }
 

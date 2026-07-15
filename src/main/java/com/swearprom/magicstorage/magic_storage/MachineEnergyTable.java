@@ -1,11 +1,17 @@
 package com.swearprom.magicstorage.magic_storage;
 
-import net.minecraft.world.item.Item;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
-import java.util.function.Predicate;
+import java.util.Set;
 
 public final class MachineEnergyTable {
     public enum Category {
@@ -24,76 +30,212 @@ public final class MachineEnergyTable {
     public static final int SMITHING_TABLE_SLOT = 7;
     public static final int AXE_SLOT = 8;
 
-    public record Entry(
-            Item machine,
-            EnergyType energyType,
-            int energyPerTick,
-            Category category,
-            Predicate<ItemStack> matcher
-    ) {
-        public boolean accepts(ItemStack stack) {
-            return !stack.isEmpty() && matcher.test(stack);
-        }
+    public static final ResourceLocation FURNACE_ID = id("furnace");
+    public static final ResourceLocation BLAST_FURNACE_ID = id("blast_furnace");
+    public static final ResourceLocation SMOKER_ID = id("smoker");
+    public static final ResourceLocation CAMPFIRE_ID = id("campfire");
+    public static final ResourceLocation BREWING_STAND_ID = id("brewing_stand");
+    public static final ResourceLocation CRAFTING_TABLE_ID = id("crafting_table");
+    public static final ResourceLocation STONECUTTER_ID = id("stonecutter");
+    public static final ResourceLocation SMITHING_TABLE_ID = id("smithing_table");
+    public static final ResourceLocation AXE_ID = id("axe");
 
-        public boolean generatesEnergy() {
-            return energyType != null && energyPerTick > 0;
-        }
-
-        public int maxInstalledCount() {
-            return switch (category) {
-                case PROCESS -> 64;
-                case INSTANT -> 1;
-                case CONSUMABLE -> 0;
-            };
-        }
-    }
-
-    private static final List<Entry> ENTRIES = List.of(
-            exact(Items.FURNACE, EnergyType.SMELTING_ENERGY, 1, Category.PROCESS),
-            exact(Items.BLAST_FURNACE, EnergyType.BLASTING_ENERGY, 1, Category.PROCESS),
-            exact(Items.SMOKER, EnergyType.SMOKING_ENERGY, 1, Category.PROCESS),
-            exact(Items.CAMPFIRE, EnergyType.CAMPFIRE_ENERGY, 1, Category.PROCESS),
-            exact(Items.BREWING_STAND, EnergyType.BREW_ENERGY, 1, Category.PROCESS),
-            exact(Items.CRAFTING_TABLE, null, 0, Category.INSTANT),
-            exact(Items.STONECUTTER, null, 0, Category.INSTANT),
-            exact(Items.SMITHING_TABLE, null, 0, Category.INSTANT),
-            new Entry(Items.IRON_AXE, null, 0, Category.CONSUMABLE, AxeEnergy::accepts)
-    );
+    private static final List<ResourceLocation> BUILT_IN_ORDER = List.of(
+            FURNACE_ID,
+            BLAST_FURNACE_ID,
+            SMOKER_ID,
+            CAMPFIRE_ID,
+            BREWING_STAND_ID,
+            CRAFTING_TABLE_ID,
+            STONECUTTER_ID,
+            SMITHING_TABLE_ID,
+            AXE_ID);
+    private static volatile List<MachineDescriptor> cachedEntries;
 
     private MachineEnergyTable() {
     }
 
+    static void registerBuiltIns(DeferredRegister<MachineDescriptor> descriptors) {
+        descriptors.register(FURNACE_ID.getPath(), () -> installable(
+                FURNACE_ID, new ItemStack(Items.FURNACE), EnergyType.SMELTING_ENERGY, 1, Category.PROCESS, 64));
+        descriptors.register(BLAST_FURNACE_ID.getPath(), () -> installable(
+                BLAST_FURNACE_ID, new ItemStack(Items.BLAST_FURNACE), EnergyType.BLASTING_ENERGY, 1, Category.PROCESS, 64));
+        descriptors.register(SMOKER_ID.getPath(), () -> installable(
+                SMOKER_ID, new ItemStack(Items.SMOKER), EnergyType.SMOKING_ENERGY, 1, Category.PROCESS, 64));
+        descriptors.register(CAMPFIRE_ID.getPath(), () -> installable(
+                CAMPFIRE_ID, new ItemStack(Items.CAMPFIRE), EnergyType.CAMPFIRE_ENERGY, 1, Category.PROCESS, 64));
+        descriptors.register(BREWING_STAND_ID.getPath(), () -> installable(
+                BREWING_STAND_ID, new ItemStack(Items.BREWING_STAND), EnergyType.BREW_ENERGY, 1, Category.PROCESS, 64));
+        descriptors.register(CRAFTING_TABLE_ID.getPath(), () -> installable(
+                CRAFTING_TABLE_ID, new ItemStack(Items.CRAFTING_TABLE), null, 0, Category.INSTANT, 1));
+        descriptors.register(STONECUTTER_ID.getPath(), () -> installable(
+                STONECUTTER_ID, new ItemStack(Items.STONECUTTER), null, 0, Category.INSTANT, 1));
+        descriptors.register(SMITHING_TABLE_ID.getPath(), () -> installable(
+                SMITHING_TABLE_ID, new ItemStack(Items.SMITHING_TABLE), null, 0, Category.INSTANT, 1));
+        descriptors.register(AXE_ID.getPath(), () -> MachineDescriptor.consumable(
+                AXE_ID,
+                new ItemStack(Items.IRON_AXE),
+                Ingredient.of(
+                        Items.WOODEN_AXE,
+                        Items.STONE_AXE,
+                        Items.IRON_AXE,
+                        Items.GOLDEN_AXE,
+                        Items.DIAMOND_AXE,
+                        Items.NETHERITE_AXE),
+                stack -> AxeEnergy.isInfinite(stack)
+                        ? new MachineDescriptor.ConsumableAmount(0, true)
+                        : new MachineDescriptor.ConsumableAmount(AxeEnergy.finiteValue(stack), false)));
+    }
+
     public static int size() {
-        return ENTRIES.size();
+        return entries().size();
     }
 
-    public static List<Entry> entries() {
-        return ENTRIES;
+    public static List<MachineDescriptor> entries() {
+        List<MachineDescriptor> cached = cachedEntries;
+        if (cached != null) return cached;
+        synchronized (MachineEnergyTable.class) {
+            cached = cachedEntries;
+            if (cached == null) {
+                cached = buildEntries();
+                cachedEntries = cached;
+            }
+        }
+        return cached;
     }
 
-    public static Entry get(int slot) {
-        return slot >= 0 && slot < ENTRIES.size() ? ENTRIES.get(slot) : null;
+    private static List<MachineDescriptor> buildEntries() {
+        List<MachineDescriptor> ordered = new ArrayList<>();
+        for (ResourceLocation id : BUILT_IN_ORDER) {
+            MachineDescriptor descriptor = MagicStorage.MACHINE_DESCRIPTOR_REGISTRY.get(id);
+            if (descriptor == null) {
+                throw new IllegalStateException("Missing built-in machine descriptor: " + id);
+            }
+            validateRegistryId(id, descriptor);
+            ordered.add(descriptor);
+        }
+        MagicStorage.MACHINE_DESCRIPTOR_REGISTRY.entrySet().stream()
+                .filter(entry -> !BUILT_IN_ORDER.contains(entry.getKey().location()))
+                .sorted(Comparator.comparing(entry -> entry.getKey().location().toString()))
+                .forEach(entry -> {
+                    validateRegistryId(entry.getKey().location(), entry.getValue());
+                    ordered.add(entry.getValue());
+                });
+        if (ordered.size() > MachineDescriptorApi.MAX_DESCRIPTORS) {
+            throw new IllegalStateException("Registered " + ordered.size()
+                    + " machine descriptors; maximum is " + MachineDescriptorApi.MAX_DESCRIPTORS);
+        }
+        return List.copyOf(ordered);
+    }
+
+    public static MachineDescriptor get(int slot) {
+        List<MachineDescriptor> entries = entries();
+        return slot >= 0 && slot < entries.size() ? entries.get(slot) : null;
+    }
+
+    public static MachineDescriptor get(ResourceLocation id) {
+        MachineDescriptor descriptor = MagicStorage.MACHINE_DESCRIPTOR_REGISTRY.get(id);
+        if (descriptor != null) validateRegistryId(id, descriptor);
+        return descriptor;
     }
 
     public static int findSlot(ItemStack stack) {
-        for (int slot = 0; slot < ENTRIES.size(); slot++) {
-            if (ENTRIES.get(slot).accepts(stack)) return slot;
+        List<MachineDescriptor> entries = entries();
+        for (int slot = 0; slot < entries.size(); slot++) {
+            if (entries.get(slot).accepts(stack)) return slot;
+        }
+        return -1;
+    }
+
+    public static int findSlot(ResourceLocation descriptorId) {
+        List<MachineDescriptor> entries = entries();
+        for (int slot = 0; slot < entries.size(); slot++) {
+            if (entries.get(slot).id().equals(descriptorId)) return slot;
         }
         return -1;
     }
 
     public static boolean isInstalled(StorageCoreBlockEntity core, int slot) {
-        Entry entry = get(slot);
-        return core != null && entry != null && entry.maxInstalledCount() > 0
-                && entry.accepts(core.getMachineContainer().getItem(slot));
+        MachineDescriptor descriptor = get(slot);
+        return core != null && descriptor != null && descriptor.maxInstalledCount() > 0
+                && descriptor.accepts(core.getMachineContainer().getItem(slot));
     }
 
-    private static Entry exact(
-            Item item,
+    public static void writeSnapshot(RegistryFriendlyByteBuf buf, List<MachineDescriptor> descriptors) {
+        if (descriptors.size() > MachineDescriptorApi.MAX_DESCRIPTORS) {
+            throw new IllegalArgumentException("Too many machine descriptors: " + descriptors.size());
+        }
+        buf.writeVarInt(descriptors.size());
+        Set<ResourceLocation> ids = new HashSet<>();
+        for (MachineDescriptor descriptor : descriptors) {
+            if (!ids.add(descriptor.id())) {
+                throw new IllegalArgumentException("Duplicate machine descriptor: " + descriptor.id());
+            }
+            buf.writeResourceLocation(descriptor.id());
+            ItemStack.STREAM_CODEC.encode(buf, descriptor.representativeStack());
+            Ingredient.CONTENTS_STREAM_CODEC.encode(buf, descriptor.acceptedItems());
+            buf.writeEnum(descriptor.category());
+            buf.writeVarInt(descriptor.maxInstalledCount());
+            buf.writeBoolean(descriptor.energyType() != null);
+            if (descriptor.energyType() != null) buf.writeEnum(descriptor.energyType());
+            buf.writeVarInt(descriptor.energyPerTick());
+        }
+    }
+
+    public static List<MachineDescriptor> readSnapshot(RegistryFriendlyByteBuf buf) {
+        int count = buf.readVarInt();
+        if (count < 0 || count > MachineDescriptorApi.MAX_DESCRIPTORS) {
+            throw new IllegalArgumentException("Invalid machine descriptor count: " + count);
+        }
+        List<MachineDescriptor> descriptors = new ArrayList<>(count);
+        Set<ResourceLocation> ids = new HashSet<>();
+        for (int i = 0; i < count; i++) {
+            ResourceLocation id = buf.readResourceLocation();
+            if (!ids.add(id)) throw new IllegalArgumentException("Duplicate machine descriptor: " + id);
+            ItemStack representative = ItemStack.STREAM_CODEC.decode(buf);
+            Ingredient acceptedItems = Ingredient.CONTENTS_STREAM_CODEC.decode(buf);
+            Category category = buf.readEnum(Category.class);
+            int maxInstalledCount = buf.readVarInt();
+            EnergyType energyType = buf.readBoolean() ? buf.readEnum(EnergyType.class) : null;
+            int energyPerTick = buf.readVarInt();
+            descriptors.add(MachineDescriptor.clientSynced(
+                    id,
+                    representative,
+                    acceptedItems,
+                    category,
+                    maxInstalledCount,
+                    energyType,
+                    energyPerTick));
+        }
+        return List.copyOf(descriptors);
+    }
+
+    private static MachineDescriptor installable(
+            ResourceLocation id,
+            ItemStack representative,
             EnergyType energyType,
             int energyPerTick,
-            Category category
+            Category category,
+            int maxInstalledCount
     ) {
-        return new Entry(item, energyType, energyPerTick, category, stack -> stack.is(item));
+        return MachineDescriptor.installable(
+                id,
+                representative,
+                Ingredient.of(representative.getItem()),
+                category,
+                maxInstalledCount,
+                energyType,
+                energyPerTick);
+    }
+
+    private static void validateRegistryId(ResourceLocation registryId, MachineDescriptor descriptor) {
+        if (!registryId.equals(descriptor.id())) {
+            throw new IllegalStateException("Machine descriptor registry id " + registryId
+                    + " does not match declared id " + descriptor.id());
+        }
+    }
+
+    private static ResourceLocation id(String path) {
+        return ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, path);
     }
 }

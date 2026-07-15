@@ -260,5 +260,5 @@ The runner opens the offline native client and hands control to the user. It doe
 - Full client-side mirror of the network inventory for EMI synthetic favorites.
 - Smithing Trim, dynamic/context-dependent transformations, or production brewing support. Exact component-preserving Smithing Transform is covered by the 0.1.15 extension.
 - Saved-data ID migration or removal of Brew/Bottle reserved pools.
-- Runtime third-party machine/energy descriptor registration in 0.1.15. The count-driven two-row UI, control panel, cycle selector, and later bounded list popup are ready for varying descriptor counts, but a safe cross-mod API still needs server-owned registration, client synchronization, and fixed menu parity/migration design.
+- Runtime third-party machine/energy descriptor registration in 0.1.15. This was intentionally outside this revision; the later server-owned registry, client synchronization, fixed 256-slot parity, and stable-ID migration contract is now implemented and documented in `docs/machine-descriptor-api.md`.
 - A new GUI library or copied third-party assets/source.
