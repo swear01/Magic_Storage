@@ -76,6 +76,10 @@ def minimal_level_dat(level_name="New World", allow_commands=0, include_worldgen
 
 
 class PreparePrismGuiWorldTests(unittest.TestCase):
+    @staticmethod
+    def display_mode(mod):
+        return lambda: mod.DisplayMode(1470, 956, 2940, 1912, 60, 24)
+
     def load_script(self):
         self.assertTrue(SCRIPT_PATH.exists(), "missing scripts/prepare_prism_gui_world.py")
         spec = importlib.util.spec_from_file_location("prepare_prism_gui_world", SCRIPT_PATH)
@@ -429,7 +433,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             (source / "region").mkdir()
             (minecraft_dir / "options.txt").write_text("fullscreen:true\n")
 
-            first = mod.prepare_world(minecraft_dir)
+            first = mod.prepare_world(minecraft_dir, display_mode_func=self.display_mode(mod))
             target = minecraft_dir / "saves" / "MagicStorageGuiTest"
             self.assertEqual(str(target.resolve()), first["world_dir"])
             self.assertTrue((target / ".magic_storage_gui_test_world").exists())
@@ -444,7 +448,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
 
             stale = target / "stale.txt"
             stale.write_text("old generated state")
-            second = mod.prepare_world(minecraft_dir)
+            second = mod.prepare_world(minecraft_dir, display_mode_func=self.display_mode(mod))
             self.assertEqual(str(target.resolve()), second["world_dir"])
             self.assertFalse(stale.exists())
 
@@ -452,7 +456,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             target.mkdir()
             (target / "level.dat").write_bytes(minimal_level_dat("Personal World"))
             with self.assertRaisesRegex(RuntimeError, "not marked"):
-                mod.prepare_world(minecraft_dir)
+                mod.prepare_world(minecraft_dir, display_mode_func=self.display_mode(mod))
 
     def test_prepare_world_strips_all_copied_runtime_state_without_mutating_source(self):
         mod = self.load_script()
@@ -479,7 +483,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 (source / relative).write_text(relative)
             (minecraft_dir / "options.txt").write_text("fullscreen:true\n")
 
-            manifest = mod.prepare_world(minecraft_dir)
+            manifest = mod.prepare_world(minecraft_dir, display_mode_func=self.display_mode(mod))
 
             target = minecraft_dir / "saves" / "MagicStorageGuiTest"
             for relative in directory_paths:
@@ -514,7 +518,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             mod.world_has_open_files = lambda path: path == target.resolve()
             try:
                 with self.assertRaisesRegex(RuntimeError, "appears to be open"):
-                    mod.prepare_world(minecraft_dir)
+                    mod.prepare_world(minecraft_dir, display_mode_func=self.display_mode(mod))
             finally:
                 mod.world_has_open_files = original_checker
             self.assertEqual("keep", stale.read_text())
@@ -578,7 +582,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             mod.world_has_open_files = lambda path: False
             try:
                 with self.assertRaises(gzip.BadGzipFile):
-                    mod.prepare_world(minecraft_dir)
+                    mod.prepare_world(minecraft_dir, display_mode_func=self.display_mode(mod))
             finally:
                 mod.world_has_open_files = original_checker
 
@@ -610,7 +614,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             mod.install_datapack = lambda world_dir: (_ for _ in ()).throw(OSError("manifest failed"))
             try:
                 with self.assertRaisesRegex(OSError, "manifest failed"):
-                    mod.prepare_world(minecraft_dir)
+                    mod.prepare_world(minecraft_dir, display_mode_func=self.display_mode(mod))
             finally:
                 mod.install_datapack = original_installer
                 mod.world_has_open_files = original_checker
