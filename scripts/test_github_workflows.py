@@ -35,7 +35,7 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("build/libs/magic_storage-*.jar", text)
         self.assertIn("contents: read", text)
         self.assertIn("Verify minimum and latest compatible EMI API", text)
-        self.assertIn("MIN_EMI=\"$(sed -n 's/^emi_version=//p' gradle.properties)\"", text)
+        self.assertIn('MIN_EMI="$(sed -n \'s/^emi_version=//p\' gradle.properties)"', text)
         self.assertIn('LATEST_EMI="$(python3 scripts/resolve_emi_version.py)"', text)
         self.assertIn('-Pemi_version="$MIN_EMI"', text)
         self.assertIn('-Pemi_version="$LATEST_EMI"', text)
@@ -70,7 +70,7 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("build/libs/magic_storage-*.jar", text)
         self.assertIn("GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}", text)
         self.assertIn("Verify minimum and latest compatible EMI API", text)
-        self.assertIn("MIN_EMI=\"$(sed -n 's/^emi_version=//p' gradle.properties)\"", text)
+        self.assertIn('MIN_EMI="$(sed -n \'s/^emi_version=//p\' gradle.properties)"', text)
         self.assertIn('LATEST_EMI="$(python3 scripts/resolve_emi_version.py)"', text)
         self.assertIn('-Pemi_version="$MIN_EMI"', text)
         self.assertIn('-Pemi_version="$LATEST_EMI"', text)
@@ -102,14 +102,13 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("All Rights Reserved", readme)
         self.assertIn(".github/workflows/", structure)
 
-    def test_release_examples_match_current_mod_version(self):
-        properties = self.read_required("gradle.properties")
-        version = next(line.split("=", 1)[1] for line in properties.splitlines() if line.startswith("mod_version="))
+    def test_release_examples_derive_current_mod_version(self):
         readme = self.read_required("README.md")
         notes = self.read_required("docs/notes.md")
-        self.assertIn(f"git tag v{version}", readme)
-        self.assertIn(f"git push origin main v{version}", readme)
-        self.assertIn(f"目前版本 {version}", notes)
+        self.assertIn('version="$(sed -n \'s/^mod_version=//p\' gradle.properties)"', readme)
+        self.assertIn('git tag "v${version}"', readme)
+        self.assertIn('git push origin main "v${version}"', readme)
+        self.assertIn("目前版本以 `gradle.properties` 的唯一 `mod_version` 為準", notes)
 
     def test_current_manual_gui_log_check_does_not_pin_historical_version_or_selftest_total(self):
         notes = self.read_required("docs/notes.md")
