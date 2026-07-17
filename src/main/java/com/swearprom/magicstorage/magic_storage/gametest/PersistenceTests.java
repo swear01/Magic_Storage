@@ -26,6 +26,19 @@ import java.util.UUID;
 public class PersistenceTests {
 
     @GameTest(template = "platform")
+    public static void core_persistence_contract_is_repository_owned_and_segmented(GameTestHelper helper) {
+        if (!CoreStorageRepository.DATA_NAME.equals("magic_storage_core_storages")) {
+            helper.fail("Core storage repository must use the approved world data name");
+            return;
+        }
+        if (CoreStorageRecord.MAX_SEGMENT_TYPES != 63) {
+            helper.fail("Core storage records must use 63-type persistence segments");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
     public static void storage_core_can_always_be_harvested_without_losing_its_drop(GameTestHelper helper) {
         if (MagicStorage.STORAGE_CORE.get().defaultBlockState().requiresCorrectToolForDrops()) {
             helper.fail("Storage Core must not delete contents when broken without the preferred tool");

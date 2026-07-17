@@ -2263,6 +2263,34 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertEqual("Remote Terminal", en_us["container.magic_storage.remote_terminal"])
         self.assertEqual("遠端終端機", zh_tw["container.magic_storage.remote_terminal"])
 
+    def test_core_payload_is_owned_by_bounded_world_repository(self):
+        repository = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRepository.java"
+        )
+        record = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRecord.java"
+        )
+        core = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
+        )
+        block = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlock.java"
+        )
+
+        self.assertIn('DATA_NAME = MagicStorage.MODID + "_core_storages"', repository)
+        self.assertIn("extends SavedData", repository)
+        self.assertRegex(record, r"MAX_SEGMENT_TYPES\s*=\s*63")
+        self.assertIn('TAG_INVENTORY_SEGMENTS = "inventorySegments"', record)
+        self.assertIn('TAG_STORAGE_ID = "storageId"', core)
+        self.assertIn('TAG_STORAGE_SCHEMA = "storageSchema"', core)
+        self.assertNotIn('tag.put("inventory"', core)
+        self.assertNotIn('tag.put("energy"', core)
+        self.assertNotIn("BlockItem.setBlockEntityData", block)
+        self.assertFalse((ROOT / (
+            "src/main/java/com/swearprom/magicstorage/magic_storage/"
+            "CoreRecoverySavedData.java"
+        )).exists())
+
     def test_texture_family_encodes_distinct_roles_direction_and_declared_symmetry(self):
         art = ROOT / "art/texture-generation/20260714-terminal-family"
         manifest = json.loads((art / "selection.json").read_text())
