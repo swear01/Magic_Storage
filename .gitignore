@@ -7,6 +7,7 @@ out/
 .idea/
 *.iml
 .vscode/
+.worktrees/
 
 # NeoForge / Minecraft run dirs
 run/
