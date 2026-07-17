@@ -86,8 +86,16 @@ final class WrenchActions {
         if (breakEvent.isCanceled()) return false;
 
         BlockEntity blockEntity = level.getBlockEntity(pos);
-        if (blockEntity instanceof StorageCoreBlockEntity core && core.hasRecoverableContents()) {
-            core.prepareRecoveryDrop(level, player.getUUID());
+        if (blockEntity instanceof StorageCoreBlockEntity core) {
+            if (!core.isStorageAvailable()) {
+                player.displayClientMessage(
+                        net.minecraft.network.chat.Component.translatable(
+                                "msg.magic_storage.core_storage_unavailable"), true);
+                return false;
+            }
+            if (core.hasRecoverableContents()) {
+                core.prepareRecoveryDrop(level, player.getUUID());
+            }
         }
         ItemStack tool = player.getMainHandItem().copy();
         List<ItemStack> drops = level.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS)

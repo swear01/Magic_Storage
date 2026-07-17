@@ -61,40 +61,58 @@ final class CoreStorageRepository extends SavedData {
 
     static CoreStorageRepository load(CompoundTag tag, HolderLookup.Provider registries) {
         CoreStorageRepository repository = new CoreStorageRepository();
+        Map<UUID, CompoundTag> decodedSources = new HashMap<>();
+        ListTag storages = compoundList(tag, TAG_STORAGES);
+        ListTag recoveryTags = compoundList(tag, TAG_RECOVERIES);
         if (!tag.contains(TAG_SCHEMA_VERSION, Tag.TAG_INT)
                 || tag.getInt(TAG_SCHEMA_VERSION) != SCHEMA_VERSION
-                || !tag.contains(TAG_STORAGES, Tag.TAG_LIST)
-                || !tag.contains(TAG_RECOVERIES, Tag.TAG_LIST)) {
+                || storages == null
+                || recoveryTags == null) {
             repository.unsupportedRoot = tag.copy();
+            MagicStorage.LOGGER.error(
+                    "Unsupported Core storage repository root; preserving raw NBT");
             return repository;
         }
 
-        ListTag storages = tag.getList(TAG_STORAGES, Tag.TAG_COMPOUND);
         for (int index = 0; index < storages.size(); index++) {
             CompoundTag raw = storages.getCompound(index).copy();
             CoreStorageRecord.LoadResult result = CoreStorageRecord.load(raw, registries);
             UUID storageId = result.storageId();
             if (storageId == null) {
                 repository.orphanRecords.add(raw);
+                MagicStorage.LOGGER.error(
+                        "Orphan Core storage record at index {}: {}",
+                        index,
+                        result.error());
                 continue;
             }
             if (repository.records.containsKey(storageId)
                     || repository.corruptRecords.containsKey(storageId)) {
-                repository.moveDuplicateToCorrupt(storageId, raw, registries);
+                MagicStorage.LOGGER.error(
+                        "Duplicate Core storage record at index {} for storageId={}; preserving all copies as unavailable data",
+                        index,
+                        storageId);
+                repository.moveDuplicateToCorrupt(
+                        storageId, raw, decodedSources.remove(storageId));
                 continue;
             }
             if (!result.success()) {
                 repository.corruptRecords
                         .computeIfAbsent(storageId, ignored -> new ArrayList<>())
                         .add(raw);
+                MagicStorage.LOGGER.error(
+                        "Corrupt Core storage record at index {} for storageId={}: {}",
+                        index,
+                        storageId,
+                        result.error());
                 continue;
             }
             CoreStorageRecord record = result.record();
             record.setDirtyCallback(repository::setDirty);
             repository.records.put(storageId, record);
+            decodedSources.put(storageId, raw);
         }
 
-        ListTag recoveryTags = tag.getList(TAG_RECOVERIES, Tag.TAG_COMPOUND);
         for (int index = 0; index < recoveryTags.size(); index++) {
             CompoundTag raw = recoveryTags.getCompound(index).copy();
             Recovery recovery = decodeRecovery(raw);
@@ -102,6 +120,9 @@ final class CoreStorageRepository extends SavedData {
                     || repository.recoveries.containsKey(recovery.id())
                     || repository.recoveryByStorage.containsKey(recovery.storageId())) {
                 repository.unresolvedRecoveries.add(raw);
+                MagicStorage.LOGGER.error(
+                        "Unresolved Core recovery entry at index {}; preserving raw NBT",
+                        index);
                 continue;
             }
             repository.recoveries.put(recovery.id(), recovery);
@@ -110,22 +131,36 @@ final class CoreStorageRepository extends SavedData {
         return repository;
     }
 
+    private static ListTag compoundList(CompoundTag tag, String key) {
+        if (!(tag.get(key) instanceof ListTag list)) {
+            return null;
+        }
+        return list.isEmpty() || list.getElementType() == Tag.TAG_COMPOUND ? list : null;
+    }
+
     private void moveDuplicateToCorrupt(
             UUID storageId,
             CompoundTag duplicate,
-            HolderLookup.Provider registries
+            CompoundTag decodedSource
     ) {
         List<CompoundTag> entries = corruptRecords.computeIfAbsent(
                 storageId, ignored -> new ArrayList<>());
         CoreStorageRecord decoded = records.remove(storageId);
         if (decoded != null) {
-            entries.add(decoded.save(registries));
+            entries.add(java.util.Objects.requireNonNull(decodedSource, "decodedSource").copy());
         }
-        entries.add(duplicate);
+        entries.add(duplicate.copy());
     }
 
     CoreStorageRecord createFresh(CoreLocation location, UUID ownerToken) {
-        requireWritableRoot();
+        return tryCreateFresh(location, ownerToken).orElseThrow(
+                () -> new IllegalStateException("Core storage repository schema is unavailable"));
+    }
+
+    Optional<CoreStorageRecord> tryCreateFresh(CoreLocation location, UUID ownerToken) {
+        if (unsupportedRoot != null) {
+            return Optional.empty();
+        }
         UUID storageId;
         do {
             storageId = UUID.randomUUID();
@@ -135,7 +170,7 @@ final class CoreStorageRepository extends SavedData {
         records.put(storageId, record);
         attachments.put(storageId, new Attachment(location, ownerToken));
         setDirty();
-        return record;
+        return Optional.of(record);
     }
 
     AttachResult attachExisting(UUID storageId, CoreLocation location, UUID ownerToken) {
@@ -359,8 +394,15 @@ final class CoreStorageRepository extends SavedData {
 
     private static Recovery decodeRecovery(CompoundTag tag) {
         if (!tag.hasUUID(TAG_ID) || !tag.hasUUID(TAG_STORAGE_ID)
+                || tag.contains(TAG_OWNER) && !tag.hasUUID(TAG_OWNER)
+                || !tag.contains(TAG_TYPE_COUNT, Tag.TAG_INT)
+                || !tag.contains(TAG_ITEM_COUNT, Tag.TAG_LONG)
+                || !tag.contains(TAG_CREATED_AT, Tag.TAG_LONG)
                 || !tag.contains(TAG_ORIGIN_DIMENSION, Tag.TAG_STRING)
-                || !tag.contains(TAG_ORIGIN_POS, Tag.TAG_LONG)) {
+                || !tag.contains(TAG_ORIGIN_POS, Tag.TAG_LONG)
+                || tag.getInt(TAG_TYPE_COUNT) < 0
+                || tag.getLong(TAG_ITEM_COUNT) < 0
+                || tag.getLong(TAG_CREATED_AT) < 0) {
             return null;
         }
         ResourceLocation dimensionId = ResourceLocation.tryParse(tag.getString(TAG_ORIGIN_DIMENSION));
@@ -372,8 +414,8 @@ final class CoreStorageRepository extends SavedData {
                 tag.getUUID(TAG_ID),
                 tag.getUUID(TAG_STORAGE_ID),
                 tag.hasUUID(TAG_OWNER) ? tag.getUUID(TAG_OWNER) : null,
-                Math.max(0, tag.getInt(TAG_TYPE_COUNT)),
-                Math.max(0, tag.getLong(TAG_ITEM_COUNT)),
+                tag.getInt(TAG_TYPE_COUNT),
+                tag.getLong(TAG_ITEM_COUNT),
                 tag.getLong(TAG_CREATED_AT),
                 new CoreLocation(dimension, BlockPos.of(tag.getLong(TAG_ORIGIN_POS))));
     }
@@ -381,12 +423,6 @@ final class CoreStorageRepository extends SavedData {
     private void removeRecovery(Recovery recovery) {
         recoveries.remove(recovery.id());
         recoveryByStorage.remove(recovery.storageId(), recovery.id());
-    }
-
-    private void requireWritableRoot() {
-        if (unsupportedRoot != null) {
-            throw new IllegalStateException("Core storage repository schema is unavailable");
-        }
     }
 
     enum AttachFailure {

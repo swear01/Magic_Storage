@@ -3,19 +3,13 @@ package com.swearprom.magicstorage.magic_storage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
-import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -26,67 +20,43 @@ import java.util.function.Predicate;
 
 public class StorageCoreBlockEntity extends BlockEntity {
 
-    private static final String TAG_NETWORK_ID = "networkId";
-    private static final String TAG_MACHINES = "machines";
-    private static final String TAG_MACHINE_DESCRIPTORS = "machineDescriptors";
-    private static final String TAG_DESCRIPTOR_CONSUMABLES = "descriptorConsumables";
-    private static final String TAG_AXE_ENERGY = "axeEnergy";
-    private static final String TAG_INFINITE_AXE_ENERGY = "infiniteAxeEnergy";
-    private static final String LEGACY_BOTTLE_FUEL_ID = "bottle_fuel";
+    private static final String TAG_STORAGE_ID = "storageId";
+    private static final String TAG_STORAGE_SCHEMA = "storageSchema";
+    private static final int STORAGE_SCHEMA = 1;
 
     private final Set<BlockPos> connectedBlocks = new HashSet<>();
-    private UUID networkId = UUID.randomUUID();
+    private final UUID attachmentToken = UUID.randomUUID();
+    private UUID storageId;
+    private int storageSchema;
+    private CoreStorageRecord storageRecord;
+    private StorageAvailability storageAvailability = StorageAvailability.UNINITIALIZED;
+    private UUID networkId;
     private boolean conflicted = false;
     private long topologyRevision;
     private int totalTypeSlots = 0;
     private int typeCount = 0;
     private long machineRevision;
-    private final Map<ResourceLocation, Long> descriptorAmounts = new HashMap<>();
-    private final Set<ResourceLocation> infiniteDescriptors = new HashSet<>();
-    private final List<CompoundTag> unresolvedMachineDescriptors = new ArrayList<>();
-    private final List<CompoundTag> unresolvedInventoryEntries = new ArrayList<>();
-    private long legacyBottleFuel;
+    private Map<ResourceLocation, Long> descriptorAmounts = new HashMap<>();
+    private Set<ResourceLocation> infiniteDescriptors = new HashSet<>();
     private UUID preparedRecoveryId;
 
-    // Energy
-    private final Map<EnergyType, Long> energy = new HashMap<>();
-    private final SimpleContainer machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS) {
-        @Override
-        public int getMaxStackSize() {
-            return 64;
-        }
+    private Map<EnergyType, Long> energy = new EnumMap<>(EnergyType.class);
+    private SimpleContainer machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
 
-        @Override
-        public boolean canPlaceItem(int slot, ItemStack stack) {
-            MachineDescriptor descriptor = MachineEnergyTable.get(slot);
-            return descriptor != null && descriptor.maxInstalledCount() > 0 && descriptor.accepts(stack);
-        }
-
-        @Override
-        public void setChanged() {
-            super.setChanged();
-            machineRevision++;
-            StorageCoreBlockEntity.this.setChanged();
-        }
-    };
-
-    // Two-tier inventory index
-    private final Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
+    private Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
     private final Map<ItemKey, Long> flatCache = new HashMap<>();
     private final List<StorageListener> listeners = new ArrayList<>();
     private final List<Runnable> deferredListenerEvents = new ArrayList<>();
     private int mutationBatchDepth;
+    private boolean storageChangedInBatch;
     private boolean cacheDirty = true;
 
     public StorageCoreBlockEntity(BlockPos pos, BlockState state) {
         super(MagicStorage.STORAGE_CORE_BE.get(), pos, state);
-        for (EnergyType type : EnergyType.values()) {
-            energy.put(type, 0L);
-        }
     }
 
     public void tick() {
-        if (level == null || level.isClientSide() || conflicted) return;
+        if (level == null || level.isClientSide() || conflicted || !isStorageAvailable()) return;
         boolean changed = false;
         List<MachineDescriptor> descriptors = MachineEnergyTable.entries();
         for (int slot = 0; slot < descriptors.size(); slot++) {
@@ -102,7 +72,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 changed = true;
             }
         }
-        if (changed) setChanged();
+        if (changed) markStorageChanged();
     }
 
     Container getMachineContainer() {
@@ -138,11 +108,12 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long getDescriptorAmount(ResourceLocation descriptorId) {
+        if (!isStorageAvailable()) return 0;
         return descriptorAmounts.getOrDefault(descriptorId, 0L);
     }
 
     public boolean hasInfiniteDescriptor(ResourceLocation descriptorId) {
-        return infiniteDescriptors.contains(descriptorId);
+        return isStorageAvailable() && infiniteDescriptors.contains(descriptorId);
     }
 
     public boolean hasDescriptorAmount(ResourceLocation descriptorId, long amount) {
@@ -151,7 +122,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public boolean canAddDescriptorConsumable(ResourceLocation descriptorId, ItemStack stack) {
-        if (stack.isEmpty() || conflicted || hasInfiniteDescriptor(descriptorId)) return false;
+        if (stack.isEmpty() || conflicted || !isStorageAvailable()
+                || hasInfiniteDescriptor(descriptorId)) return false;
         MachineDescriptor descriptor = MachineEnergyTable.get(descriptorId);
         if (descriptor == null || descriptor.category() != MachineEnergyTable.Category.CONSUMABLE
                 || !descriptor.accepts(stack)) return false;
@@ -171,7 +143,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         }
         stack.setCount(0);
         machineRevision++;
-        setChanged();
+        markStorageChanged();
         return true;
     }
 
@@ -183,16 +155,16 @@ public class StorageCoreBlockEntity extends BlockEntity {
             else descriptorAmounts.put(descriptorId, remaining);
         }
         machineRevision++;
-        setChanged();
+        markStorageChanged();
         return true;
     }
 
     public long getEnergy(EnergyType type) {
-        return energy.getOrDefault(type, 0L);
+        return isStorageAvailable() ? energy.getOrDefault(type, 0L) : 0;
     }
 
     public boolean consumeEnergy(EnergyCost cost, long multiplier) {
-        if (multiplier <= 0) return false;
+        if (multiplier <= 0 || !isStorageAvailable() || conflicted) return false;
         long processNeed;
         long fuelNeed;
         try {
@@ -209,12 +181,12 @@ public class StorageCoreBlockEntity extends BlockEntity {
         if (cost.fuelType() != cost.processType()) {
             fireEnergyChanged(cost.fuelType(), getEnergy(cost.fuelType()));
         }
-        setChanged();
+        markStorageChanged();
         return true;
     }
 
     public boolean addFuel(ItemStack stack, EnergyType targetPool) {
-        if (stack.isEmpty() || conflicted) return false;
+        if (stack.isEmpty() || conflicted || !isStorageAvailable()) return false;
         List<FuelValue> values = FuelTable.getFuelValues(stack);
         for (FuelValue fv : values) {
             if (fv.pool() == targetPool) {
@@ -229,7 +201,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 energy.put(targetPool, current + amount);
                 stack.setCount(0);
                 fireEnergyChanged(targetPool, current + amount);
-                setChanged();
+                markStorageChanged();
                 return true;
             }
         }
@@ -249,57 +221,180 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public boolean isConflicted() {
-        return conflicted;
+        return conflicted || !isStorageAvailable();
     }
 
     public UUID getNetworkId() {
+        if (!isStorageAvailable()) {
+            throw new IllegalStateException("Core storage data is unavailable at " + getBlockPos());
+        }
         return networkId;
     }
 
     public long getTotalStoredItemCount() {
-        long total = 0;
-        for (var variants : inventory.values()) {
-            for (var entry : variants.object2LongEntrySet()) {
-                long amount = entry.getLongValue();
-                if (total > Long.MAX_VALUE - amount) return Long.MAX_VALUE;
-                total += amount;
-            }
-        }
-        for (CompoundTag unresolved : unresolvedInventoryEntries) {
-            long amount = Math.max(0, unresolved.getLong("count"));
-            if (total > Long.MAX_VALUE - amount) return Long.MAX_VALUE;
-            total += amount;
-        }
-        return total;
+        return storageRecord == null ? 0 : storageRecord.itemCount();
     }
 
     public boolean hasRecoverableContents() {
-        if (!inventory.isEmpty() || !machines.isEmpty() || !descriptorAmounts.isEmpty()
-                || !infiniteDescriptors.isEmpty()
-                || !unresolvedMachineDescriptors.isEmpty()
-                || !unresolvedInventoryEntries.isEmpty()
-                || legacyBottleFuel > 0) return true;
-        for (long amount : energy.values()) {
-            if (amount > 0) return true;
-        }
-        return false;
+        return storageRecord != null && !storageRecord.isEmpty();
     }
 
     UUID prepareRecoveryDrop(ServerLevel serverLevel, UUID owner) {
         if (preparedRecoveryId != null) return preparedRecoveryId;
-        CompoundTag contents = new CompoundTag();
-        saveAdditional(contents, serverLevel.registryAccess());
-        preparedRecoveryId = CoreRecoverySavedData.get(serverLevel).create(
-                contents,
+        if (!isStorageAvailable()) {
+            throw new IllegalStateException("Cannot pack unavailable Core storage at " + getBlockPos());
+        }
+        preparedRecoveryId = CoreStorageRepository.get(serverLevel).prepareRecovery(
+                storageId,
+                location(serverLevel),
+                attachmentToken,
                 owner,
-                typeCount,
-                getTotalStoredItemCount(),
-                serverLevel.getGameTime());
+                serverLevel.getGameTime()).map(CoreStorageRepository.RecoverySummary::id)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Core storage attachment is unavailable while packing " + storageId));
         return preparedRecoveryId;
     }
 
     Optional<UUID> getPreparedRecoveryId() {
         return Optional.ofNullable(preparedRecoveryId);
+    }
+
+    public boolean isStorageAvailable() {
+        return storageAvailability == StorageAvailability.AVAILABLE && storageRecord != null;
+    }
+
+    Optional<UUID> getStorageId() {
+        return Optional.ofNullable(storageId);
+    }
+
+    CoreStorageRecord storageRecordForTesting() {
+        if (storageRecord == null) throw new IllegalStateException("Core storage record is unavailable");
+        return storageRecord;
+    }
+
+    void initializeFreshStorage(ServerLevel serverLevel) {
+        if (isStorageAvailable()) return;
+        if (storageId != null) {
+            attachExistingStorage(serverLevel);
+            return;
+        }
+        Optional<CoreStorageRecord> created = CoreStorageRepository.get(serverLevel)
+                .tryCreateFresh(location(serverLevel), attachmentToken);
+        if (created.isEmpty()) {
+            updateStorageAvailability(StorageAvailability.UNSUPPORTED_REPOSITORY);
+            return;
+        }
+        CoreStorageRecord fresh = created.get();
+        storageId = fresh.storageId();
+        storageSchema = STORAGE_SCHEMA;
+        attachStorage(fresh);
+        super.setChanged();
+    }
+
+    boolean claimRecovery(ServerLevel serverLevel, UUID recoveryId) {
+        if (!isStorageAvailable() || storageId == null || !storageRecord.isEmpty()) return false;
+        CoreStorageRecord temporary = storageRecord;
+        CoreStorageRepository repository = CoreStorageRepository.get(serverLevel);
+        CoreStorageRepository.ClaimResult result = repository.claimIntoFresh(
+                recoveryId, storageId, location(serverLevel), attachmentToken);
+        if (!result.success()) {
+            temporary.clearMachineMutationCallback();
+            if (!repository.removeIfEmpty(storageId, location(serverLevel), attachmentToken)) {
+                repository.release(storageId, location(serverLevel), attachmentToken);
+            }
+            storageRecord = null;
+            networkId = null;
+            energy = new EnumMap<>(EnergyType.class);
+            machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
+            descriptorAmounts = new HashMap<>();
+            infiniteDescriptors = new HashSet<>();
+            inventory = new IdentityHashMap<>();
+            typeCount = 0;
+            cacheDirty = true;
+            updateStorageAvailability(StorageAvailability.from(result.reason()));
+            super.setChanged();
+            return false;
+        }
+        temporary.clearMachineMutationCallback();
+        storageId = result.record().storageId();
+        storageSchema = STORAGE_SCHEMA;
+        attachStorage(result.record());
+        super.setChanged();
+        return true;
+    }
+
+    void removeStorageForBlockRemoval(ServerLevel serverLevel) {
+        if (storageId == null || storageRecord == null) return;
+        CoreStorageRepository repository = CoreStorageRepository.get(serverLevel);
+        if (!repository.removeIfEmpty(storageId, location(serverLevel), attachmentToken)) {
+            repository.release(storageId, location(serverLevel), attachmentToken);
+        }
+        storageRecord.clearMachineMutationCallback();
+        storageRecord = null;
+        storageAvailability = StorageAvailability.UNINITIALIZED;
+    }
+
+    private void attachExistingStorage(ServerLevel serverLevel) {
+        if (storageSchema != STORAGE_SCHEMA) {
+            updateStorageAvailability(StorageAvailability.UNSUPPORTED_REFERENCE);
+            return;
+        }
+        CoreStorageRepository.AttachResult result = CoreStorageRepository.get(serverLevel)
+                .attachExisting(storageId, location(serverLevel), attachmentToken);
+        if (!result.success()) {
+            updateStorageAvailability(StorageAvailability.from(result.reason()));
+            return;
+        }
+        attachStorage(result.record());
+    }
+
+    private void attachStorage(CoreStorageRecord record) {
+        if (storageRecord != null && storageRecord != record) {
+            storageRecord.clearMachineMutationCallback();
+        }
+        storageRecord = record;
+        networkId = record.networkId();
+        energy = record.energy();
+        machines = record.machines();
+        descriptorAmounts = record.descriptorAmounts();
+        infiniteDescriptors = record.infiniteDescriptors();
+        inventory = record.inventory();
+        typeCount = record.typeCount();
+        cacheDirty = true;
+        record.setMachineMutationCallback(this::onMachineChanged);
+        updateStorageAvailability(StorageAvailability.AVAILABLE);
+    }
+
+    private void onMachineChanged() {
+        machineRevision++;
+        markStorageChanged();
+    }
+
+    private void markStorageChanged() {
+        if (storageRecord == null) return;
+        if (mutationBatchDepth > 0) {
+            storageChangedInBatch = true;
+            return;
+        }
+        storageRecord.markChanged();
+    }
+
+    private CoreStorageRepository.CoreLocation location(ServerLevel serverLevel) {
+        return new CoreStorageRepository.CoreLocation(serverLevel.dimension(), getBlockPos());
+    }
+
+    private void updateStorageAvailability(StorageAvailability availability) {
+        if (storageAvailability == availability) return;
+        storageAvailability = availability;
+        if (availability != StorageAvailability.AVAILABLE
+                && availability != StorageAvailability.UNINITIALIZED) {
+            MagicStorage.LOGGER.error(
+                    "Core storage data unavailable: reason={}, storageId={}, dimension={}, pos={}",
+                    availability,
+                    storageId,
+                    level == null ? "unassigned" : level.dimension().location(),
+                    getBlockPos());
+        }
     }
 
     private void rebuildCache() {
@@ -356,16 +451,19 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     void endMutationBatch() {
         if (mutationBatchDepth <= 0) throw new IllegalStateException("No active storage mutation batch");
-        if (mutationBatchDepth == 1) recoverLegacyBottleFuel();
         mutationBatchDepth--;
         if (mutationBatchDepth > 0) return;
+        if (storageChangedInBatch && storageRecord != null) {
+            storageChangedInBatch = false;
+            storageRecord.markChanged();
+        }
         List<Runnable> events = List.copyOf(deferredListenerEvents);
         deferredListenerEvents.clear();
         for (Runnable event : events) event.run();
     }
 
     public long insertItem(ItemStack stack, Action action, Actor actor) {
-        if (stack.isEmpty() || conflicted) return 0;
+        if (stack.isEmpty() || conflicted || !isStorageAvailable()) return 0;
         ItemKey key = ItemKey.of(stack);
         long inserted = insertItemCount(key, stack.getCount(), action, actor);
         if (action == Action.EXECUTE && inserted > 0) stack.shrink((int) inserted);
@@ -373,7 +471,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long insertItemCount(ItemKey key, long amount, Action action, Actor actor) {
-        if (amount <= 0 || conflicted) return 0;
+        if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
         Item primary = key.item();
         var variants = inventory.get(primary);
         long existing = variants != null ? variants.getLong(key) : 0;
@@ -389,7 +487,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             long newAmount = existing + inserted;
             variants.put(key, newAmount);
             cacheDirty = true;
-            setChanged();
+            markStorageChanged();
             fireChanged(key, inserted, newAmount, actor);
         }
         return inserted;
@@ -411,7 +509,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long extractItemCount(ItemKey key, long amount, Action action, Actor actor) {
-        if (amount <= 0 || conflicted) return 0;
+        if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
         Item primary = key.item();
         var variants = inventory.get(primary);
         if (variants == null) return 0;
@@ -430,9 +528,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
                 variants.put(key, remaining);
             }
             cacheDirty = true;
-            setChanged();
+            markStorageChanged();
             fireChanged(key, -extracted, Math.max(remaining, 0), actor);
-            if (mutationBatchDepth == 0 && key.equals(plainGlassBottleKey())) recoverLegacyBottleFuel();
         }
         return extracted;
     }
@@ -450,6 +547,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public List<ItemStack> getDisplayStacks(String filter) {
+        if (!isStorageAvailable()) return List.of();
         rebuildCache();
         List<ItemStack> result = new ArrayList<>();
         for (var entry : flatCache.entrySet()) {
@@ -472,6 +570,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long getItemCount(ItemKey key) {
+        if (!isStorageAvailable()) return 0;
         Item primary = key.item();
         var variants = inventory.get(primary);
         if (variants == null) return 0;
@@ -479,6 +578,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long countMatching(Predicate<ItemStack> pred) {
+        if (!isStorageAvailable()) return 0;
         rebuildCache();
         long total = 0;
         for (var entry : flatCache.entrySet()) {
@@ -491,7 +591,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long extractMatching(Predicate<ItemStack> pred, long amount, Action action, Actor actor) {
-        if (amount <= 0 || conflicted) return 0;
+        if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
         rebuildCache();
         List<ItemKey> matches = new ArrayList<>();
         for (var entry : flatCache.entrySet()) {
@@ -549,234 +649,29 @@ public class StorageCoreBlockEntity extends BlockEntity {
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
-        tag.putUUID(TAG_NETWORK_ID, networkId);
-        CompoundTag energyTag = new CompoundTag();
-        for (Map.Entry<EnergyType, Long> entry : energy.entrySet()) {
-            energyTag.putLong(entry.getKey().getId(), entry.getValue());
+        if (storageId != null) {
+            tag.putUUID(TAG_STORAGE_ID, storageId);
         }
-        if (legacyBottleFuel > 0) energyTag.putLong(LEGACY_BOTTLE_FUEL_ID, legacyBottleFuel);
-        tag.put("energy", energyTag);
-        ListTag consumablesTag = new ListTag();
-        Set<ResourceLocation> consumableIds = new TreeSet<>(Comparator.comparing(ResourceLocation::toString));
-        consumableIds.addAll(descriptorAmounts.keySet());
-        consumableIds.addAll(infiniteDescriptors);
-        for (ResourceLocation descriptorId : consumableIds) {
-            CompoundTag entryTag = new CompoundTag();
-            entryTag.putString("descriptorId", descriptorId.toString());
-            entryTag.putLong("amount", getDescriptorAmount(descriptorId));
-            entryTag.putBoolean("infinite", hasInfiniteDescriptor(descriptorId));
-            consumablesTag.add(entryTag);
-        }
-        tag.put(TAG_DESCRIPTOR_CONSUMABLES, consumablesTag);
-
-        ListTag machineDescriptorsTag = new ListTag();
-        List<MachineDescriptor> descriptors = MachineEnergyTable.entries();
-        for (int slot = 0; slot < descriptors.size(); slot++) {
-            ItemStack stack = machines.getItem(slot);
-            if (stack.isEmpty()) continue;
-            CompoundTag entryTag = new CompoundTag();
-            entryTag.putString("descriptorId", descriptors.get(slot).id().toString());
-            entryTag.put("item", stack.save(registries));
-            machineDescriptorsTag.add(entryTag);
-        }
-        for (CompoundTag unresolved : unresolvedMachineDescriptors) {
-            machineDescriptorsTag.add(unresolved.copy());
-        }
-        tag.put(TAG_MACHINE_DESCRIPTORS, machineDescriptorsTag);
-
-        ListTag invTag = new ListTag();
-        for (var entry : inventory.entrySet()) {
-            for (var variantEntry : entry.getValue().object2LongEntrySet()) {
-                CompoundTag entryTag = new CompoundTag();
-                entryTag.put("item", variantEntry.getKey().toStack(1).save(registries));
-                entryTag.putLong("count", variantEntry.getLongValue());
-                invTag.add(entryTag);
-            }
-        }
-        for (CompoundTag unresolved : unresolvedInventoryEntries) {
-            invTag.add(unresolved.copy());
-        }
-        tag.put("inventory", invTag);
+        tag.putInt(TAG_STORAGE_SCHEMA, storageSchema);
     }
 
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
-        if (tag.hasUUID(TAG_NETWORK_ID)) {
-            networkId = tag.getUUID(TAG_NETWORK_ID);
-        }
-        CompoundTag energyTag = tag.getCompound("energy");
-        for (EnergyType type : EnergyType.values()) {
-            energy.put(type, 0L);
-            if (energyTag.contains(type.getId())) {
-                energy.put(type, Math.max(0, energyTag.getLong(type.getId())));
-            }
-        }
-        legacyBottleFuel = Math.max(0, energyTag.getLong(LEGACY_BOTTLE_FUEL_ID));
-        descriptorAmounts.clear();
-        infiniteDescriptors.clear();
-        if (tag.contains(TAG_DESCRIPTOR_CONSUMABLES, Tag.TAG_LIST)) {
-            ListTag consumablesTag = tag.getList(TAG_DESCRIPTOR_CONSUMABLES, Tag.TAG_COMPOUND);
-            for (int i = 0; i < consumablesTag.size(); i++) {
-                CompoundTag entryTag = consumablesTag.getCompound(i);
-                ResourceLocation descriptorId = ResourceLocation.tryParse(entryTag.getString("descriptorId"));
-                if (descriptorId == null) continue;
-                if (entryTag.getBoolean("infinite")) infiniteDescriptors.add(descriptorId);
-                else {
-                    long amount = Math.max(0, entryTag.getLong("amount"));
-                    if (amount > 0) descriptorAmounts.put(descriptorId, amount);
-                }
-            }
-        } else {
-            long legacyAxeEnergy = Math.max(0, tag.getLong(TAG_AXE_ENERGY));
-            if (tag.getBoolean(TAG_INFINITE_AXE_ENERGY)) infiniteDescriptors.add(MachineEnergyTable.AXE_ID);
-            else if (legacyAxeEnergy > 0) descriptorAmounts.put(MachineEnergyTable.AXE_ID, legacyAxeEnergy);
-        }
-
-        machines.clearContent();
-        unresolvedMachineDescriptors.clear();
-
-        inventory.clear();
-        unresolvedInventoryEntries.clear();
-        ListTag invTag = tag.getList("inventory", Tag.TAG_COMPOUND);
-        for (int i = 0; i < invTag.size(); i++) {
-            CompoundTag entryTag = invTag.getCompound(i);
-            ItemStack stack = parsePersistedItem(entryTag.getCompound("item"), registries);
-            if (stack.isEmpty()) {
-                unresolvedInventoryEntries.add(entryTag.copy());
-                continue;
-            }
-            long count = entryTag.getLong("count");
-            if (count <= 0) continue;
-            ItemKey key = ItemKey.of(stack);
-            Item primary = key.item();
-            var variants = inventory.computeIfAbsent(primary, k -> new Object2LongOpenHashMap<>());
-            long existing = variants.getLong(key);
-            long merged = existing > Long.MAX_VALUE - count ? Long.MAX_VALUE : existing + count;
-            variants.put(key, merged);
-        }
-        if (tag.contains(TAG_MACHINE_DESCRIPTORS, Tag.TAG_LIST)) {
-            loadMachineDescriptors(tag.getList(TAG_MACHINE_DESCRIPTORS, Tag.TAG_COMPOUND), registries);
-        } else if (tag.contains(TAG_MACHINES, Tag.TAG_COMPOUND)) {
-            loadLegacyMachines(tag.getCompound(TAG_MACHINES), registries);
-        }
+        storageId = tag.hasUUID(TAG_STORAGE_ID) ? tag.getUUID(TAG_STORAGE_ID) : null;
+        storageSchema = tag.getInt(TAG_STORAGE_SCHEMA);
+        storageRecord = null;
+        networkId = null;
+        energy = new EnumMap<>(EnergyType.class);
+        machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
+        descriptorAmounts = new HashMap<>();
+        infiniteDescriptors = new HashSet<>();
+        inventory = new IdentityHashMap<>();
         typeCount = 0;
-        for (var variants : inventory.values()) typeCount += variants.size();
         cacheDirty = true;
-        recoverLegacyBottleFuel();
-    }
-
-    private void loadMachineDescriptors(ListTag descriptorTags, HolderLookup.Provider registries) {
-        for (int i = 0; i < descriptorTags.size(); i++) {
-            CompoundTag entryTag = descriptorTags.getCompound(i);
-            ItemStack stack = parsePersistedItem(entryTag.getCompound("item"), registries);
-            if (stack.isEmpty()) {
-                unresolvedMachineDescriptors.add(entryTag.copy());
-                continue;
-            }
-            ResourceLocation descriptorId = ResourceLocation.tryParse(entryTag.getString("descriptorId"));
-            int slot = descriptorId != null ? MachineEnergyTable.findSlot(descriptorId) : -1;
-            MachineDescriptor descriptor = slot >= 0 ? MachineEnergyTable.get(slot) : null;
-            if (descriptor == null || !descriptor.accepts(stack)) {
-                recoverUnregisteredMachine(stack);
-                continue;
-            }
-            if (descriptor.category() == MachineEnergyTable.Category.CONSUMABLE) {
-                ItemStack consumable = stack.copy();
-                if (!addDescriptorConsumable(descriptor.id(), consumable)) {
-                    recoverUnregisteredMachine(stack);
-                }
-                continue;
-            }
-            ItemStack existing = machines.getItem(slot);
-            int room = descriptor.maxInstalledCount() - existing.getCount();
-            int installed = Math.min(Math.max(0, room), stack.getCount());
-            if (installed > 0) {
-                ItemStack merged = stack.copyWithCount(existing.getCount() + installed);
-                machines.setItem(slot, merged);
-                stack.shrink(installed);
-            }
-            recoverUnregisteredMachine(stack);
-        }
-    }
-
-    private static ItemStack parsePersistedItem(
-            CompoundTag itemTag,
-            HolderLookup.Provider registries
-    ) {
-        ResourceLocation itemId = ResourceLocation.tryParse(itemTag.getString("id"));
-        if (itemId == null || registries.lookupOrThrow(Registries.ITEM)
-                .get(ResourceKey.create(Registries.ITEM, itemId)).isEmpty()) {
-            return ItemStack.EMPTY;
-        }
-        return ItemStack.parse(registries, itemTag).orElse(ItemStack.EMPTY);
-    }
-
-    private void loadLegacyMachines(CompoundTag machinesTag, HolderLookup.Provider registries) {
-        SimpleContainer legacy = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
-        ContainerHelper.loadAllItems(machinesTag, legacy.getItems(), registries);
-        int legacySlots = Math.min(9, legacy.getContainerSize());
-        for (int slot = 0; slot < legacySlots; slot++) {
-            ItemStack stack = legacy.getItem(slot);
-            if (stack.isEmpty()) continue;
-            MachineDescriptor descriptor = MachineEnergyTable.get(slot);
-            if (descriptor == null || !descriptor.accepts(stack)) {
-                recoverUnregisteredMachine(stack);
-                continue;
-            }
-            if (descriptor.category() == MachineEnergyTable.Category.CONSUMABLE) {
-                ItemStack migration = stack.copy();
-                if (!addDescriptorConsumable(descriptor.id(), migration)) {
-                    machines.setItem(slot, stack.copy());
-                }
-                continue;
-            }
-            int installed = Math.min(stack.getCount(), descriptor.maxInstalledCount());
-            machines.setItem(slot, stack.copyWithCount(installed));
-            if (stack.getCount() > installed) {
-                recoverUnregisteredMachine(stack.copyWithCount(stack.getCount() - installed));
-            }
-        }
-        for (int slot = legacySlots; slot < legacy.getContainerSize(); slot++) {
-            recoverUnregisteredMachine(legacy.getItem(slot));
-        }
-    }
-
-    private void recoverUnregisteredMachine(ItemStack stack) {
-        if (stack.isEmpty()) return;
-        ItemKey key = ItemKey.of(stack);
-        Item primary = key.item();
-        var variants = inventory.computeIfAbsent(primary, ignored -> new Object2LongOpenHashMap<>());
-        long existing = variants.getLong(key);
-        long recovered = Math.min((long) stack.getCount(), Long.MAX_VALUE - existing);
-        if (recovered <= 0) return;
-        variants.put(key, existing + recovered);
-        cacheDirty = true;
-    }
-
-    private static ItemKey plainGlassBottleKey() {
-        return ItemKey.of(new ItemStack(Items.GLASS_BOTTLE));
-    }
-
-    private void recoverLegacyBottleFuel() {
-        if (legacyBottleFuel <= 0) return;
-        ItemKey key = plainGlassBottleKey();
-        Item primary = key.item();
-        var variants = inventory.get(primary);
-        long existing = variants != null ? variants.getLong(key) : 0;
-        long recovered = Math.min(legacyBottleFuel, Long.MAX_VALUE - existing);
-        if (recovered <= 0) return;
-        if (variants == null) {
-            variants = new Object2LongOpenHashMap<>();
-            inventory.put(primary, variants);
-        }
-        if (existing == 0) typeCount++;
-        long updated = existing + recovered;
-        variants.put(key, updated);
-        legacyBottleFuel -= recovered;
-        cacheDirty = true;
-        setChanged();
-        fireChanged(key, recovered, updated, Actor.EMPTY);
+        storageAvailability = storageId == null
+                ? StorageAvailability.MISSING_REFERENCE
+                : StorageAvailability.UNINITIALIZED;
     }
 
     // ===== Network =====
@@ -883,9 +778,23 @@ public class StorageCoreBlockEntity extends BlockEntity {
     @Override
     public void onLoad() {
         super.onLoad();
-        if (level != null && !level.isClientSide()) {
-            rebuildNetwork(level);
+        if (level instanceof ServerLevel serverLevel) {
+            if (storageId != null && !isStorageAvailable()) {
+                attachExistingStorage(serverLevel);
+            }
+            rebuildNetwork(serverLevel);
         }
+    }
+
+    @Override
+    public void setRemoved() {
+        if (level instanceof ServerLevel serverLevel && storageId != null && storageRecord != null) {
+            CoreStorageRepository.get(serverLevel).release(storageId, location(serverLevel), attachmentToken);
+            storageRecord.clearMachineMutationCallback();
+            storageRecord = null;
+            storageAvailability = StorageAvailability.UNINITIALIZED;
+        }
+        super.setRemoved();
     }
 
     public void onBreak() {
@@ -897,4 +806,30 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public Set<BlockPos> getConnectedBlocks() { return connectedBlocks; }
     public int getTotalTypeSlots() { return totalTypeSlots; }
     public long getTopologyRevision() { return topologyRevision; }
+
+    private enum StorageAvailability {
+        UNINITIALIZED,
+        AVAILABLE,
+        MISSING_REFERENCE,
+        UNSUPPORTED_REFERENCE,
+        MISSING_RECORD,
+        CORRUPT_RECORD,
+        UNSUPPORTED_REPOSITORY,
+        DUPLICATE_ATTACHMENT,
+        PACKED,
+        RECOVERY_MISSING,
+        INVALID_FRESH_RECORD;
+
+        static StorageAvailability from(CoreStorageRepository.AttachFailure failure) {
+            return switch (failure) {
+                case MISSING_RECORD -> MISSING_RECORD;
+                case CORRUPT_RECORD -> CORRUPT_RECORD;
+                case UNSUPPORTED_REPOSITORY -> UNSUPPORTED_REPOSITORY;
+                case DUPLICATE_ATTACHMENT -> DUPLICATE_ATTACHMENT;
+                case PACKED -> PACKED;
+                case RECOVERY_MISSING -> RECOVERY_MISSING;
+                case INVALID_FRESH_RECORD -> INVALID_FRESH_RECORD;
+            };
+        }
+    }
 }

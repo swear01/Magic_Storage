@@ -5,8 +5,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -954,21 +952,11 @@ public class BehavioralTests {
             GameTestHelper helper,
             ItemStack... machines
     ) {
-        var items = new ListTag();
+        core.getMachineContainer().clearContent();
         for (int slot = 0; slot < machines.length; slot++) {
             ItemStack stack = machines[slot];
             if (stack.isEmpty()) continue;
-            CompoundTag entry = new CompoundTag();
-            entry.putByte("Slot", (byte) slot);
-            entry = (CompoundTag) stack.save(helper.getLevel().registryAccess(), entry);
-            items.add(entry);
+            core.getMachineContainer().setItem(slot, stack.copy());
         }
-        var machinesTag = new CompoundTag();
-        machinesTag.put("Items", items);
-        var root = new CompoundTag();
-        core.saveAdditional(root, helper.getLevel().registryAccess());
-        root.remove("machineDescriptors");
-        root.put("machines", machinesTag);
-        core.loadAdditional(root, helper.getLevel().registryAccess());
     }
 }

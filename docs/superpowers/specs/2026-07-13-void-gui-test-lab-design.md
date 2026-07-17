@@ -58,34 +58,19 @@ Each key maps to a known `tp ... facing ...` function. A per-slot latch prevents
 
 ## Ready baseline
 
-The Core is created with the same persistent NBT schema used by `StorageCoreBlockEntity`.
+The Core is placed without block-entity payload. The normal server placement path creates a fresh `CoreStorageRepository` record and writes only the resulting storage UUID/schema reference into chunk NBT.
 
 ### Stored resources
 
-| Item | Count |
-|---|---:|
-| Cobblestone | 8,192 |
-| Oak Log | 192 |
-| Iron Ingot | 128 |
-| Diamond | 32 |
-| Coal | 64 |
-| Blaze Rod | 16 |
-| Glass Bottle | 16 |
-| Netherite Upgrade Smithing Template | 1 |
-| Diamond Sword | 1 |
-| Netherite Ingot | 4 |
-
-These cover long-count rendering, sorting/searching, player/Core ingredient aggregation, crafting, stonecutting, and Smithing Transform without filling the player inventory.
+The reset baseline uses a fresh empty repository record. It does not inject inventory, energy, machine, descriptor, or legacy migration NBT into the Core. Test ingredients live in the deterministic player kit and enter the Core only through normal server-owned terminal operations.
 
 ### Stations and energy
 
-The baseline writes Crafting Table in machine slot 5, Stonecutter in slot 6, Smithing Table in slot 7, and an undamaged Iron Axe in legacy slot 8. On Core load, the first three remain installed max-one instant stations while the legacy axe is atomically converted into finite Axe Energy and slot 8 clears. Furnace, Blast Furnace, Smoker, Campfire, and Brewing Stand slots are empty. Every process/Fuel energy pool starts at zero.
-
-This exposes instant-station and axe recipes immediately while exercising real legacy migration and preserving the invariant that empty process-machine slots generate no energy. The player test kit supplies all process machines and fuels for explicit installation tests.
+All process and instant station slots begin empty. Axe Energy and every process/Fuel pool begin at zero. The player test kit supplies station pairs, process machines, fuels, and axes so max-one installation and finite/infinite conversion are exercised through current APIs rather than legacy NBT.
 
 ### Player kit
 
-Hotbar slots contain semantic navigation items in fixed positions. Main-inventory slots contain three Furnaces; one Blast Furnace, Smoker, Campfire, and Brewing Stand; fuels; logs; station replacements; Smithing inputs; Cobblestone; a Remote Terminal; one plain Iron Axe; one damaged Unbreaking II Iron Axe; and one Unbreakable Iron Axe. `item replace` is used instead of `give`, so slot identity is deterministic and finite, enchantment-scaled, and infinite Axe Energy paths are all available without manual commands.
+Hotbar slots contain semantic navigation items in fixed positions. Main-inventory slots contain three Furnaces; one Blast Furnace, Smoker, Campfire, and Brewing Stand; fuels; logs; two each of Crafting Table, Stonecutter, and Smithing Table; Smithing inputs; Cobblestone; a Remote Terminal; one plain Iron Axe; one damaged Unbreaking II Iron Axe; and one Unbreakable Iron Axe. `item replace` is used instead of `give`, so slot identity is deterministic and max-one, finite, enchantment-scaled, and infinite paths are available without manual commands.
 
 ## Bootstrap and reset
 
@@ -105,7 +90,7 @@ The generated manifest records:
 - platform bounds and named zones;
 - every active/gallery block and view stand/face coordinate;
 - hotbar mapping;
-- Core stored resources, installed station slots, legacy axe migration, and zero process/Fuel-energy profile;
+- fresh empty Core repository baseline and zero station/consumable/process/Fuel profile;
 - fixed player kit;
 - bootstrap delay and reset function;
 - fullscreen gate and offline launch command.
@@ -120,7 +105,7 @@ Python tests must first fail, then cover:
 2. fail-closed behavior for missing/malformed worldgen compounds;
 3. removal of copied runtime/chunk/datapack state and `level.dat/Data/Player` while preserving the source;
 4. exact active-network and gallery coordinates;
-5. Core NBT preload, fixed machine slots, and zero energy;
+5. plain Core placement with no inline payload, empty fixed machine slots, and zero energy;
 6. deterministic player inventory and all nine hotbar semantics;
 7. three-tick readiness, latch initialization, and full reset reuse;
 8. no command blocks or fixed sleeps;

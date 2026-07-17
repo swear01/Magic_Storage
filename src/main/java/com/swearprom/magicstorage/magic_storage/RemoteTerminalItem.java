@@ -61,7 +61,16 @@ public class RemoteTerminalItem extends Item {
             }
 
             StorageCoreBlockEntity core = level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity c ? c : null;
-            if (core == null || !core.getNetworkId().equals(getBoundCoreId(stack))) {
+            if (core == null) {
+                player.displayClientMessage(Component.translatable("msg.magic_storage.remote_stale"), true);
+                return InteractionResultHolder.fail(stack);
+            }
+            if (!core.isStorageAvailable()) {
+                player.displayClientMessage(
+                        Component.translatable("msg.magic_storage.core_storage_unavailable"), true);
+                return InteractionResultHolder.fail(stack);
+            }
+            if (!core.getNetworkId().equals(getBoundCoreId(stack))) {
                 player.displayClientMessage(Component.translatable("msg.magic_storage.remote_stale"), true);
                 return InteractionResultHolder.fail(stack);
             }
@@ -91,6 +100,11 @@ public class RemoteTerminalItem extends Item {
             if (state.getBlock() instanceof IStorageNetworkBlock netBlock && netBlock.isStorageCore()) {
                 if (!level.isClientSide()) {
                     if (!(level.getBlockEntity(pos) instanceof StorageCoreBlockEntity core)) {
+                        return InteractionResult.FAIL;
+                    }
+                    if (!core.isStorageAvailable()) {
+                        player.displayClientMessage(
+                                Component.translatable("msg.magic_storage.core_storage_unavailable"), true);
                         return InteractionResult.FAIL;
                     }
                     bindToCore(stack, pos, level.dimension(), core.getNetworkId());

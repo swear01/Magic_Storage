@@ -229,7 +229,7 @@ public class MagicStorage {
                 .then(Commands.literal("recover_core")
                         .executes(context -> {
                             var player = context.getSource().getPlayerOrException();
-                            var summary = CoreRecoverySavedData.get(player.serverLevel())
+                            var summary = CoreStorageRepository.get(player.serverLevel())
                                     .reissueLatest(player.getUUID());
                             if (summary.isEmpty()) {
                                 context.getSource().sendFailure(Component.translatable(

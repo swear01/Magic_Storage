@@ -438,6 +438,9 @@ class RunPrismGuiSessionTests(unittest.TestCase):
 
             self.assertTrue(result.manual_gui_required)
             checklist = (result.run_dir / "checklist.md").read_text()
+            self.assertIn("fresh empty Core record", checklist)
+            self.assertNotIn("legacy iron axe converted", checklist)
+            self.assertNotIn("preinstalled instant stations", checklist)
             for expected in [
                 "fullscreen gate",
                 "true-void",

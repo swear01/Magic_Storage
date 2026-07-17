@@ -112,13 +112,27 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertEqual("view_texture_gallery", manifest["hotbar_views"]["7"]["function"])
             self.assertEqual("home", manifest["hotbar_views"]["8"]["function"])
             self.assertEqual("reset_from_hotbar", manifest["hotbar_views"]["9"]["function"])
-            self.assertEqual(8192, manifest["baseline"]["stored_items"]["minecraft:cobblestone"])
-            self.assertEqual("minecraft:crafting_table", manifest["baseline"]["installed_stations"]["5"])
+            self.assertEqual({}, manifest["baseline"]["stored_items"])
+            self.assertEqual({}, manifest["baseline"]["installed_stations"])
             self.assertEqual(785, manifest["baseline"]["total_type_capacity"])
             self.assertTrue(all(value == 0 for value in manifest["baseline"]["energy"].values()))
             self.assertEqual("magic_storage:storage_terminal", manifest["player_kit"]["hotbar"]["1"]["item"])
             self.assertEqual("magic_storage:wrench", manifest["player_kit"]["hotbar"]["7"]["item"])
             self.assertEqual("minecraft:barrier", manifest["player_kit"]["hotbar"]["9"]["item"])
+            station_counts = {
+                entry["item"]: entry["count"]
+                for entry in manifest["player_kit"]["inventory"]
+                if entry["item"] in {
+                    "minecraft:crafting_table",
+                    "minecraft:stonecutter",
+                    "minecraft:smithing_table",
+                }
+            }
+            self.assertEqual({
+                "minecraft:crafting_table": 2,
+                "minecraft:stonecutter": 2,
+                "minecraft:smithing_table": 2,
+            }, station_counts)
             self.assertTrue(manifest["fullscreen_gate"]["required"])
             self.assertEqual("after_world_ready_before_first_gui_action", manifest["fullscreen_gate"]["when"])
             self.assertEqual("minecraft_macos_borderless_fullscreen", manifest["fullscreen_gate"]["launch_mode"])
@@ -172,26 +186,10 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 (4, "export_bus[facing=south]"),
             ]:
                 self.assertIn(f"setblock {x} 80 -11 magic_storage:{block}", setup)
-            expected_core = (
-                'setblock 0 80 0 magic_storage:storage_core{energy:{smelting_energy:0L,'
-                'blasting_energy:0L,smoking_energy:0L,campfire_energy:0L,brew_energy:0L,'
-                'furnace_fuel:0L,blaze_fuel:0L},machines:{Items:['
-                '{Slot:5b,id:"minecraft:crafting_table",count:1},'
-                '{Slot:6b,id:"minecraft:stonecutter",count:1},'
-                '{Slot:7b,id:"minecraft:smithing_table",count:1},'
-                '{Slot:8b,id:"minecraft:iron_axe",count:1}]},inventory:['
-                '{item:{id:"minecraft:cobblestone",count:1},count:8192L},'
-                '{item:{id:"minecraft:oak_log",count:1},count:192L},'
-                '{item:{id:"minecraft:iron_ingot",count:1},count:128L},'
-                '{item:{id:"minecraft:diamond",count:1},count:32L},'
-                '{item:{id:"minecraft:coal",count:1},count:64L},'
-                '{item:{id:"minecraft:blaze_rod",count:1},count:16L},'
-                '{item:{id:"minecraft:glass_bottle",count:1},count:16L},'
-                '{item:{id:"minecraft:netherite_upgrade_smithing_template",count:1},count:1L},'
-                '{item:{id:"minecraft:diamond_sword",count:1},count:1L},'
-                '{item:{id:"minecraft:netherite_ingot",count:1},count:4L}]}'
-            )
-            self.assertIn(expected_core, setup)
+            self.assertIn("setblock 0 80 0 magic_storage:storage_core", setup)
+            self.assertNotIn("magic_storage:storage_core{", setup)
+            self.assertNotIn("machines:{Items:", setup)
+            self.assertNotIn("inventory:[", setup)
             self.assertNotIn("bottle_fuel", setup)
             player_ready = (datapack / "data/magic_storage_gui_test/function/player_ready.mcfunction").read_text()
             self.assertIn("item replace entity @s hotbar.0 with magic_storage:storage_terminal 1", player_ready)

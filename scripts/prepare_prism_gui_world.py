@@ -172,24 +172,8 @@ CONNECTED_GALLERY = [
 ]
 
 BASELINE = {
-    "stored_items": {
-        "minecraft:cobblestone": 8192,
-        "minecraft:oak_log": 192,
-        "minecraft:iron_ingot": 128,
-        "minecraft:diamond": 32,
-        "minecraft:coal": 64,
-        "minecraft:blaze_rod": 16,
-        "minecraft:glass_bottle": 16,
-        "minecraft:netherite_upgrade_smithing_template": 1,
-        "minecraft:diamond_sword": 1,
-        "minecraft:netherite_ingot": 4,
-    },
-    "installed_stations": {
-        "5": "minecraft:crafting_table",
-        "6": "minecraft:stonecutter",
-        "7": "minecraft:smithing_table",
-        "8": "minecraft:iron_axe",
-    },
+    "stored_items": {},
+    "installed_stations": {},
     "energy": {
         "smelting_energy": 0,
         "blasting_energy": 0,
@@ -226,9 +210,9 @@ PLAYER_KIT = {
         {"slot": "inventory.8", "item": "minecraft:coal", "count": 64},
         {"slot": "inventory.9", "item": "minecraft:blaze_rod", "count": 16},
         {"slot": "inventory.10", "item": "minecraft:glass_bottle", "count": 16},
-        {"slot": "inventory.11", "item": "minecraft:crafting_table", "count": 1},
-        {"slot": "inventory.12", "item": "minecraft:stonecutter", "count": 1},
-        {"slot": "inventory.13", "item": "minecraft:smithing_table", "count": 1},
+        {"slot": "inventory.11", "item": "minecraft:crafting_table", "count": 2},
+        {"slot": "inventory.12", "item": "minecraft:stonecutter", "count": 2},
+        {"slot": "inventory.13", "item": "minecraft:smithing_table", "count": 2},
         {"slot": "inventory.14", "item": "minecraft:iron_axe", "count": 1},
         {"slot": "inventory.15", "item": "minecraft:netherite_upgrade_smithing_template", "count": 1},
         {"slot": "inventory.16", "item": "minecraft:diamond_sword", "count": 1},
@@ -580,19 +564,7 @@ def _write_text(path: Path, text: str) -> None:
 
 
 def build_core_command() -> str:
-    energy = ",".join(f"{name}:{amount}L" for name, amount in BASELINE["energy"].items())
-    machines = ",".join(
-        f'{{Slot:{slot}b,id:"{item}",count:1}}'
-        for slot, item in BASELINE["installed_stations"].items()
-    )
-    inventory = ",".join(
-        f'{{item:{{id:"{item}",count:1}},count:{amount}L}}'
-        for item, amount in BASELINE["stored_items"].items()
-    )
-    return (
-        "setblock 0 80 0 magic_storage:storage_core"
-        f"{{energy:{{{energy}}},machines:{{Items:[{machines}]}},inventory:[{inventory}]}}"
-    )
+    return "setblock 0 80 0 magic_storage:storage_core"
 
 
 def build_setup_function() -> str:

@@ -27,7 +27,7 @@ public final class StorageCoreBlockItem extends BlockItem {
         super(block, properties);
     }
 
-    static ItemStack createRecoveryStack(CoreRecoverySavedData.RecoverySummary summary) {
+    static ItemStack createRecoveryStack(CoreStorageRepository.RecoverySummary summary) {
         ItemStack stack = new ItemStack(MagicStorage.STORAGE_CORE_ITEM.get());
         CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> {
             tag.putUUID(RECOVERY_ID, summary.id());
@@ -58,7 +58,7 @@ public final class StorageCoreBlockItem extends BlockItem {
     public InteractionResult place(BlockPlaceContext context) {
         Optional<UUID> recoveryId = getRecoveryId(context.getItemInHand());
         if (recoveryId.isPresent() && context.getLevel() instanceof ServerLevel serverLevel
-                && !CoreRecoverySavedData.get(serverLevel).has(recoveryId.get())) {
+                && !CoreStorageRepository.get(serverLevel).canClaim(recoveryId.get())) {
             Player player = context.getPlayer();
             if (player != null) {
                 player.displayClientMessage(

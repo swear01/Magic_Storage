@@ -139,6 +139,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
             boolean deferInitialization
     ) {
         super(menuType, containerId);
+        if (!core.isStorageAvailable()) {
+            throw new IllegalArgumentException("Cannot open a terminal for unavailable Core storage");
+        }
         this.corePos = core.getBlockPos();
         this.accessPos = accessPos;
         this.remoteAccess = remoteAccess;
@@ -213,7 +216,8 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         if (level == null || coreId == null || !level.dimension().equals(coreDimension)
                 || !level.hasChunkAt(corePos)) return null;
         if (level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core) {
-            return core.getNetworkId().equals(coreId) && hasStorageAccess(level, core) ? core : null;
+            return core.isStorageAvailable() && core.getNetworkId().equals(coreId)
+                    && hasStorageAccess(level, core) ? core : null;
         }
         return null;
     }

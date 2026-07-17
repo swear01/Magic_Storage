@@ -105,16 +105,22 @@ final class CoreStorageRecord {
                 || !tag.contains(TAG_INVENTORY_SEGMENTS, Tag.TAG_LIST)) {
             return LoadResult.failure(storageId, raw, "missing mandatory record payload");
         }
+        ListTag descriptorEntries = compoundList(tag, TAG_DESCRIPTOR_CONSUMABLES);
+        ListTag machineEntries = compoundList(tag, TAG_MACHINE_DESCRIPTORS);
+        ListTag inventorySegments = compoundList(tag, TAG_INVENTORY_SEGMENTS);
+        if (descriptorEntries == null || machineEntries == null || inventorySegments == null) {
+            return LoadResult.failure(storageId, raw, "mandatory record list has non-compound elements");
+        }
 
         CoreStorageRecord record = new CoreStorageRecord(storageId, tag.getUUID(TAG_NETWORK_ID));
         try {
-            record.loadEnergy(tag.getCompound(TAG_ENERGY));
-            record.loadDescriptorEntries(
-                    tag.getList(TAG_DESCRIPTOR_CONSUMABLES, Tag.TAG_COMPOUND));
-            record.loadMachineEntries(
-                    tag.getList(TAG_MACHINE_DESCRIPTORS, Tag.TAG_COMPOUND), registries);
-            String inventoryError = record.loadInventorySegments(
-                    tag.getList(TAG_INVENTORY_SEGMENTS, Tag.TAG_COMPOUND), registries);
+            String energyError = record.loadEnergy(tag.getCompound(TAG_ENERGY));
+            if (energyError != null) {
+                return LoadResult.failure(storageId, raw, energyError);
+            }
+            record.loadDescriptorEntries(descriptorEntries);
+            record.loadMachineEntries(machineEntries, registries);
+            String inventoryError = record.loadInventorySegments(inventorySegments, registries);
             if (inventoryError != null) {
                 return LoadResult.failure(storageId, raw, inventoryError);
             }
@@ -199,10 +205,14 @@ final class CoreStorageRecord {
         return tag;
     }
 
-    private void loadEnergy(CompoundTag tag) {
+    private String loadEnergy(CompoundTag tag) {
         for (EnergyType type : EnergyType.values()) {
-            energy.put(type, Math.max(0, tag.getLong(type.getId())));
+            if (!tag.contains(type.getId(), Tag.TAG_LONG) || tag.getLong(type.getId()) < 0) {
+                return "invalid energy field " + type.getId();
+            }
+            energy.put(type, tag.getLong(type.getId()));
         }
+        return null;
     }
 
     private void loadDescriptorEntries(ListTag entries) {
@@ -210,7 +220,11 @@ final class CoreStorageRecord {
             CompoundTag entry = entries.getCompound(index);
             ResourceLocation descriptorId = ResourceLocation.tryParse(entry.getString(TAG_DESCRIPTOR_ID));
             MachineDescriptor descriptor = descriptorId == null ? null : MachineEnergyTable.get(descriptorId);
-            if (descriptor == null || descriptor.category() != MachineEnergyTable.Category.CONSUMABLE) {
+            if (descriptor == null || descriptor.category() != MachineEnergyTable.Category.CONSUMABLE
+                    || !entry.contains(TAG_AMOUNT, Tag.TAG_LONG)
+                    || !entry.contains(TAG_INFINITE, Tag.TAG_BYTE)
+                    || entry.getLong(TAG_AMOUNT) < 0
+                    || entry.getByte(TAG_INFINITE) != 0 && entry.getByte(TAG_INFINITE) != 1) {
                 unresolvedDescriptorEntries.add(entry.copy());
                 continue;
             }
@@ -219,7 +233,7 @@ final class CoreStorageRecord {
                 descriptorAmounts.remove(descriptorId);
                 continue;
             }
-            long amount = Math.max(0, entry.getLong(TAG_AMOUNT));
+            long amount = entry.getLong(TAG_AMOUNT);
             if (amount <= 0) {
                 continue;
             }
@@ -270,7 +284,10 @@ final class CoreStorageRecord {
             if (!segment.contains(TAG_ENTRIES, Tag.TAG_LIST)) {
                 return "inventory segment " + segmentIndex + " has no entries list";
             }
-            ListTag entries = segment.getList(TAG_ENTRIES, Tag.TAG_COMPOUND);
+            ListTag entries = compoundList(segment, TAG_ENTRIES);
+            if (entries == null) {
+                return "inventory segment " + segmentIndex + " entries have non-compound elements";
+            }
             if (entries.size() > MAX_SEGMENT_TYPES) {
                 return "inventory segment " + segmentIndex + " exceeds " + MAX_SEGMENT_TYPES + " types";
             }
@@ -278,6 +295,9 @@ final class CoreStorageRecord {
                 CompoundTag entry = entries.getCompound(entryIndex);
                 if (!entry.contains(TAG_ITEM, Tag.TAG_COMPOUND)) {
                     return "inventory entry has no item";
+                }
+                if (!entry.contains(TAG_COUNT, Tag.TAG_LONG)) {
+                    return "inventory entry count is not a long";
                 }
                 long count = entry.getLong(TAG_COUNT);
                 if (count <= 0) {
@@ -292,6 +312,13 @@ final class CoreStorageRecord {
             }
         }
         return null;
+    }
+
+    private static ListTag compoundList(CompoundTag tag, String key) {
+        if (!(tag.get(key) instanceof ListTag list)) {
+            return null;
+        }
+        return list.isEmpty() || list.getElementType() == Tag.TAG_COMPOUND ? list : null;
     }
 
     private static ItemStack parsePersistedItem(

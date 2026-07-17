@@ -7,14 +7,13 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.Unbreakable;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
@@ -34,6 +33,66 @@ public class PersistenceTests {
         }
         if (CoreStorageRecord.MAX_SEGMENT_TYPES != 63) {
             helper.fail("Core storage records must use 63-type persistence segments");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void core_chunk_nbt_stays_fixed_for_785_types(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !core.isStorageAvailable()) {
+                helper.fail("Fresh Core did not attach to world storage");
+                return;
+            }
+            CoreStorageRecord record = core.storageRecordForTesting();
+            for (int index = 0; index < 785; index++) {
+                ItemStack variant = new ItemStack(Items.PAPER);
+                variant.set(DataComponents.CUSTOM_NAME, Component.literal("chunk-boundary-" + index));
+                record.putItem(ItemKey.of(variant), index + 1L);
+            }
+            CompoundTag tag = new CompoundTag();
+            core.saveAdditional(tag, level.registryAccess());
+            if (!tag.hasUUID("storageId") || tag.getInt("storageSchema") != 1
+                    || tag.getAllKeys().size() != 2
+                    || tag.contains("networkId") || tag.contains("inventory")
+                    || tag.contains("energy") || tag.contains("machineDescriptors")
+                    || tag.contains("descriptorConsumables")) {
+                helper.fail("Core chunk NBT grew with repository payload: " + tag.getAllKeys());
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void missing_core_repository_reference_fails_closed_without_replacement(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        UUID missingStorageId = UUID.randomUUID();
+        CoreStorageRepository repository = CoreStorageRepository.get(level);
+        int before = repository.recordCountForTesting();
+        StorageCoreBlockEntity detached = new StorageCoreBlockEntity(
+                helper.absolutePos(new BlockPos(1, 3, 1)),
+                MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        CompoundTag reference = new CompoundTag();
+        reference.putUUID("storageId", missingStorageId);
+        reference.putInt("storageSchema", 1);
+        detached.loadAdditional(reference, level.registryAccess());
+        detached.setLevel(level);
+        detached.onLoad();
+        ItemStack rejected = new ItemStack(Items.DIAMOND, 4);
+        if (detached.isStorageAvailable()
+                || detached.insertItem(rejected, Action.EXECUTE, Actor.EMPTY) != 0
+                || rejected.getCount() != 4
+                || repository.recordCountForTesting() != before
+                || repository.hasRecord(missingStorageId)) {
+            helper.fail("Missing repository reference became a writable empty Core");
             return;
         }
         helper.succeed();
@@ -294,6 +353,174 @@ public class PersistenceTests {
             helper.fail("Corrupt or orphan repository NBT was not retained exactly: " + retained);
             return;
         }
+
+        CoreStorageRecord duplicateSource = CoreStorageRecord.fresh(UUID.randomUUID());
+        duplicateSource.putItem(ItemKey.of(new ItemStack(Items.DIAMOND)), 17);
+        CompoundTag firstCopy = duplicateSource.save(helper.getLevel().registryAccess());
+        firstCopy.putString("sentinel", "first-copy");
+        CompoundTag secondCopy = firstCopy.copy();
+        secondCopy.putString("sentinel", "second-copy");
+        ListTag duplicateStorages = new ListTag();
+        duplicateStorages.add(firstCopy.copy());
+        duplicateStorages.add(secondCopy.copy());
+        CompoundTag duplicateRoot = new CompoundTag();
+        duplicateRoot.putInt("schemaVersion", 1);
+        duplicateRoot.put("storages", duplicateStorages);
+        duplicateRoot.put("recoveries", new ListTag());
+        CoreStorageRepository duplicateRepository = CoreStorageRepository.load(
+                duplicateRoot, helper.getLevel().registryAccess());
+        CoreStorageRepository.AttachResult duplicateAttach = duplicateRepository.attachExisting(
+                duplicateSource.storageId(),
+                new CoreStorageRepository.CoreLocation(
+                        helper.getLevel().dimension(), helper.absolutePos(new BlockPos(2, 3, 2))),
+                UUID.randomUUID());
+        ListTag duplicateResaved = duplicateRepository
+                .save(new CompoundTag(), helper.getLevel().registryAccess())
+                .getList("storages", Tag.TAG_COMPOUND);
+        if (duplicateAttach.success()
+                || duplicateAttach.reason() != CoreStorageRepository.AttachFailure.CORRUPT_RECORD
+                || duplicateResaved.size() != 2
+                || !duplicateResaved.contains(firstCopy)
+                || !duplicateResaved.contains(secondCopy)) {
+            helper.fail("Duplicate storage records were not retained byte-equivalent and unavailable");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void malformed_repository_list_shapes_fail_closed_without_data_loss(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        CompoundTag validRecord = CoreStorageRecord.fresh(UUID.randomUUID()).save(registries);
+        for (EnergyType type : EnergyType.values()) {
+            CompoundTag malformedEnergy = validRecord.copy();
+            malformedEnergy.getCompound("energy").putString(type.getId(), "retain-invalid-energy");
+            CoreStorageRecord.LoadResult loaded = CoreStorageRecord.load(malformedEnergy, registries);
+            if (loaded.success() || !malformedEnergy.equals(loaded.raw())) {
+                helper.fail("Malformed energy field was accepted or changed for " + type);
+                return;
+            }
+
+            CompoundTag missingEnergy = validRecord.copy();
+            missingEnergy.getCompound("energy").remove(type.getId());
+            loaded = CoreStorageRecord.load(missingEnergy, registries);
+            if (loaded.success() || !missingEnergy.equals(loaded.raw())) {
+                helper.fail("Missing energy field was accepted or changed for " + type);
+                return;
+            }
+        }
+
+        CompoundTag malformedDescriptor = validRecord.copy();
+        CompoundTag descriptorEntry = new CompoundTag();
+        descriptorEntry.putString("descriptorId", MachineEnergyTable.AXE_ID.toString());
+        descriptorEntry.putString("amount", "retain-invalid-descriptor-amount");
+        descriptorEntry.putBoolean("infinite", false);
+        malformedDescriptor.getList("descriptorConsumables", Tag.TAG_COMPOUND).add(descriptorEntry);
+        CoreStorageRecord.LoadResult loadedDescriptor = CoreStorageRecord.load(
+                malformedDescriptor, registries);
+        if (!loadedDescriptor.success()
+                || !malformedDescriptor.equals(loadedDescriptor.record().save(registries))) {
+            helper.fail("Malformed descriptor metadata was not retained raw");
+            return;
+        }
+
+        CompoundTag malformedDescriptorBoolean = validRecord.copy();
+        CompoundTag descriptorBooleanEntry = new CompoundTag();
+        descriptorBooleanEntry.putString("descriptorId", MachineEnergyTable.AXE_ID.toString());
+        descriptorBooleanEntry.putLong("amount", 0);
+        descriptorBooleanEntry.putByte("infinite", (byte) 2);
+        malformedDescriptorBoolean.getList("descriptorConsumables", Tag.TAG_COMPOUND)
+                .add(descriptorBooleanEntry);
+        loadedDescriptor = CoreStorageRecord.load(malformedDescriptorBoolean, registries);
+        if (!loadedDescriptor.success()
+                || !malformedDescriptorBoolean.equals(loadedDescriptor.record().save(registries))) {
+            helper.fail("Malformed descriptor boolean was not retained raw");
+            return;
+        }
+
+        CoreStorageRecord countSource = CoreStorageRecord.fresh(UUID.randomUUID());
+        countSource.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1);
+        CompoundTag malformedInventoryCount = countSource.save(registries);
+        malformedInventoryCount.getList("inventorySegments", Tag.TAG_COMPOUND)
+                .getCompound(0).getList("entries", Tag.TAG_COMPOUND)
+                .getCompound(0).putInt("count", 1);
+        CoreStorageRecord.LoadResult loadedInventoryCount = CoreStorageRecord.load(
+                malformedInventoryCount, registries);
+        if (loadedInventoryCount.success()
+                || !malformedInventoryCount.equals(loadedInventoryCount.raw())) {
+            helper.fail("Non-long inventory count was accepted or changed");
+            return;
+        }
+
+        for (String key : new String[]{
+                "descriptorConsumables", "machineDescriptors", "inventorySegments"
+        }) {
+            CompoundTag malformed = validRecord.copy();
+            ListTag wrongShape = new ListTag();
+            wrongShape.add(StringTag.valueOf("retain-" + key));
+            malformed.put(key, wrongShape);
+            CoreStorageRecord.LoadResult loaded = CoreStorageRecord.load(malformed, registries);
+            if (loaded.success() || !malformed.equals(loaded.raw())) {
+                helper.fail("Malformed " + key + " list was accepted or changed");
+                return;
+            }
+        }
+
+        CoreStorageRecord populated = CoreStorageRecord.fresh(UUID.randomUUID());
+        populated.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1);
+        CompoundTag malformedEntries = populated.save(registries);
+        ListTag segments = malformedEntries.getList("inventorySegments", Tag.TAG_COMPOUND);
+        ListTag wrongEntries = new ListTag();
+        wrongEntries.add(StringTag.valueOf("retain-entry"));
+        segments.getCompound(0).put("entries", wrongEntries);
+        CoreStorageRecord.LoadResult loadedEntries = CoreStorageRecord.load(malformedEntries, registries);
+        if (loadedEntries.success() || !malformedEntries.equals(loadedEntries.raw())) {
+            helper.fail("Malformed inventory entries list was accepted or changed");
+            return;
+        }
+
+        for (String key : new String[]{"storages", "recoveries"}) {
+            CompoundTag root = new CompoundTag();
+            root.putInt("schemaVersion", 1);
+            root.put("storages", new ListTag());
+            root.put("recoveries", new ListTag());
+            ListTag wrongShape = new ListTag();
+            wrongShape.add(StringTag.valueOf("retain-" + key));
+            root.put(key, wrongShape);
+            CoreStorageRepository repository = CoreStorageRepository.load(root, registries);
+            if (repository.tryCreateFresh(
+                    new CoreStorageRepository.CoreLocation(
+                            helper.getLevel().dimension(), helper.absolutePos(new BlockPos(2, 3, 2))),
+                    UUID.randomUUID()).isPresent()) {
+                helper.fail("Malformed repository root allowed fresh storage creation");
+                return;
+            }
+            CompoundTag resaved = repository.save(new CompoundTag(), registries);
+            if (!root.equals(resaved)) {
+                helper.fail("Malformed repository " + key + " list was not preserved exactly");
+                return;
+            }
+        }
+
+        CompoundTag malformedRecovery = new CompoundTag();
+        malformedRecovery.putUUID("id", UUID.randomUUID());
+        malformedRecovery.putUUID("storageId", UUID.randomUUID());
+        malformedRecovery.putString("owner", "retain-invalid-owner");
+        malformedRecovery.putString("typeCount", "retain-invalid-count");
+        malformedRecovery.putString("originDimension", helper.getLevel().dimension().location().toString());
+        malformedRecovery.putLong("originPos", helper.absolutePos(new BlockPos(3, 3, 3)).asLong());
+        ListTag malformedRecoveries = new ListTag();
+        malformedRecoveries.add(malformedRecovery.copy());
+        CompoundTag recoveryRoot = new CompoundTag();
+        recoveryRoot.putInt("schemaVersion", 1);
+        recoveryRoot.put("storages", new ListTag());
+        recoveryRoot.put("recoveries", malformedRecoveries);
+        CompoundTag recoveryResaved = CoreStorageRepository.load(recoveryRoot, registries)
+                .save(new CompoundTag(), registries);
+        if (!recoveryRoot.equals(recoveryResaved)) {
+            helper.fail("Malformed recovery metadata was normalized instead of retained raw");
+            return;
+        }
         helper.succeed();
     }
 
@@ -371,6 +598,7 @@ public class PersistenceTests {
                 return;
             }
 
+            level.removeBlock(corePos, false);
             level.setBlock(restoredPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
             MagicStorage.STORAGE_CORE.get().setPlacedBy(
                     level, restoredPos, level.getBlockState(restoredPos), creativePlayer, packedCore);
@@ -383,149 +611,8 @@ public class PersistenceTests {
                 helper.fail("Creative packed Core did not restore its exact contents");
                 return;
             }
-            if (CoreRecoverySavedData.get(level).claim(recoveryId.get()).isPresent()) {
+            if (CoreStorageRepository.get(level).hasRecovery(recoveryId.get())) {
                 helper.fail("Recovery token must be one-time after successful placement");
-                return;
-            }
-            helper.succeed();
-        });
-    }
-
-    @GameTest(template = "platform")
-    public static void failed_packed_core_placement_keeps_recovery_snapshot(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var owner = UUID.randomUUID();
-        var recovery = CoreRecoverySavedData.get(level);
-        UUID recoveryId = recovery.create(new CompoundTag(), owner, 0, 0, level.getGameTime());
-        ItemStack packedCore = StorageCoreBlockItem.createRecoveryStack(
-                recovery.summary(recoveryId).orElseThrow());
-        BlockPos missingCorePos = helper.absolutePos(new BlockPos(4, 3, 1));
-
-        try {
-            MagicStorage.STORAGE_CORE.get().setPlacedBy(
-                    level,
-                    missingCorePos,
-                    MagicStorage.STORAGE_CORE.get().defaultBlockState(),
-                    helper.makeMockPlayer(GameType.SURVIVAL),
-                    packedCore);
-            helper.fail("Placement without a Core block entity must fail closed");
-            return;
-        } catch (IllegalStateException expected) {
-            if (!recovery.has(recoveryId)) {
-                helper.fail("Failed placement consumed the only recovery snapshot");
-                return;
-            }
-        }
-        recovery.claim(recoveryId);
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void latest_recovery_prefers_last_core_created_in_the_same_tick(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var owner = UUID.randomUUID();
-        var recovery = CoreRecoverySavedData.get(level);
-        long createdAt = level.getGameTime();
-        UUID first = recovery.create(new CompoundTag(), owner, 1, 11, createdAt);
-        UUID second = recovery.create(new CompoundTag(), owner, 2, 22, createdAt);
-        var latest = recovery.reissueLatest(owner);
-        if (latest.isEmpty() || !latest.get().id().equals(second)) {
-            helper.fail("Same-tick recovery reissue did not select the last created Core");
-            return;
-        }
-        recovery.claim(first);
-        recovery.claim(second);
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void core_identity_is_unique_and_survives_nbt_round_trip(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var firstPos = helper.absolutePos(new BlockPos(1, 3, 1));
-        var secondPos = helper.absolutePos(new BlockPos(4, 3, 1));
-        level.setBlock(firstPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-        level.setBlock(secondPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-
-        helper.runAfterDelay(2, () -> {
-            if (!(level.getBlockEntity(firstPos) instanceof StorageCoreBlockEntity first)
-                    || !(level.getBlockEntity(secondPos) instanceof StorageCoreBlockEntity second)) {
-                helper.fail("Core block entities not found");
-                return;
-            }
-            if (first.getNetworkId().equals(second.getNetworkId())) {
-                helper.fail("Fresh storage cores must have distinct persistent identities");
-                return;
-            }
-
-            var tag = new net.minecraft.nbt.CompoundTag();
-            first.saveAdditional(tag, level.registryAccess());
-            var restored = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-            restored.loadAdditional(tag, level.registryAccess());
-            if (!restored.getNetworkId().equals(first.getNetworkId())) {
-                helper.fail("Storage core identity did not survive NBT round-trip");
-                return;
-            }
-            helper.succeed();
-        });
-    }
-
-    @GameTest(template = "platform")
-    public static void broken_core_drop_carries_inventory_data_and_reloads(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
-        var unitPos = corePos.east();
-
-        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-        level.setBlock(unitPos, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
-
-        helper.runAfterDelay(2, () -> {
-            var be = level.getBlockEntity(corePos);
-            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
-            core.rebuildNetwork(level);
-            core.insertItem(new ItemStack(Items.STONE, 64));
-            core.insertItem(new ItemStack(Items.STONE, 64));
-            core.insertItem(new ItemStack(Items.DIRT, 50));
-            core.getMachineContainer().setItem(0, new ItemStack(Items.FURNACE, 4));
-
-            var drops = Block.getDrops(level.getBlockState(corePos), level, corePos, core);
-            ItemStack droppedCore = ItemStack.EMPTY;
-            for (ItemStack drop : drops) {
-                if (drop.is(MagicStorage.STORAGE_CORE_ITEM.get())) {
-                    droppedCore = drop;
-                    break;
-                }
-            }
-            if (droppedCore.isEmpty()) { helper.fail("Core drop missing"); return; }
-            if (!droppedCore.has(DataComponents.BLOCK_ENTITY_DATA)) {
-                helper.fail("Core drop should carry block entity data");
-                return;
-            }
-
-            var restoredPos = helper.absolutePos(new BlockPos(4, 3, 1));
-            level.setBlock(restoredPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-            level.setBlock(restoredPos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
-            if (!BlockItem.updateCustomBlockEntityTag(level, null, restoredPos, droppedCore)) {
-                helper.fail("Core drop block entity data did not load into placed core");
-                return;
-            }
-
-            var restoredBe = level.getBlockEntity(restoredPos);
-            if (!(restoredBe instanceof StorageCoreBlockEntity restoredCore)) { helper.fail("Restored core BE not found"); return; }
-            if (restoredCore.getTypeCount() != 2) {
-                helper.fail("Restored core should have 2 types, got " + restoredCore.getTypeCount());
-                return;
-            }
-            if (restoredCore.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 128) {
-                helper.fail("Restored core lost stone count");
-                return;
-            }
-            if (restoredCore.getItemCount(ItemKey.of(new ItemStack(Items.DIRT))) != 50) {
-                helper.fail("Restored core lost dirt count");
-                return;
-            }
-            ItemStack restoredMachines = restoredCore.getMachineContainer().getItem(0);
-            if (!restoredMachines.is(Items.FURNACE) || restoredMachines.getCount() != 4) {
-                helper.fail("Restored core lost its installed Furnace stack: " + restoredMachines);
                 return;
             }
             helper.succeed();
@@ -570,58 +657,251 @@ public class PersistenceTests {
     }
 
     @GameTest(template = "platform")
-    public static void items_survive_core_break_and_rebuild(GameTestHelper helper) {
+    public static void failed_packed_core_placement_keeps_recovery_mapping(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var repository = CoreStorageRepository.get(level);
+        var origin = new CoreStorageRepository.CoreLocation(
+                level.dimension(), helper.absolutePos(new BlockPos(1, 3, 1)));
+        UUID attachmentToken = UUID.randomUUID();
+        UUID owner = UUID.randomUUID();
+        CoreStorageRecord record = repository.createFresh(origin, attachmentToken);
+        record.putItem(ItemKey.of(new ItemStack(Items.STONE)), 9);
+        CoreStorageRepository.RecoverySummary summary = repository.prepareRecovery(
+                record.storageId(), origin, attachmentToken, owner, level.getGameTime()).orElseThrow();
+        repository.release(record.storageId(), origin, attachmentToken);
+        ItemStack packedCore = StorageCoreBlockItem.createRecoveryStack(summary);
+
+        try {
+            MagicStorage.STORAGE_CORE.get().setPlacedBy(
+                    level,
+                    helper.absolutePos(new BlockPos(4, 3, 1)),
+                    MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                    helper.makeMockPlayer(GameType.SURVIVAL),
+                    packedCore);
+            helper.fail("Placement without a Core block entity must fail closed");
+            return;
+        } catch (IllegalStateException expected) {
+            if (!repository.hasRecovery(summary.id()) || !repository.hasRecord(record.storageId())) {
+                helper.fail("Failed placement consumed or deleted repository state");
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void failed_recovery_claim_discards_temporary_fresh_record(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
-        var unitPos = corePos.east();
-
         level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-        level.setBlock(unitPos, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
 
         helper.runAfterDelay(2, () -> {
-            var be = level.getBlockEntity(corePos);
-            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core BE not found"); return; }
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !core.isStorageAvailable()) {
+                helper.fail("Fresh Core did not attach before failed recovery claim");
+                return;
+            }
+            CoreStorageRepository repository = CoreStorageRepository.get(level);
+            UUID temporaryStorageId = core.getStorageId().orElseThrow();
+            int recordsBeforeClaim = repository.recordCountForTesting();
+            if (core.claimRecovery(level, UUID.randomUUID())) {
+                helper.fail("Missing recovery mapping unexpectedly claimed a record");
+                return;
+            }
+            if (repository.hasRecord(temporaryStorageId)
+                    || repository.recordCountForTesting() != recordsBeforeClaim - 1) {
+                helper.fail("Failed recovery claim leaked its temporary fresh record");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void latest_recovery_prefers_last_mapping_created_in_same_tick(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var repository = CoreStorageRepository.get(level);
+        UUID owner = UUID.randomUUID();
+        long createdAt = level.getGameTime();
+        var firstLocation = new CoreStorageRepository.CoreLocation(
+                level.dimension(), helper.absolutePos(new BlockPos(1, 3, 1)));
+        var secondLocation = new CoreStorageRepository.CoreLocation(
+                level.dimension(), helper.absolutePos(new BlockPos(4, 3, 1)));
+        UUID firstToken = UUID.randomUUID();
+        UUID secondToken = UUID.randomUUID();
+        CoreStorageRecord first = repository.createFresh(firstLocation, firstToken);
+        CoreStorageRecord second = repository.createFresh(secondLocation, secondToken);
+        UUID firstRecovery = repository.prepareRecovery(
+                first.storageId(), firstLocation, firstToken, owner, createdAt).orElseThrow().id();
+        UUID secondRecovery = repository.prepareRecovery(
+                second.storageId(), secondLocation, secondToken, owner, createdAt).orElseThrow().id();
+        var latest = repository.reissueLatest(owner);
+        if (latest.isEmpty() || !latest.get().id().equals(secondRecovery)
+                || latest.get().id().equals(firstRecovery)) {
+            helper.fail("Same-tick recovery reissue did not select the last mapping");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void core_reference_round_trip_resolves_repository_identity(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var firstPos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var secondPos = helper.absolutePos(new BlockPos(4, 3, 1));
+        level.setBlock(firstPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(secondPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(firstPos) instanceof StorageCoreBlockEntity first)
+                    || !(level.getBlockEntity(secondPos) instanceof StorageCoreBlockEntity second)) {
+                helper.fail("Core block entities not found");
+                return;
+            }
+            UUID firstStorageId = first.getStorageId().orElseThrow();
+            UUID secondStorageId = second.getStorageId().orElseThrow();
+            if (firstStorageId.equals(secondStorageId)
+                    || first.getNetworkId().equals(second.getNetworkId())) {
+                helper.fail("Fresh Cores must have distinct storage and network identities");
+                return;
+            }
+            CompoundTag reference = new CompoundTag();
+            first.saveAdditional(reference, level.registryAccess());
+            UUID referencedStorageId = reference.getUUID("storageId");
+            CoreStorageRecord referenced = CoreStorageRepository.get(level)
+                    .getRecord(referencedStorageId).orElseThrow();
+            if (!referencedStorageId.equals(firstStorageId)
+                    || !referenced.networkId().equals(first.getNetworkId())) {
+                helper.fail("Chunk reference did not resolve the original repository identity");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void packed_core_token_moves_record_without_block_entity_payload(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        var restoredPos = helper.absolutePos(new BlockPos(4, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core BE not found");
+                return;
+            }
             core.rebuildNetwork(level);
-            core.insertItem(new ItemStack(Items.STONE, 64));
-            core.insertItem(new ItemStack(Items.STONE, 64));
-            core.insertItem(new ItemStack(Items.DIRT, 50));
-            if (core.getTypeCount() != 2) { helper.fail("Should have 2 types"); return; }
+            core.insertItemCount(ItemKey.of(new ItemStack(Items.STONE)), 128, Action.EXECUTE, Actor.EMPTY);
+            core.insertItemCount(ItemKey.of(new ItemStack(Items.DIRT)), 50, Action.EXECUTE, Actor.EMPTY);
+            core.getMachineContainer().setItem(MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE, 4));
+            UUID storageId = core.getStorageId().orElseThrow();
+            UUID networkId = core.getNetworkId();
 
-            level.destroyBlock(corePos, true);
+            ItemStack packedCore = Block.getDrops(level.getBlockState(corePos), level, corePos, core)
+                    .stream()
+                    .filter(stack -> stack.is(MagicStorage.STORAGE_CORE_ITEM.get()))
+                    .findFirst().map(ItemStack::copy).orElse(ItemStack.EMPTY);
+            if (packedCore.isEmpty() || StorageCoreBlockItem.getRecoveryId(packedCore).isEmpty()
+                    || packedCore.has(DataComponents.BLOCK_ENTITY_DATA)) {
+                helper.fail("Packed Core must carry only a recovery token and summary");
+                return;
+            }
+            level.removeBlock(corePos, false);
+            level.setBlock(restoredPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+            level.setBlock(restoredPos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+            MagicStorage.STORAGE_CORE.get().setPlacedBy(
+                    level, restoredPos, level.getBlockState(restoredPos), null, packedCore);
+            if (!(level.getBlockEntity(restoredPos) instanceof StorageCoreBlockEntity restored)
+                    || !restored.getStorageId().orElseThrow().equals(storageId)
+                    || !restored.getNetworkId().equals(networkId)
+                    || restored.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 128
+                    || restored.getItemCount(ItemKey.of(new ItemStack(Items.DIRT))) != 50
+                    || restored.getMachineContainer().getItem(MachineEnergyTable.FURNACE_SLOT).getCount() != 4) {
+                helper.fail("Packed Core did not reattach the exact repository record");
+                return;
+            }
+            helper.succeed();
+        });
+    }
 
-            helper.runAfterDelay(3, () -> {
-                ItemStack droppedCore = ItemStack.EMPTY;
-                for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, new AABB(corePos).inflate(2.0))) {
-                    ItemStack stack = entity.getItem();
-                    if (stack.is(MagicStorage.STORAGE_CORE_ITEM.get())) {
-                        droppedCore = stack.copy();
-                        break;
-                    }
-                }
-                if (droppedCore.isEmpty()) { helper.fail("Dropped core item not found"); return; }
-                if (!droppedCore.has(DataComponents.BLOCK_ENTITY_DATA)) {
-                    helper.fail("Dropped core item should carry block entity data");
-                    return;
-                }
+    @GameTest(template = "platform")
+    public static void runtime_long_counts_saturate_without_nbt_injection(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            ItemKey stone = ItemKey.of(new ItemStack(Items.STONE));
+            ItemStack namedStone = new ItemStack(Items.STONE);
+            namedStone.set(DataComponents.CUSTOM_NAME, Component.literal("Second Variant"));
+            ItemKey secondVariant = ItemKey.of(namedStone);
+            if (core.insertItemCount(stone, Long.MAX_VALUE, Action.EXECUTE, Actor.EMPTY) != Long.MAX_VALUE
+                    || core.insertItemCount(stone, 1, Action.EXECUTE, Actor.EMPTY) != 0
+                    || core.insertItemCount(secondVariant, 1, Action.EXECUTE, Actor.EMPTY) != 1
+                    || core.countMatching(stack -> stack.is(Items.STONE)) != Long.MAX_VALUE) {
+                helper.fail("Long-count storage wrapped, accepted overflow, or failed to saturate fuzzy totals");
+                return;
+            }
+            helper.succeed();
+        });
+    }
 
-                level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-                if (!BlockItem.updateCustomBlockEntityTag(level, null, corePos, droppedCore)) {
-                    helper.fail("Dropped core data did not load into replacement core");
-                    return;
-                }
-                var newBe = level.getBlockEntity(corePos);
-                if (!(newBe instanceof StorageCoreBlockEntity newCore)) { helper.fail("New core BE not found"); return; }
-                if (newCore.getTypeCount() != 2) { helper.fail("Restored core should have 2 types"); return; }
-                if (newCore.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 128) {
-                    helper.fail("Restored core lost stone count");
-                    return;
-                }
-                if (newCore.getItemCount(ItemKey.of(new ItemStack(Items.DIRT))) != 50) {
-                    helper.fail("Restored core lost dirt count");
-                    return;
-                }
-                helper.succeed();
-            });
+    @GameTest(template = "platform")
+    public static void record_machine_components_and_descriptor_state_round_trip(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        CoreStorageRecord record = CoreStorageRecord.fresh(UUID.randomUUID());
+        ItemStack namedFurnaces = new ItemStack(Items.FURNACE, 7);
+        namedFurnaces.set(DataComponents.CUSTOM_NAME, Component.literal("Arc Furnaces"));
+        record.machines().setItem(MachineEnergyTable.FURNACE_SLOT, namedFurnaces.copy());
+        record.descriptorAmounts().put(MachineEnergyTable.AXE_ID, 74L);
+        record.infiniteDescriptors().add(ResourceLocation.fromNamespaceAndPath(
+                MagicStorage.MODID, "test_infinite_descriptor"));
+        CoreStorageRecord.LoadResult loaded = CoreStorageRecord.load(record.save(registries), registries);
+        if (!loaded.success()) {
+            helper.fail("Record failed to reload: " + loaded.error());
+            return;
+        }
+        ItemStack restored = loaded.record().machines().getItem(MachineEnergyTable.FURNACE_SLOT);
+        if (!ItemStack.isSameItemSameComponents(restored, namedFurnaces) || restored.getCount() != 7
+                || loaded.record().descriptorAmounts().getOrDefault(MachineEnergyTable.AXE_ID, 0L) != 74
+                || loaded.record().unresolvedDescriptorEntries().size() != 1) {
+            helper.fail("Record lost machine components or descriptor state");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void energy_at_long_max_rejects_generation_and_fuel(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            CoreStorageRecord record = core.storageRecordForTesting();
+            record.energy().put(EnergyType.SMELTING_ENERGY, Long.MAX_VALUE);
+            record.energy().put(EnergyType.FURNACE_FUEL, Long.MAX_VALUE);
+            record.machines().setItem(MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE));
+            core.tick();
+            ItemStack coal = new ItemStack(Items.COAL);
+            if (core.getEnergy(EnergyType.SMELTING_ENERGY) != Long.MAX_VALUE
+                    || core.addFuel(coal, EnergyType.FURNACE_FUEL)
+                    || coal.getCount() != 1
+                    || core.getEnergy(EnergyType.FURNACE_FUEL) != Long.MAX_VALUE) {
+                helper.fail("Long.MAX_VALUE energy wrapped or consumed rejected fuel");
+                return;
+            }
+            helper.succeed();
         });
     }
 
@@ -734,629 +1014,6 @@ public class PersistenceTests {
             if (core.countMatching(s -> s.is(Items.DIAMOND_SWORD)) != 1) { helper.fail("1 should remain"); return; }
             helper.succeed();
         });
-    }
-
-    @GameTest(template = "platform")
-    public static void item_count_at_long_max_rejects_insert_without_wrapping(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
-        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
-
-        helper.runAfterDelay(2, () -> {
-            var be = level.getBlockEntity(corePos);
-            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
-            var entry = new CompoundTag();
-            entry.put("item", new ItemStack(Items.STONE, 1).save(level.registryAccess()));
-            entry.putLong("count", Long.MAX_VALUE);
-            var inventory = new ListTag();
-            inventory.add(entry);
-            var tag = new CompoundTag();
-            tag.put("inventory", inventory);
-            core.loadAdditional(tag, level.registryAccess());
-
-            var input = new ItemStack(Items.STONE, 1);
-            long inserted = core.insertItem(input, Action.EXECUTE, Actor.EMPTY);
-            long stored = core.getItemCount(ItemKey.of(new ItemStack(Items.STONE)));
-            if (inserted != 0) { helper.fail("Long.MAX_VALUE variant must reject another item, accepted " + inserted); return; }
-            if (input.getCount() != 1) { helper.fail("Rejected item must remain in input stack"); return; }
-            if (stored != Long.MAX_VALUE) { helper.fail("Stored count wrapped or changed: " + stored); return; }
-            helper.succeed();
-        });
-    }
-
-    @GameTest(template = "platform")
-    public static void fuzzy_count_saturates_when_matching_variants_exceed_long_max(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
-        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-
-        helper.runAfterDelay(2, () -> {
-            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
-            ItemStack plain = new ItemStack(Items.DIAMOND_SWORD);
-            ItemStack enchanted = new ItemStack(Items.DIAMOND_SWORD);
-            enchanted.enchant(level.registryAccess().registryOrThrow(Registries.ENCHANTMENT)
-                    .getHolderOrThrow(Enchantments.SHARPNESS), 1);
-
-            var inventory = new ListTag();
-            var fullEntry = new CompoundTag();
-            fullEntry.put("item", plain.save(level.registryAccess()));
-            fullEntry.putLong("count", Long.MAX_VALUE);
-            inventory.add(fullEntry);
-            var extraEntry = new CompoundTag();
-            extraEntry.put("item", enchanted.save(level.registryAccess()));
-            extraEntry.putLong("count", 1);
-            inventory.add(extraEntry);
-            var tag = new CompoundTag();
-            tag.put("inventory", inventory);
-            core.loadAdditional(tag, level.registryAccess());
-
-            long matching = core.countMatching(stack -> stack.is(Items.DIAMOND_SWORD));
-            if (matching != Long.MAX_VALUE) {
-                helper.fail("Fuzzy variant count must saturate at Long.MAX_VALUE, got " + matching);
-                return;
-            }
-            helper.succeed();
-        });
-    }
-
-    @GameTest(template = "platform")
-    public static void duplicate_nbt_entries_merge_without_loss_or_overflow(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
-        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-
-        helper.runAfterDelay(2, () -> {
-            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
-            ItemStack stone = new ItemStack(Items.STONE);
-            var inventory = new ListTag();
-            for (long count : new long[]{5, 7}) {
-                var entry = new CompoundTag();
-                entry.put("item", stone.save(level.registryAccess()));
-                entry.putLong("count", count);
-                inventory.add(entry);
-            }
-            var tag = new CompoundTag();
-            tag.put("inventory", inventory);
-            core.loadAdditional(tag, level.registryAccess());
-            if (core.getItemCount(ItemKey.of(stone)) != 12) {
-                helper.fail("Duplicate item entries should merge to 12 instead of overwriting");
-                return;
-            }
-
-            inventory = new ListTag();
-            for (long count : new long[]{Long.MAX_VALUE - 4, 10}) {
-                var entry = new CompoundTag();
-                entry.put("item", stone.save(level.registryAccess()));
-                entry.putLong("count", count);
-                inventory.add(entry);
-            }
-            tag = new CompoundTag();
-            tag.put("inventory", inventory);
-            core.loadAdditional(tag, level.registryAccess());
-            if (core.getItemCount(ItemKey.of(stone)) != Long.MAX_VALUE) {
-                helper.fail("Duplicate item entries must saturate instead of wrapping");
-                return;
-            }
-            helper.succeed();
-        });
-    }
-
-    @GameTest(template = "platform")
-    public static void installed_machines_preserve_slots_counts_and_components_across_nbt(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var firstPos = helper.absolutePos(new BlockPos(1, 3, 1));
-        var secondPos = helper.absolutePos(new BlockPos(4, 3, 1));
-        level.setBlock(firstPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-        level.setBlock(secondPos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-
-        helper.runAfterDelay(2, () -> {
-            if (!(level.getBlockEntity(firstPos) instanceof StorageCoreBlockEntity first)
-                    || !(level.getBlockEntity(secondPos) instanceof StorageCoreBlockEntity second)) {
-                helper.fail("Core block entities not found");
-                return;
-            }
-
-            ItemStack namedFurnaces = new ItemStack(Items.FURNACE, 7);
-            namedFurnaces.set(DataComponents.CUSTOM_NAME, Component.literal("Arc Furnaces"));
-            var machineItems = new ListTag();
-            CompoundTag furnaceEntry = new CompoundTag();
-            furnaceEntry.putByte("Slot", (byte) 0);
-            furnaceEntry = (CompoundTag) namedFurnaces.save(level.registryAccess(), furnaceEntry);
-            machineItems.add(furnaceEntry);
-            CompoundTag brewingEntry = new CompoundTag();
-            brewingEntry.putByte("Slot", (byte) 4);
-            brewingEntry = (CompoundTag) new ItemStack(Items.BREWING_STAND, 2)
-                    .save(level.registryAccess(), brewingEntry);
-            machineItems.add(brewingEntry);
-            var machines = new CompoundTag();
-            machines.put("Items", machineItems);
-            var initial = new CompoundTag();
-            initial.put("machines", machines);
-            first.loadAdditional(initial, level.registryAccess());
-
-            var saved = new CompoundTag();
-            first.saveAdditional(saved, level.registryAccess());
-            second.loadAdditional(saved, level.registryAccess());
-            var resaved = new CompoundTag();
-            second.saveAdditional(resaved, level.registryAccess());
-            ListTag roundTrip = resaved.getList("machineDescriptors", Tag.TAG_COMPOUND);
-            if (roundTrip.size() != 2) {
-                helper.fail("Machine NBT must preserve both occupied slots, got " + roundTrip.size());
-                return;
-            }
-
-            ItemStack furnace = ItemStack.EMPTY;
-            ItemStack brewing = ItemStack.EMPTY;
-            for (int i = 0; i < roundTrip.size(); i++) {
-                CompoundTag entry = roundTrip.getCompound(i);
-                String descriptorId = entry.getString("descriptorId");
-                ItemStack stack = ItemStack.parse(
-                        level.registryAccess(), entry.getCompound("item")).orElse(ItemStack.EMPTY);
-                if (descriptorId.equals(MachineEnergyTable.FURNACE_ID.toString())) furnace = stack;
-                if (descriptorId.equals(MachineEnergyTable.BREWING_STAND_ID.toString())) brewing = stack;
-            }
-            if (!ItemStack.isSameItemSameComponents(furnace, namedFurnaces) || furnace.getCount() != 7) {
-                helper.fail("Furnace machine stack lost count or components: " + furnace);
-                return;
-            }
-            if (!brewing.is(Items.BREWING_STAND) || brewing.getCount() != 2) {
-                helper.fail("Brewing Stand machine stack did not survive its exact slot: " + brewing);
-                return;
-            }
-            helper.succeed();
-        });
-    }
-
-    @GameTest(template = "platform")
-    public static void finite_axe_energy_survives_nbt_round_trip(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var source = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        ItemStack axe = new ItemStack(Items.DIAMOND_AXE);
-        axe.setDamageValue(axe.getMaxDamage() - 37);
-        axe.enchant(registries.registryOrThrow(Registries.ENCHANTMENT)
-                .getHolderOrThrow(Enchantments.UNBREAKING), 1);
-        if (!source.addAxeEnergy(axe) || !axe.isEmpty()) {
-            helper.fail("Finite axe must be accepted and consumed before persistence");
-            return;
-        }
-        if (source.getAxeEnergy() != 74 || source.hasInfiniteAxeEnergy()) {
-            helper.fail("Expected exactly 74 finite Axe Energy before save");
-            return;
-        }
-
-        var saved = new CompoundTag();
-        source.saveAdditional(saved, registries);
-        var restored = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        restored.loadAdditional(saved, registries);
-        if (restored.getAxeEnergy() != 74) {
-            helper.fail("Finite Axe Energy did not survive NBT round-trip: " + restored.getAxeEnergy());
-            return;
-        }
-        if (restored.hasInfiniteAxeEnergy()) {
-            helper.fail("Finite Axe Energy round-trip must not enable the infinite flag");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void machine_installations_persist_by_descriptor_id_in_a_fixed_slot_bank(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var source = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        if (source.getMachineContainer().getContainerSize() != MachineDescriptorApi.MAX_DESCRIPTORS) {
-            helper.fail("Machine slot bank must stay fixed at the public descriptor cap");
-            return;
-        }
-        source.getMachineContainer().setItem(
-                MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE, 3));
-
-        var saved = new CompoundTag();
-        source.saveAdditional(saved, registries);
-        ListTag descriptors = saved.getList("machineDescriptors", Tag.TAG_COMPOUND);
-        if (descriptors.size() != 1
-                || !MachineEnergyTable.FURNACE_ID.toString().equals(
-                        descriptors.getCompound(0).getString("descriptorId"))) {
-            helper.fail("Machine persistence must use the stable descriptor id: " + descriptors);
-            return;
-        }
-
-        var restored = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        restored.loadAdditional(saved, registries);
-        ItemStack installed = restored.getMachineContainer().getItem(MachineEnergyTable.FURNACE_SLOT);
-        if (!installed.is(Items.FURNACE) || installed.getCount() != 3) {
-            helper.fail("Descriptor-keyed machine did not restore to its current slot: " + installed);
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void missing_machine_descriptor_recovers_its_item_into_core_storage(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var entry = new CompoundTag();
-        entry.putString("descriptorId", "removed_addon:missing_station");
-        entry.put("item", new ItemStack(Items.DIAMOND, 7).save(registries));
-        var descriptors = new ListTag();
-        descriptors.add(entry);
-        var persisted = new CompoundTag();
-        persisted.put("machineDescriptors", descriptors);
-
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(persisted, registries);
-        if (core.getItemCount(ItemKey.of(new ItemStack(Items.DIAMOND))) != 7) {
-            helper.fail("Removed descriptor item was not recovered into Core storage");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void unavailable_addon_item_nbt_is_retained_until_addon_returns(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        CompoundTag rawItem = (CompoundTag) new ItemStack(Items.DIAMOND, 7).save(registries);
-        rawItem.putString("id", "removed_addon:orphaned_machine_item");
-        var entry = new CompoundTag();
-        entry.putString("descriptorId", "removed_addon:orphaned_machine");
-        entry.put("item", rawItem.copy());
-        var descriptors = new ListTag();
-        descriptors.add(entry);
-        var persisted = new CompoundTag();
-        persisted.put("machineDescriptors", descriptors);
-
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(persisted, registries);
-        var resaved = new CompoundTag();
-        core.saveAdditional(resaved, registries);
-        ListTag retained = resaved.getList("machineDescriptors", Tag.TAG_COMPOUND);
-        if (retained.size() != 1) {
-            helper.fail("Unavailable addon item NBT was discarded instead of retained: " + retained);
-            return;
-        }
-        CompoundTag retainedEntry = retained.getCompound(0);
-        CompoundTag retainedItem = retainedEntry.getCompound("item");
-        if (!"removed_addon:orphaned_machine".equals(retainedEntry.getString("descriptorId"))
-                || !"removed_addon:orphaned_machine_item".equals(retainedItem.getString("id"))
-                || retainedItem.getInt("count") != 7) {
-            helper.fail("Unavailable addon machine entry changed during lossless retention: " + retainedEntry);
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void unavailable_addon_inventory_item_nbt_is_retained_until_addon_returns(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        CompoundTag rawItem = (CompoundTag) new ItemStack(Items.DIAMOND).save(registries);
-        rawItem.putString("id", "removed_addon:orphaned_storage_item");
-        var entry = new CompoundTag();
-        entry.put("item", rawItem.copy());
-        entry.putLong("count", 73);
-        var inventory = new ListTag();
-        inventory.add(entry);
-        var persisted = new CompoundTag();
-        persisted.put("inventory", inventory);
-
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(persisted, registries);
-        var resaved = new CompoundTag();
-        core.saveAdditional(resaved, registries);
-        ListTag retained = resaved.getList("inventory", Tag.TAG_COMPOUND);
-        if (!core.hasRecoverableContents() || core.getTotalStoredItemCount() != 73
-                || retained.size() != 1) {
-            helper.fail("Unavailable addon storage item was discarded: " + retained);
-            return;
-        }
-        CompoundTag retainedEntry = retained.getCompound(0);
-        if (!"removed_addon:orphaned_storage_item".equals(
-                retainedEntry.getCompound("item").getString("id"))
-                || retainedEntry.getLong("count") != 73) {
-            helper.fail("Unavailable addon storage entry changed during retention: " + retainedEntry);
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void descriptor_consumable_state_is_keyed_and_persistent(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var source = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        ItemStack axe = new ItemStack(Items.DIAMOND_AXE);
-        axe.setDamageValue(axe.getMaxDamage() - 13);
-        if (!source.addDescriptorConsumable(MachineEnergyTable.AXE_ID, axe)
-                || source.getDescriptorAmount(MachineEnergyTable.AXE_ID) != 13) {
-            helper.fail("Descriptor consumable callback was not applied server-side");
-            return;
-        }
-
-        var saved = new CompoundTag();
-        source.saveAdditional(saved, registries);
-        var restored = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        restored.loadAdditional(saved, registries);
-        if (restored.getDescriptorAmount(MachineEnergyTable.AXE_ID) != 13
-                || restored.hasInfiniteDescriptor(MachineEnergyTable.AXE_ID)
-                || !restored.consumeDescriptor(MachineEnergyTable.AXE_ID, 5)
-                || restored.getDescriptorAmount(MachineEnergyTable.AXE_ID) != 8) {
-            helper.fail("Descriptor consumable state did not persist or consume by stable id");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void infinite_axe_energy_flag_survives_nbt_round_trip(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var source = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        ItemStack axe = new ItemStack(Items.NETHERITE_AXE);
-        axe.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
-        if (!source.addAxeEnergy(axe) || !axe.isEmpty()) {
-            helper.fail("Unbreakable axe must be accepted and consumed before persistence");
-            return;
-        }
-        if (!source.hasInfiniteAxeEnergy() || source.getAxeEnergy() != 0) {
-            helper.fail("Infinite Axe Energy must use an explicit flag instead of a finite sentinel");
-            return;
-        }
-
-        var saved = new CompoundTag();
-        source.saveAdditional(saved, registries);
-        var restored = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        restored.loadAdditional(saved, registries);
-        if (!restored.hasInfiniteAxeEnergy()) {
-            helper.fail("Infinite Axe Energy flag did not survive NBT round-trip");
-            return;
-        }
-        if (restored.getAxeEnergy() != 0) {
-            helper.fail("Infinite Axe Energy round-trip must not use Long.MAX_VALUE or another finite sentinel");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void legacy_slot_eight_finite_axe_migrates_and_clears_after_success(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        ItemStack legacyAxe = new ItemStack(Items.IRON_AXE);
-        legacyAxe.setDamageValue(legacyAxe.getMaxDamage() - 9);
-        legacyAxe.enchant(registries.registryOrThrow(Registries.ENCHANTMENT)
-                .getHolderOrThrow(Enchantments.UNBREAKING), 2);
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(legacyMachineTag(registries, legacyAxe), registries);
-
-        if (core.getAxeEnergy() != 27 || core.hasInfiniteAxeEnergy()) {
-            helper.fail("Legacy finite axe must migrate to exactly 27 finite Axe Energy");
-            return;
-        }
-        if (!core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
-            helper.fail("Legacy slot 8 axe must clear after successful finite migration");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void legacy_slot_eight_overflow_preserves_axe_and_existing_energy(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        ItemStack legacyAxe = new ItemStack(Items.IRON_AXE);
-        legacyAxe.setDamageValue(legacyAxe.getMaxDamage() - 2);
-        CompoundTag persisted = legacyMachineTag(registries, legacyAxe);
-        persisted.putLong("axeEnergy", Long.MAX_VALUE - 1);
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(persisted, registries);
-
-        if (core.getAxeEnergy() != Long.MAX_VALUE - 1 || core.hasInfiniteAxeEnergy()) {
-            helper.fail("Overflow migration must preserve the existing finite Axe Energy");
-            return;
-        }
-        ItemStack retained = core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT);
-        if (retained.getCount() != 1 || !ItemStack.isSameItemSameComponents(retained, legacyAxe)) {
-            helper.fail("Overflow migration must leave the complete legacy slot 8 axe untouched: " + retained);
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void legacy_slot_eight_unbreakable_axe_migrates_to_infinite(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        ItemStack legacyAxe = new ItemStack(Items.DIAMOND_AXE);
-        legacyAxe.set(DataComponents.UNBREAKABLE, new Unbreakable(true));
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(legacyMachineTag(registries, legacyAxe), registries);
-
-        if (!core.hasInfiniteAxeEnergy() || core.getAxeEnergy() != 0) {
-            helper.fail("Legacy Unbreakable axe must migrate to explicit infinite Axe Energy");
-            return;
-        }
-        if (!core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
-            helper.fail("Legacy slot 8 axe must clear after successful infinite migration");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void stacked_legacy_instant_station_keeps_one_and_recovers_extras(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        ItemStack legacyStations = new ItemStack(Items.CRAFTING_TABLE, 3);
-        var machineItems = new ListTag();
-        var stationEntry = new CompoundTag();
-        stationEntry.putByte("Slot", (byte) MachineEnergyTable.CRAFTING_TABLE_SLOT);
-        machineItems.add(legacyStations.save(registries, stationEntry));
-        var machines = new CompoundTag();
-        machines.put("Items", machineItems);
-        var persisted = new CompoundTag();
-        persisted.put("machines", machines);
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(persisted, registries);
-
-        ItemStack installed = core.getMachineContainer().getItem(MachineEnergyTable.CRAFTING_TABLE_SLOT);
-        if (!installed.is(Items.CRAFTING_TABLE) || installed.getCount() != 1) {
-            helper.fail("Legacy instant station must normalize to exactly one installed item: " + installed);
-            return;
-        }
-        if (core.getItemCount(ItemKey.of(new ItemStack(Items.CRAFTING_TABLE))) != 2) {
-            helper.fail("Legacy instant-station extras must remain recoverable in Core storage");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void legacy_bottle_fuel_migrates_to_plain_glass_bottles_once(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var inventory = new ListTag();
-        var bottleEntry = new CompoundTag();
-        bottleEntry.put("item", new ItemStack(Items.GLASS_BOTTLE).save(registries));
-        bottleEntry.putLong("count", 5);
-        inventory.add(bottleEntry);
-        var energy = new CompoundTag();
-        energy.putLong("bottle_fuel", 37);
-        energy.putLong(EnergyType.FURNACE_FUEL.getId(), 91);
-        var legacy = new CompoundTag();
-        legacy.put("energy", energy);
-        legacy.put("inventory", inventory);
-
-        var first = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        first.loadAdditional(legacy, registries);
-        ItemKey bottles = ItemKey.of(new ItemStack(Items.GLASS_BOTTLE));
-        if (first.getItemCount(bottles) != 42) {
-            helper.fail("Legacy Bottle Energy must migrate one-for-one to plain Glass Bottles");
-            return;
-        }
-        if (first.getEnergy(EnergyType.FURNACE_FUEL) != 91) {
-            helper.fail("Bottle migration must preserve unrelated energy pools");
-            return;
-        }
-
-        var saved = new CompoundTag();
-        first.saveAdditional(saved, registries);
-        if (saved.getCompound("energy").contains("bottle_fuel")) {
-            helper.fail("Fully migrated Bottle Energy must not remain in saved NBT");
-            return;
-        }
-        var second = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        second.loadAdditional(saved, registries);
-        var resaved = new CompoundTag();
-        second.saveAdditional(resaved, registries);
-        if (second.getItemCount(bottles) != 42
-                || resaved.getCompound("energy").contains("bottle_fuel")) {
-            helper.fail("Bottle migration must be idempotent across save and reload");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void legacy_bottle_fuel_overflow_remains_recoverable_until_space_frees(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var inventory = new ListTag();
-        var bottleEntry = new CompoundTag();
-        bottleEntry.put("item", new ItemStack(Items.GLASS_BOTTLE).save(registries));
-        bottleEntry.putLong("count", Long.MAX_VALUE);
-        inventory.add(bottleEntry);
-        var energy = new CompoundTag();
-        energy.putLong("bottle_fuel", 7);
-        var legacy = new CompoundTag();
-        legacy.put("energy", energy);
-        legacy.put("inventory", inventory);
-
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(legacy, registries);
-        ItemKey bottles = ItemKey.of(new ItemStack(Items.GLASS_BOTTLE));
-        var blockedSave = new CompoundTag();
-        core.saveAdditional(blockedSave, registries);
-        if (core.getItemCount(bottles) != Long.MAX_VALUE
-                || blockedSave.getCompound("energy").getLong("bottle_fuel") != 7) {
-            helper.fail("Overflowing Bottle migration must preserve all seven legacy units in escrow");
-            return;
-        }
-
-        ItemStack extracted = core.extractItem(bottles, 7, Action.EXECUTE, Actor.EMPTY);
-        var recoveredSave = new CompoundTag();
-        core.saveAdditional(recoveredSave, registries);
-        if (!extracted.is(Items.GLASS_BOTTLE) || extracted.getCount() != 7
-                || core.getItemCount(bottles) != Long.MAX_VALUE
-                || recoveredSave.getCompound("energy").contains("bottle_fuel")) {
-            helper.fail("Free bottle capacity must recover the complete escrow without clamping or duplication");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void loading_missing_live_energy_clears_previous_values(GameTestHelper helper) {
-        var registries = helper.getLevel().registryAccess();
-        var energy = new CompoundTag();
-        energy.putLong(EnergyType.FURNACE_FUEL.getId(), 91);
-        var populated = new CompoundTag();
-        populated.put("energy", energy);
-        var core = new StorageCoreBlockEntity(BlockPos.ZERO, MagicStorage.STORAGE_CORE.get().defaultBlockState());
-        core.loadAdditional(populated, registries);
-        core.loadAdditional(new CompoundTag(), registries);
-        if (core.getEnergy(EnergyType.FURNACE_FUEL) != 0) {
-            helper.fail("Loading a tag without live energy must not retain stale values");
-            return;
-        }
-        helper.succeed();
-    }
-
-    @GameTest(template = "platform")
-    public static void energy_at_long_max_does_not_wrap_or_consume_fuel(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
-        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-
-        helper.runAfterDelay(2, () -> {
-            var be = level.getBlockEntity(corePos);
-            if (!(be instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
-            var energy = new CompoundTag();
-            energy.putLong(EnergyType.SMELTING_ENERGY.getId(), Long.MAX_VALUE);
-            energy.putLong(EnergyType.FURNACE_FUEL.getId(), Long.MAX_VALUE);
-            var tag = new CompoundTag();
-            tag.put("energy", energy);
-            var machineItems = new ListTag();
-            CompoundTag furnace = new CompoundTag();
-            furnace.putByte("Slot", (byte) 0);
-            furnace = (CompoundTag) new ItemStack(Items.FURNACE).save(level.registryAccess(), furnace);
-            machineItems.add(furnace);
-            var machines = new CompoundTag();
-            machines.put("Items", machineItems);
-            tag.put("machines", machines);
-            core.loadAdditional(tag, level.registryAccess());
-
-            core.tick();
-            if (core.getEnergy(EnergyType.SMELTING_ENERGY) != Long.MAX_VALUE) {
-                helper.fail("Machine energy wrapped at Long.MAX_VALUE: " + core.getEnergy(EnergyType.SMELTING_ENERGY));
-                return;
-            }
-            var coal = new ItemStack(Items.COAL, 1);
-            if (core.addFuel(coal, EnergyType.FURNACE_FUEL)) {
-                helper.fail("Full fuel pool must reject additional fuel");
-                return;
-            }
-            if (coal.getCount() != 1) { helper.fail("Rejected fuel must not be consumed"); return; }
-            if (core.getEnergy(EnergyType.FURNACE_FUEL) != Long.MAX_VALUE) {
-                helper.fail("Fuel pool wrapped at Long.MAX_VALUE: " + core.getEnergy(EnergyType.FURNACE_FUEL));
-                return;
-            }
-            helper.succeed();
-        });
-    }
-
-    private static CompoundTag legacyMachineTag(
-            net.minecraft.core.HolderLookup.Provider registries,
-            ItemStack legacyAxe
-    ) {
-        var machineItems = new ListTag();
-        var axeEntry = new CompoundTag();
-        axeEntry.putByte("Slot", (byte) MachineEnergyTable.AXE_SLOT);
-        machineItems.add(legacyAxe.save(registries, axeEntry));
-        var machines = new CompoundTag();
-        machines.put("Items", machineItems);
-        var tag = new CompoundTag();
-        tag.put("machines", machines);
-        return tag;
     }
 
     private static CompoundTag unresolvedInventoryEntry(

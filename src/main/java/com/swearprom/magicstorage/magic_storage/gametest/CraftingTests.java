@@ -1075,60 +1075,6 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
-    public static void legacy_bottle_escrow_waits_for_storage_craft_transaction(GameTestHelper helper) {
-        var level = helper.getLevel();
-        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
-        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
-        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
-        helper.runAfterDelay(2, () -> {
-            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
-                helper.fail("Core not found");
-                return;
-            }
-            core.rebuildNetwork(level);
-            var inventory = new net.minecraft.nbt.ListTag();
-            var bottleEntry = new net.minecraft.nbt.CompoundTag();
-            bottleEntry.put("item", new ItemStack(Items.GLASS_BOTTLE).save(level.registryAccess()));
-            bottleEntry.putLong("count", Long.MAX_VALUE);
-            inventory.add(bottleEntry);
-            var energy = new net.minecraft.nbt.CompoundTag();
-            energy.putLong("bottle_fuel", 1);
-            var legacy = new net.minecraft.nbt.CompoundTag();
-            legacy.put("inventory", inventory);
-            legacy.put("energy", energy);
-            core.loadAdditional(legacy, level.registryAccess());
-            installAllRecipeStations(core);
-
-            var recipe = new ShapelessRecipe(
-                    "",
-                    CraftingBookCategory.MISC,
-                    new ItemStack(Items.GLASS_BOTTLE),
-                    NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.GLASS_BOTTLE))
-            );
-            var holder = new RecipeHolder<>(
-                    ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "legacy_bottle_escrow_transaction_test"),
-                    recipe
-            );
-            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
-            var menu = new CraftingTerminalMenu(175, player.getInventory(), core);
-            menu.clickMenuButton(player, CraftingTerminalMenu.OUTPUT_DESTINATION_BUTTON);
-            withTemporaryRegisteredRecipe(level, holder, () -> {
-                menu.getCurrentRecipes().add(holder);
-                menu.craftItem(1, player);
-                var saved = new net.minecraft.nbt.CompoundTag();
-                core.saveAdditional(saved, level.registryAccess());
-                if (core.getItemCount(ItemKey.of(new ItemStack(Items.GLASS_BOTTLE))) != Long.MAX_VALUE
-                        || saved.getCompound("energy").getLong("bottle_fuel") != 1
-                        || countInInventory(player, Items.GLASS_BOTTLE) != 0) {
-                    helper.fail("Storage craft must preserve saturated bottles and legacy escrow atomically");
-                    return;
-                }
-                helper.succeed();
-            });
-        });
-    }
-
-    @GameTest(template = "platform")
     public static void direct_storage_destination_rejects_one_item_short_without_mutation(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -1296,8 +1242,16 @@ public class CraftingTests {
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
         level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
         level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity originalCore)) {
+            helper.fail("Original Core not found");
+            return;
+        }
+        var reference = new net.minecraft.nbt.CompoundTag();
+        originalCore.saveAdditional(reference, level.registryAccess());
+        level.removeBlockEntity(corePos);
         var rejectingCore = new RejectingCraftOutputCore(
                 corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+        rejectingCore.loadAdditional(reference, level.registryAccess());
         level.setBlockEntity(rejectingCore);
         helper.runAfterDelay(2, () -> {
             if (!(level.getBlockEntity(corePos) instanceof RejectingCraftOutputCore core)) {
@@ -2185,15 +2139,9 @@ public class CraftingTests {
                 helper.fail("Core not found");
                 return;
             }
-            var entry = new net.minecraft.nbt.CompoundTag();
-            entry.put("item", new ItemStack(Items.OAK_LOG).save(level.registryAccess()));
-            entry.putLong("count", Long.MAX_VALUE);
-            var inventory = new net.minecraft.nbt.ListTag();
-            inventory.add(entry);
-            var persisted = new net.minecraft.nbt.CompoundTag();
-            persisted.put("inventory", inventory);
-            persisted.putBoolean("infiniteAxeEnergy", true);
-            core.loadAdditional(persisted, level.registryAccess());
+            core.insertItemCount(ItemKey.of(new ItemStack(Items.OAK_LOG)),
+                    Long.MAX_VALUE, Action.EXECUTE, Actor.EMPTY);
+            core.storageRecordForTesting().infiniteDescriptors().add(MachineEnergyTable.AXE_ID);
             core.rebuildNetwork(level);
 
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
@@ -2567,14 +2515,8 @@ public class CraftingTests {
         level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
         helper.runAfterDelay(2, () -> {
             if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
-            var entry = new net.minecraft.nbt.CompoundTag();
-            entry.put("item", new ItemStack(Items.STONE).save(level.registryAccess()));
-            entry.putLong("count", Long.MAX_VALUE);
-            var inventory = new net.minecraft.nbt.ListTag();
-            inventory.add(entry);
-            var tag = new net.minecraft.nbt.CompoundTag();
-            tag.put("inventory", inventory);
-            core.loadAdditional(tag, level.registryAccess());
+            core.insertItemCount(ItemKey.of(new ItemStack(Items.STONE)),
+                    Long.MAX_VALUE, Action.EXECUTE, Actor.EMPTY);
             installAllRecipeStations(core);
 
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
@@ -4317,16 +4259,10 @@ public class CraftingTests {
             net.minecraft.core.HolderLookup.Provider registries,
             CoreItemCount... entries
     ) {
-        var inventory = new net.minecraft.nbt.ListTag();
         for (CoreItemCount stored : entries) {
-            var entry = new net.minecraft.nbt.CompoundTag();
-            entry.put("item", stored.stack().save(registries));
-            entry.putLong("count", stored.count());
-            inventory.add(entry);
+            core.insertItemCount(
+                    ItemKey.of(stored.stack()), stored.count(), Action.EXECUTE, Actor.EMPTY);
         }
-        var root = new net.minecraft.nbt.CompoundTag();
-        root.put("inventory", inventory);
-        core.loadAdditional(root, registries);
     }
 
     private record CoreItemCount(ItemStack stack, long count) {
@@ -4370,6 +4306,11 @@ public class CraftingTests {
 
         private CountingPreviewCore(BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
             super(pos, state);
+        }
+
+        @Override
+        public boolean isStorageAvailable() {
+            return true;
         }
 
         @Override

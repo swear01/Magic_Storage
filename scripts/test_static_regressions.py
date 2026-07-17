@@ -1775,9 +1775,14 @@ class StaticRegressionTests(unittest.TestCase):
         core = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
         )
-        self.assertIn("UUID.randomUUID()", core)
-        self.assertIn("tag.putUUID(TAG_NETWORK_ID, networkId)", core)
-        self.assertIn("tag.hasUUID(TAG_NETWORK_ID)", core)
+        record = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRecord.java"
+        )
+        self.assertIn("UUID.randomUUID()", record)
+        self.assertIn("tag.putUUID(TAG_NETWORK_ID, networkId)", record)
+        self.assertIn("tag.getUUID(TAG_NETWORK_ID)", record)
+        self.assertIn("tag.putUUID(TAG_STORAGE_ID, storageId)", core)
+        self.assertNotIn("TAG_NETWORK_ID", core)
 
         remote = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/RemoteTerminalItem.java"
@@ -1837,7 +1842,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("available type capacity decreases", text)
         self.assertIn("stored items stay in the core", text)
 
-    def test_retired_bottle_energy_has_only_a_lossless_nbt_migration_surface(self):
+    def test_retired_bottle_energy_has_no_runtime_or_migration_surface(self):
         runtime_without_migration = "\n".join(
             self.read_required(path)
             for path in [
@@ -1845,15 +1850,14 @@ class StaticRegressionTests(unittest.TestCase):
                 "src/main/java/com/swearprom/magicstorage/magic_storage/FuelTable.java",
                 "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java",
                 "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java",
+                "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java",
+                "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRecord.java",
+                "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRepository.java",
             ]
         )
         self.assertNotIn("BOTTLE_FUEL", runtime_without_migration)
         self.assertNotIn("bottle_fuel", runtime_without_migration)
-        core = self.read_required(
-            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
-        )
-        self.assertIn('"bottle_fuel"', core)
-        self.assertIn("legacyBottleFuel", core)
+        self.assertNotIn("legacyBottleFuel", runtime_without_migration)
 
         player_facing_surfaces = "\n".join(
             self.read_required(path)
@@ -2197,6 +2201,9 @@ class StaticRegressionTests(unittest.TestCase):
         core = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
         )
+        record = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRecord.java"
+        )
 
         self.assertIn("REGISTRY_KEY", api)
         self.assertIn("createDeferredRegister", api)
@@ -2213,8 +2220,9 @@ class StaticRegressionTests(unittest.TestCase):
             "src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java"
         ))
         self.assertIn("descriptorId", packet)
-        self.assertIn('TAG_MACHINE_DESCRIPTORS = "machineDescriptors"', core)
-        self.assertIn("recoverUnregisteredMachine", core)
+        self.assertIn('TAG_MACHINE_DESCRIPTORS = "machineDescriptors"', record)
+        self.assertIn("unresolvedMachineEntries", record)
+        self.assertNotIn("recoverUnregisteredMachine", core)
 
     def test_storage_core_breaking_is_tool_independent_creative_safe_and_recoverable(self):
         registration = self.read_required(
@@ -2226,8 +2234,8 @@ class StaticRegressionTests(unittest.TestCase):
         item = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockItem.java"
         )
-        recovery = self.read_required(
-            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreRecoverySavedData.java"
+        repository = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRepository.java"
         )
         wrench = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/WrenchActions.java"
@@ -2243,9 +2251,10 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("prepareRecoveryDrop", block)
         self.assertIn("onExplosionHit", block)
         self.assertIn("RECOVERY_ID", item)
-        self.assertIn("CoreRecoverySavedData", item)
-        self.assertIn("extends SavedData", recovery)
-        self.assertIn("reissueLatest", recovery)
+        self.assertIn("CoreStorageRepository", item)
+        self.assertIn("extends SavedData", repository)
+        self.assertIn("reissueLatest", repository)
+        self.assertIn("claimIntoFresh", repository)
         self.assertIn("RegisterCommandsEvent", registration)
         self.assertIn("prepareRecoveryDrop", wrench)
 
@@ -2283,9 +2292,19 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn('TAG_INVENTORY_SEGMENTS = "inventorySegments"', record)
         self.assertIn('TAG_STORAGE_ID = "storageId"', core)
         self.assertIn('TAG_STORAGE_SCHEMA = "storageSchema"', core)
+        self.assertIn(".tryCreateFresh(", core)
         self.assertNotIn('tag.put("inventory"', core)
         self.assertNotIn('tag.put("energy"', core)
         self.assertNotIn("BlockItem.setBlockEntityData", block)
+        self.assertIn("Unsupported Core storage repository root", repository)
+        self.assertIn("Orphan Core storage record", repository)
+        self.assertIn("Corrupt Core storage record", repository)
+        self.assertIn(
+            "Duplicate Core storage record at index {} for storageId={}; "
+            "preserving all copies as unavailable data",
+            repository,
+        )
+        self.assertIn("Unresolved Core recovery entry", repository)
         self.assertFalse((ROOT / (
             "src/main/java/com/swearprom/magicstorage/magic_storage/"
             "CoreRecoverySavedData.java"

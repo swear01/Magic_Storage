@@ -123,7 +123,7 @@ Mending adds no value because the stored reserve has no XP repair process. Other
 
 An item carrying the Unbreakable component sets an explicit infinite Axe Energy flag. Infinite is not encoded as `Long.MAX_VALUE`: axe recipes do not decrement it, it persists in Core NBT, and recipe metadata carries a separate infinity bit so the UI displays `∞` without confusing a finite `Long.MAX_VALUE` reserve. Once infinite, further axes are rejected without consumption.
 
-The old persisted axe station slot is migrated once. A valid finite or Unbreakable axe is converted with the same rules and cleared only after the new reserve is stored. If conversion fails, the original item remains persisted and the Axe Energy slot exposes it for recovery. Existing process stations retain their identities and contents; legacy stacked instant stations keep one installed and recover representable extras into Core storage.
+This design originally specified one-time migration from the old persisted axe station and stacked instant stations. The 2026-07-17 Core repository design supersedes that compatibility path: the current early-development schema does not read old inline machine slots. New transient axe input is still converted atomically, rejected stacks remain unchanged, and installable descriptors accept only their current maximum.
 
 ## Fuel target selector and station hit boxes
 
@@ -137,7 +137,7 @@ Every Fuel descriptor cell uses a compact vertical grammar: the 18-pixel station
 
 ## Retired Bottle Energy migration
 
-Bottle Energy is not a live target or recipe resource. Glass Bottles and Potions remain normal storage items. On Core load, the historical `bottle_fuel` value migrates one-for-one into plain Glass Bottles. If that exact item variant is already at `Long.MAX_VALUE`, the unconverted amount remains in a persisted legacy escrow and fills newly available bottle count space after later extraction. During a mutation batch, refill waits until the outermost batch ends so crafting commit and rollback retain the capacity predicted during simulation. The retired four-word menu data region remains zero-filled to preserve client/server data-slot parity.
+Bottle Energy is not a live target or recipe resource. Glass Bottles and Potions remain normal storage items. The 2026-07-17 Core repository schema intentionally does not read or migrate historical `bottle_fuel`/escrow NBT; the retired four-word menu data region remains zero-filled only to preserve client/server data-slot parity.
 
 ## Bus direction contract
 
@@ -174,9 +174,9 @@ Required coverage includes:
 - unified neutral no-recipe surface, one dim station badge, destination-specific icons, and foreground popup ordering;
 - EMI-present public-widget path, no-EMI development/dedicated-server classloading boundary, known unsupported-recipe native path, and no broad exception fallback;
 - Player/Core destination capacity, remainders, direct craft, Max, exact EMI requests, rollback, single-mutation long-count commits, and `Long.MAX_VALUE` reservations;
-- process stack rates, instant station max-one plus legacy-overstack recovery, finite/multiple/Unbreaking/overflow axes, explicit finite-vs-infinite presentation, save/load, and recoverable old-slot migration;
+- process stack rates, instant station max-one, finite/multiple/Unbreaking/overflow axes, explicit finite-vs-infinite presentation, repository save/load, raw unavailable-entry retention, and deliberate legacy-format rejection;
 - exact station hover bounds, scalable popup geometry/input, and no rail overlap;
-- retired Bottle Energy migration, transaction-safe overflow escrow recovery, live-energy reset, and preserved data-slot parity;
+- retired Bottle Energy removal, deliberate no-migration behavior, live-energy reset, and preserved zero-filled data-slot parity;
 - directional active buses plus all-side insert-only passive Import capability, atomic remainder handling, and no caller mutation;
 - English/Traditional-Chinese localization parity;
 - one count scale, slot-local text bounds, centered Name glyph, 16x16 x-symmetric referenced textures, semantic asset families, and no generation artifacts in runtime resources.
@@ -189,6 +189,6 @@ Final gates are compileJava, build, dedicated GameTest server, all Python tests,
 - Bundling EMI in the Magic Storage jar or requiring it on dedicated servers.
 - Client-side storage authority or a complete client mirror of the network inventory.
 - Arbitrary modded durability-effect valuation without a future server-owned descriptor API.
-- A public third-party station/fuel registration API in this revision.
+- Hot descriptor registration after the NeoForge registry has frozen.
 
-The first and last items are future work rather than rejected product goals; their current architecture and TDD phases are defined in `../plans/2026-07-14-modded-recipes-multistep-crafting.md`.
+The first item remains future work rather than a rejected product goal; its architecture and TDD phases are defined in `../plans/2026-07-14-modded-recipes-multistep-crafting.md`. Third-party descriptors now register through the server-owned NeoForge registry during normal mod loading; post-freeze hot registration remains unsupported.

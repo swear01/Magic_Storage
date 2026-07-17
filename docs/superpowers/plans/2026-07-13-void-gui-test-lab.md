@@ -148,20 +148,17 @@ Run the datapack test. Expected: old Y=64 coordinates, no keys 7/8, no baseline 
 
 - [x] **Step 3: Implement immutable lab data and generated commands**
 
-Add `LAB`, `TARGETS`, `GALLERY`, `BASELINE`, and `PLAYER_KIT` constants. Build the Core command from these values so manifest and command share one source. Generate the setup function with:
+Add `LAB`, `TARGETS`, `GALLERY`, `BASELINE`, and `PLAYER_KIT` constants. The original plan preloaded Core block-entity payload; the 2026-07-17 repository revision supersedes that step. Generate setup with a plain Core so its server placement path creates a fresh repository record:
 
 ```mcfunction
 fill -18 79 -12 18 79 12 minecraft:polished_blackstone_bricks outline
 fill -17 79 -11 17 79 11 minecraft:smooth_stone
 setblock -1 80 -1 magic_storage:import_bus[facing=west]
 setblock 1 80 -1 magic_storage:export_bus[facing=east]
+setblock 0 80 0 magic_storage:storage_core
 ```
 
-The complete Core command generated from `BASELINE` is equivalent to:
-
-```mcfunction
-setblock 0 80 0 magic_storage:storage_core{energy:{smelting_energy:0L,blasting_energy:0L,smoking_energy:0L,campfire_energy:0L,brew_energy:0L,furnace_fuel:0L,blaze_fuel:0L},machines:{Items:[{Slot:5b,id:"minecraft:crafting_table",count:1},{Slot:6b,id:"minecraft:stonecutter",count:1},{Slot:7b,id:"minecraft:smithing_table",count:1},{Slot:8b,id:"minecraft:iron_axe",count:1}]},inventory:[{item:{id:"minecraft:cobblestone",count:1},count:8192L},{item:{id:"minecraft:oak_log",count:1},count:192L},{item:{id:"minecraft:iron_ingot",count:1},count:128L},{item:{id:"minecraft:diamond",count:1},count:32L},{item:{id:"minecraft:coal",count:1},count:64L},{item:{id:"minecraft:blaze_rod",count:1},count:16L},{item:{id:"minecraft:glass_bottle",count:1},count:16L},{item:{id:"minecraft:netherite_upgrade_smithing_template",count:1},count:1L},{item:{id:"minecraft:diamond_sword",count:1},count:1L},{item:{id:"minecraft:netherite_ingot",count:1},count:4L}]}
-```
+`BASELINE` now records empty stored items/stations and zero energy. Station pairs, ingredients, fuels, and axes come from `PLAYER_KIT` and are exercised through normal terminal actions; no inline inventory/machine/energy NBT is written.
 
 Place gallery samples two blocks apart. Keep the gallery disconnected from the active network.
 

@@ -76,7 +76,7 @@ Interaction grammar:
 - Export Bus wrench use is handled before filter assignment;
 - spectator/off-hand/client-side execution never mutates the world.
 
-Dismantling uses the block's normal loot path. This design originally preserved a Storage Core through inline `BLOCK_ENTITY_DATA`; the later oversized-drop hardening stores the exact Core state in server `CoreRecoverySavedData` and puts a one-time token on the normal drop instead. Drops are offered to the player's inventory first and any exact remainder is spawned at the block; nothing is deleted when the inventory is full. The operation removes the block only after the drop list has been obtained. The wrench itself is not damaged because the common tag does not define a shared durability protocol.
+Dismantling uses the block's normal loot path. This design originally preserved a Storage Core through inline `BLOCK_ENTITY_DATA`, then briefly used a full `CoreRecoverySavedData` snapshot. The current repository design makes `CoreStorageRepository` the permanent payload owner from Core creation onward; a populated Core drop carries a one-time capability that reattaches the same storage/network record without copying it. Drops are offered to the player's inventory first and any exact remainder is spawned at the block; nothing is deleted when the inventory is full. The operation removes the block only after the drop list has been obtained. The wrench itself is not damaged because the common tag does not define a shared durability protocol.
 
 ## Storage tier visual language
 
@@ -136,7 +136,7 @@ One row contains Furnace, Blast Furnace, Smoker, Campfire, and Brewing Stand pro
 
 The current Instant Stations descriptor grid contains Crafting Table, Stonecutter, and Smithing Table. Each is max-one, removable, and unlock-only; no fake energy number is drawn. Its entire category width belongs to station descriptors. Type capacity is rendered separately beside the player inventory, aligned to that inventory's top and bottom, and cannot overlap or displace any station.
 
-Each panel has a bounded left label strip plus its own right-side descriptor grid, adaptive column and row counts, page count, panel-local wheel paging, and exact slot/icon hover bounds. Sparse pages distribute their current cells across the content bounds; overflow uses every row that fits before continuing on the next page. Empty machine slots show a dim representative item behind the real slot, while installed items still come only from the server-owned menu slot. A fixed 13px label band separates the final panel from the player inventory. Geometry regression coverage uses 64 descriptors in each category and verifies every page remains reachable without overlap at supported widths. Current production still exposes only code-defined descriptors; a third-party runtime registration/sync API remains a separate future design with server ownership, fixed menu parity, and world migration requirements.
+Each panel has a bounded left label strip plus its own right-side descriptor grid, adaptive column and row counts, page count, panel-local wheel paging, and exact slot/icon hover bounds. Sparse pages distribute their current cells across the content bounds; overflow uses every row that fits before continuing on the next page. Empty machine slots show a dim representative item behind the real slot, while installed items still come only from the server-owned menu slot. A fixed 13px label band separates the final panel from the player inventory. Geometry regression coverage uses 64 descriptors in each category and verifies every page remains reachable without overlap at supported widths. Current production accepts third-party descriptors through the public server-owned NeoForge registry during normal mod loading, preserves fixed menu parity, and retains unavailable add-on entries as raw repository NBT; it does not support post-freeze hot registration.
 
 The category labels are localized as `Consumables`, `Timed Stations`, and `Instant Stations`. `Stations & Axe Energy` and the old separate `Energy Reserves` composition are removed.
 
@@ -231,7 +231,7 @@ Required automated coverage:
 - no output-destination status light and no value-cycle status lights;
 - wrapped empty prompt across a unified diagram/ledger surface, no empty ledger frame, and an integrated segmented craft strip;
 - any `c:tools/wrench` item rotates buses and sneak-dismantles every network block;
-- Core dismantle preserves the exact server-backed recovery snapshot; full inventory produces exact world overflow without voiding;
+- Core dismantle preserves and moves the exact server-owned repository record without a payload snapshot; full inventory produces exact world overflow without voiding;
 - optional-Fusion metadata, exact Prism artifact/hash, vanilla fallback plus overlay model/mcmeta validity, ordinary item models, and dedicated-server independence;
 - progressively ornate symmetric tiers with differences outside the retired capacity meter;
 - exact progression recipe and material-budget contracts;

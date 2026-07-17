@@ -67,6 +67,7 @@
   "msg.magic_storage.remote_wrong_dimension": "Bound core is in another dimension!",
   "msg.magic_storage.remote_core_unloaded": "Bound core's chunk is not loaded!",
   "msg.magic_storage.remote_stale": "Bound core was replaced. Shift+right-click the intended Storage Core to rebind.",
+  "msg.magic_storage.core_storage_unavailable": "Core storage data unavailable",
   "msg.magic_storage.core_recovery_consumed": "This packed Core was already restored. Use /magic_storage recover_core if you lost another packed Core.",
   "msg.magic_storage.core_recovery_none": "No recoverable Storage Core belongs to you.",
   "msg.magic_storage.core_recovery_reissued": "Reissued a packed Core containing %s types and %s items.",

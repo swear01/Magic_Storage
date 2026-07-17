@@ -5,8 +5,6 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -268,11 +266,7 @@ public class FuelPageTests {
     @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
     public static void auto_overflow_does_not_fallback_to_second_pool(GameTestHelper helper) {
         withCore(helper, (core, player) -> {
-            var energy = new CompoundTag();
-            energy.putLong(EnergyType.BLAZE_FUEL.getId(), Long.MAX_VALUE);
-            var tag = new CompoundTag();
-            tag.put("energy", energy);
-            core.loadAdditional(tag, helper.getLevel().registryAccess());
+            core.storageRecordForTesting().energy().put(EnergyType.BLAZE_FUEL, Long.MAX_VALUE);
             core.insertItem(new ItemStack(Items.STONE));
             core.insertItem(new ItemStack(Items.DIRT));
 
@@ -426,11 +420,7 @@ public class FuelPageTests {
             ItemStack overflowStack = new ItemStack(Items.OAK_LOG, 2);
             long stackValue = Math.multiplyExact((long) burnTime, overflowStack.getCount());
             long originalEnergy = Long.MAX_VALUE - stackValue + 1;
-            var energy = new CompoundTag();
-            energy.putLong(EnergyType.FURNACE_FUEL.getId(), originalEnergy);
-            var tag = new CompoundTag();
-            tag.put("energy", energy);
-            core.loadAdditional(tag, helper.getLevel().registryAccess());
+            core.storageRecordForTesting().energy().put(EnergyType.FURNACE_FUEL, originalEnergy);
 
             if (core.addFuel(overflowStack, EnergyType.FURNACE_FUEL)) {
                 helper.fail("Runtime Fuel addition must fail closed when the exact stack value overflows the pool");
@@ -490,11 +480,7 @@ public class FuelPageTests {
                 return;
             }
 
-            var energy = new CompoundTag();
-            energy.putLong(EnergyType.FURNACE_FUEL.getId(), Long.MAX_VALUE);
-            var tag = new CompoundTag();
-            tag.put("energy", energy);
-            core.loadAdditional(tag, helper.getLevel().registryAccess());
+            core.storageRecordForTesting().energy().put(EnergyType.FURNACE_FUEL, Long.MAX_VALUE);
             menu.clickMenuButton(player, CraftingTerminalMenu.fuelTargetButtonId(EnergyType.FURNACE_FUEL));
             input.set(new ItemStack(Items.COAL));
             if (!input.getItem().is(Items.COAL) || input.getItem().getCount() != 1) {
@@ -512,11 +498,7 @@ public class FuelPageTests {
     @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
     public static void menu_close_returns_leftover_fuel_input_to_player(GameTestHelper helper) {
         withCore(helper, (core, player) -> {
-            var energy = new CompoundTag();
-            energy.putLong(EnergyType.FURNACE_FUEL.getId(), Long.MAX_VALUE);
-            var tag = new CompoundTag();
-            tag.put("energy", energy);
-            core.loadAdditional(tag, helper.getLevel().registryAccess());
+            core.storageRecordForTesting().energy().put(EnergyType.FURNACE_FUEL, Long.MAX_VALUE);
 
             var menu = new CraftingTerminalMenu(104, player.getInventory(), core);
             menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
@@ -539,11 +521,7 @@ public class FuelPageTests {
     @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
     public static void leaving_fuel_page_returns_unconverted_input_before_hiding_slot(GameTestHelper helper) {
         withCore(helper, (core, player) -> {
-            var energy = new CompoundTag();
-            energy.putLong(EnergyType.FURNACE_FUEL.getId(), Long.MAX_VALUE);
-            var tag = new CompoundTag();
-            tag.put("energy", energy);
-            core.loadAdditional(tag, helper.getLevel().registryAccess());
+            core.storageRecordForTesting().energy().put(EnergyType.FURNACE_FUEL, Long.MAX_VALUE);
 
             var menu = new CraftingTerminalMenu(108, player.getInventory(), core);
             menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
@@ -570,7 +548,6 @@ public class FuelPageTests {
     @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
     public static void page_target_and_all_long_energy_values_sync_to_buf_menu(GameTestHelper helper) {
         withCore(helper, (core, player) -> {
-            var energy = new CompoundTag();
             long[] expectedAmounts = {
                     0L,
                     0xFFFFL,
@@ -582,12 +559,10 @@ public class FuelPageTests {
                     Long.MAX_VALUE
             };
             for (EnergyType type : EnergyType.values()) {
-                energy.putLong(type.getId(), expectedAmounts[type.ordinal()]);
+                core.storageRecordForTesting().energy().put(type, expectedAmounts[type.ordinal()]);
             }
-            var tag = new CompoundTag();
-            tag.put("energy", energy);
-            tag.putLong("axeEnergy", Long.MAX_VALUE - 2);
-            core.loadAdditional(tag, helper.getLevel().registryAccess());
+            core.storageRecordForTesting().descriptorAmounts().put(
+                    MachineEnergyTable.AXE_ID, Long.MAX_VALUE - 2);
             long stoneInserted = core.insertItem(new ItemStack(Items.STONE));
             long dirtInserted = core.insertItem(new ItemStack(Items.DIRT));
             if (stoneInserted != 1 || dirtInserted != 1 || core.getTypeCount() != 2) {
@@ -658,22 +633,12 @@ public class FuelPageTests {
     public static void recipe_resource_longs_survive_signed_short_wire(GameTestHelper helper) {
         withCore(helper, (core, player) -> {
             long available = 0x1234_8000_FFFE_FFFFL;
-            var root = new CompoundTag();
-            var inventory = new net.minecraft.nbt.ListTag();
-            var cobble = new CompoundTag();
-            cobble.put("item", new ItemStack(Items.COBBLESTONE).save(helper.getLevel().registryAccess()));
-            cobble.putLong("count", available);
-            inventory.add(cobble);
-            var stone = new CompoundTag();
-            stone.put("item", new ItemStack(Items.STONE).save(helper.getLevel().registryAccess()));
-            stone.putLong("count", 1);
-            inventory.add(stone);
-            root.put("inventory", inventory);
-            var energy = new CompoundTag();
-            energy.putLong(EnergyType.SMELTING_ENERGY.getId(), available);
-            energy.putLong(EnergyType.FURNACE_FUEL.getId(), available);
-            root.put("energy", energy);
-            core.loadAdditional(root, helper.getLevel().registryAccess());
+            core.insertItemCount(ItemKey.of(new ItemStack(Items.COBBLESTONE)),
+                    available, Action.EXECUTE, Actor.EMPTY);
+            core.insertItemCount(ItemKey.of(new ItemStack(Items.STONE)),
+                    1, Action.EXECUTE, Actor.EMPTY);
+            core.storageRecordForTesting().energy().put(EnergyType.SMELTING_ENERGY, available);
+            core.storageRecordForTesting().energy().put(EnergyType.FURNACE_FUEL, available);
             core.getMachineContainer().setItem(
                     MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE));
 
@@ -933,9 +898,8 @@ public class FuelPageTests {
                 return;
             }
 
-            var persisted = new CompoundTag();
-            persisted.putLong("axeEnergy", Long.MAX_VALUE - 1);
-            core.loadAdditional(persisted, helper.getLevel().registryAccess());
+            core.storageRecordForTesting().descriptorAmounts().put(
+                    MachineEnergyTable.AXE_ID, Long.MAX_VALUE - 1);
             ItemStack rejected = new ItemStack(Items.IRON_AXE);
             rejected.setDamageValue(rejected.getMaxDamage() - 2);
             if (core.addAxeEnergy(rejected)) {
@@ -944,62 +908,6 @@ public class FuelPageTests {
             }
             if (core.getAxeEnergy() != Long.MAX_VALUE - 1 || rejected.getCount() != 1) {
                 helper.fail("Overflow rejection must preserve both stored energy and input axe");
-                return;
-            }
-            helper.succeed();
-        });
-    }
-
-    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
-    public static void overflowed_legacy_axe_remains_retrievable_from_consumable_slot(GameTestHelper helper) {
-        withCore(helper, (core, player) -> {
-            ItemStack legacyAxe = new ItemStack(Items.IRON_AXE);
-            legacyAxe.setDamageValue(legacyAxe.getMaxDamage() - 2);
-            var machineItems = new ListTag();
-            var axeEntry = new CompoundTag();
-            axeEntry.putByte("Slot", (byte) MachineEnergyTable.AXE_SLOT);
-            machineItems.add(legacyAxe.save(helper.getLevel().registryAccess(), axeEntry));
-            var machines = new CompoundTag();
-            machines.put("Items", machineItems);
-            var persisted = new CompoundTag();
-            persisted.putLong("axeEnergy", Long.MAX_VALUE - 1);
-            persisted.put("machines", machines);
-            core.loadAdditional(persisted, helper.getLevel().registryAccess());
-
-            var menu = new CraftingTerminalMenu(124, player.getInventory(), core);
-            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
-            int axeSlot = CraftingTerminalMenu.MACHINE_SLOT_START + MachineEnergyTable.AXE_SLOT;
-            ItemStack visible = menu.getSlot(axeSlot).getItem();
-            if (visible.getCount() != 1 || !ItemStack.isSameItemSameComponents(visible, legacyAxe)) {
-                helper.fail("Failed legacy migration must expose the complete axe for recovery: " + visible);
-                return;
-            }
-
-            menu.quickMoveStack(player, axeSlot);
-            if (!core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()
-                    || player.getInventory().countItem(Items.IRON_AXE) != 1) {
-                helper.fail("Recovered legacy axe must move from Core storage to the player inventory");
-                return;
-            }
-            if (core.getAxeEnergy() != Long.MAX_VALUE - 1) {
-                helper.fail("Recovering a failed legacy migration must not change stored Axe Energy");
-                return;
-            }
-
-            menu.removed(player);
-            player.getInventory().clearContent();
-            core.loadAdditional(persisted, helper.getLevel().registryAccess());
-            var pickupMenu = new CraftingTerminalMenu(125, player.getInventory(), core);
-            pickupMenu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
-            pickupMenu.clicked(axeSlot, 0, ClickType.PICKUP, player);
-            ItemStack carried = pickupMenu.getCarried();
-            if (carried.getCount() != 1 || !ItemStack.isSameItemSameComponents(carried, legacyAxe)
-                    || !core.getMachineContainer().getItem(MachineEnergyTable.AXE_SLOT).isEmpty()) {
-                helper.fail("Normal pickup must recover the complete failed legacy axe: " + carried);
-                return;
-            }
-            if (core.getAxeEnergy() != Long.MAX_VALUE - 1) {
-                helper.fail("Normal legacy recovery must preserve stored Axe Energy");
                 return;
             }
             helper.succeed();

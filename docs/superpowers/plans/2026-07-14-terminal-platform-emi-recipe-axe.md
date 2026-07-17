@@ -139,7 +139,7 @@
 
 ## Task 6: Station categories and Axe Energy storage
 
-> Status: complete. Initial RED produced 66 expected missing-category/Axe-Energy/persistence/menu compile errors, one focused Fuel UI static failure, and two focused GUI-lab/checklist failures. Review RED then exposed a hidden failed-migration axe, legacy instant overstack, ambiguous infinite presentation, and chunk-loop risk. GREEN is compileJava, build, SelfTest 222949/222949, GameTest 251/251, Python 99/99, runData without drift, and runClient dry-run. Five process descriptors remain stackable, three instant stations are max-one with upgrade recovery, the ninth descriptor is a consuming transient input or failed-migration recovery view, Core persists finite-or-explicit-infinite Axe Energy, and Max uses atomic per-key long-count mutations.
+> Status: complete, with migration portions superseded. Initial RED/GREEN evidence covered the then-current inline Core format, including failed-migration axe and legacy instant overstack cases. The 2026-07-17 repository revision intentionally removed those compatibility paths: five process descriptors remain stackable, three instant stations are max-one, the ninth descriptor is a consuming transient input, the repository record persists finite-or-explicit-infinite Axe Energy, and Max still uses atomic per-key long-count mutations.
 
 **Files:**
 
@@ -165,9 +165,9 @@
 - Modify: `docs/overview.md`
 - Modify: `docs/notes.md`
 
-**RED:** Add tests proving process machines stack and contribute per installed block; instant stations accept one and reject a second without consuming it; legacy stacked instant stations recover extras; axes cannot remain installed; finite conversion is remaining durability multiplied by vanilla Unbreaking level plus one; Mending and unrelated enchantments add nothing; multiple finite axes accumulate; checked overflow rejects without consumption; Unbreakable sets a persistent explicit infinite flag; finite `Long.MAX_VALUE` stays distinct from infinity; infinite recipes never decrement; further axes reject; and the old slot-8 axe clears only after successful migration or remains visible/retrievable after failure. Include finite/infinite recipe capacity, single-mutation `Long.MAX_VALUE` Max, rollback, save/load, and menu parity cases. Run `./gradlew runGameTestServer` and confirm the installed-tool/chunk-loop model fails.
+**Historical RED:** The original inline-format tests covered legacy overstack and slot-8 migration in addition to the still-current process stacking, max-one rejection, transient axe conversion, overflow, infinity, rollback, save/load, and menu-parity cases. The legacy assertions are no longer current acceptance criteria after the no-migration repository revision.
 
-**GREEN:** Classify descriptors as process or instant, enforce stack limits server-side, recover legacy instant-station extras, store Axe Energy and the explicit infinite flag in Core NBT, atomically convert accepted axes, expose a failed legacy slot-8 migration for recovery, sync explicit tool infinity, and make synthetic axe planning/commit reserve Axe Energy through per-key long-count mutations instead of mutating an item or chunk-looping. Run `./gradlew runGameTestServer`.
+**Current GREEN contract:** Classify descriptors as process or instant, enforce stack limits server-side while leaving remainders unchanged, store Axe Energy and the explicit infinite flag in the attached repository record, atomically convert accepted axes, sync explicit tool infinity, and make synthetic axe planning/commit reserve Axe Energy through per-key long-count mutations. Do not read legacy inline machine slots.
 
 **Commit:** `feat: replace installed axes with persistent axe energy`
 

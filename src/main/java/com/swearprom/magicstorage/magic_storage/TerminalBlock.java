@@ -2,14 +2,11 @@ package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.MenuProvider;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
@@ -35,6 +32,11 @@ public class TerminalBlock extends Block implements IStorageNetworkBlock {
         if (!level.isClientSide()) {
             StorageCoreBlockEntity core = MagicStorage.bfsFindCore(level, pos);
             if (core != null) {
+                if (!core.isStorageAvailable()) {
+                    player.displayClientMessage(
+                            Component.translatable("msg.magic_storage.core_storage_unavailable"), true);
+                    return InteractionResult.CONSUME;
+                }
                 if (crafting) {
                     player.openMenu(new SimpleMenuProvider(
                             (containerId, inv, p) -> new CraftingTerminalMenu(containerId, inv, core, pos, false),

@@ -6,7 +6,6 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -1613,14 +1612,9 @@ public class TerminalFlowTests {
                 return;
             }
 
-            var entry = new CompoundTag();
-            entry.put("item", new ItemStack(Items.STONE).save(level.registryAccess()));
-            entry.putLong("count", Long.MAX_VALUE - 3);
-            var inventory = new ListTag();
-            inventory.add(entry);
-            var tag = new CompoundTag();
-            tag.put("inventory", inventory);
-            core.loadAdditional(tag, level.registryAccess());
+            ItemKey stoneKey = ItemKey.of(new ItemStack(Items.STONE));
+            core.extractItemCount(stoneKey, Long.MAX_VALUE, Action.EXECUTE, Actor.EMPTY);
+            core.insertItemCount(stoneKey, Long.MAX_VALUE - 3, Action.EXECUTE, Actor.EMPTY);
             ItemStack partialInput = new ItemStack(Items.STONE, 8);
             ItemStack partialRemainder = handler.insertItem(0, partialInput, false);
             if (!partialRemainder.is(Items.STONE) || partialRemainder.getCount() != 5
@@ -2060,6 +2054,7 @@ public class TerminalFlowTests {
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new CraftingTerminalMenu(92, player.getInventory(), original, corePos, true);
             if (!menu.stillValid(player)) { helper.fail("Remote menu should start valid"); return; }
+            var originalNetworkId = original.getNetworkId();
 
             level.destroyBlock(corePos, false);
             level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
@@ -2067,7 +2062,7 @@ public class TerminalFlowTests {
                 helper.fail("Replacement core not found");
                 return;
             }
-            if (replacement.getNetworkId().equals(original.getNetworkId())) {
+            if (replacement.getNetworkId().equals(originalNetworkId)) {
                 helper.fail("Replacement core must have a distinct identity");
                 return;
             }
@@ -2453,16 +2448,11 @@ public class TerminalFlowTests {
             if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) { helper.fail("Core not found"); return; }
             core.rebuildNetwork(level);
             var source = new ReentrantItemHandler(new ItemStack(Items.STONE, 64), 64, 64);
-            source.beforeActualExtract = () -> {
-                var entry = new CompoundTag();
-                entry.put("item", new ItemStack(Items.STONE).save(level.registryAccess()));
-                entry.putLong("count", Long.MAX_VALUE - 32);
-                var inventory = new ListTag();
-                inventory.add(entry);
-                var tag = new CompoundTag();
-                tag.put("inventory", inventory);
-                core.loadAdditional(tag, level.registryAccess());
-            };
+            source.beforeActualExtract = () -> core.insertItemCount(
+                    ItemKey.of(new ItemStack(Items.STONE)),
+                    Long.MAX_VALUE - 32,
+                    Action.EXECUTE,
+                    Actor.EMPTY);
             var overflow = new java.util.ArrayList<ItemStack>();
 
             if (!ImportBusBlockEntity.transferOneStack(core, source, Actor.bus(corePos),
