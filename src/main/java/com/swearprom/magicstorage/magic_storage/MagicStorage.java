@@ -7,15 +7,21 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.core.Registry;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -29,6 +35,8 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.level.ChunkTicketLevelUpdatedEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 
 import org.slf4j.Logger;
@@ -53,6 +61,10 @@ public class MagicStorage {
     static final int NETWORK_SCAN_DEPTH = 64;
     static final int MAX_NETWORK_BLOCKS = 8192;
     private static final Map<Level, Set<BlockPos>> PENDING_NETWORK_GROWTH = new WeakHashMap<>();
+    private static final Map<Level, Set<ChunkPos>> PENDING_NETWORK_CHUNK_LOADS = new WeakHashMap<>();
+    private static final Map<Level, Map<ChunkPos, LevelChunk>> PENDING_NETWORK_CHUNK_UNLOADS = new WeakHashMap<>();
+    private static final Set<Level> PENDING_NETWORK_CHUNK_FLUSHES =
+            Collections.newSetFromMap(new WeakHashMap<>());
 
     // === Registries ===
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
@@ -202,6 +214,8 @@ public class MagicStorage {
         MACHINE_DESCRIPTORS.register(modEventBus);
         NeoForge.EVENT_BUS.addListener(WrenchActions::onRightClickBlock);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
+        NeoForge.EVENT_BUS.addListener(this::onChunkLoad);
+        NeoForge.EVENT_BUS.addListener(this::onChunkTicketLevelUpdated);
         modEventBus.addListener(this::registerCapabilities);
         modEventBus.addListener(this::commonSetup);
         if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -321,6 +335,186 @@ public class MagicStorage {
                     || menu.containerId != packet.containerId()) return;
             menu.handleRecipeRequest(player.level(), packet.recipeId(), packet.amount(), packet.destination(), player);
         });
+    }
+
+    private void onChunkLoad(ChunkEvent.Load event) {
+        if (!(event.getLevel() instanceof ServerLevel level)
+                || !(event.getChunk() instanceof LevelChunk chunk)) return;
+        queueNetworkChunkLoad(level, chunk.getPos());
+    }
+
+    private static void queueNetworkChunkLoad(ServerLevel level, ChunkPos chunkPos) {
+        PENDING_NETWORK_CHUNK_LOADS.computeIfAbsent(level, ignored -> new HashSet<>())
+                .add(chunkPos);
+        scheduleNetworkChunkFlush(level);
+    }
+
+    private void onChunkTicketLevelUpdated(ChunkTicketLevelUpdatedEvent event) {
+        int fullChunkLevel = ChunkLevel.byStatus(ChunkStatus.FULL);
+        boolean wasFull = event.getOldTicketLevel() <= fullChunkLevel;
+        boolean isFull = event.getNewTicketLevel() <= fullChunkLevel;
+        if (wasFull == isFull) return;
+        ChunkPos chunkPos = new ChunkPos(event.getChunkPos());
+        if (isFull) {
+            Map<ChunkPos, LevelChunk> pendingUnloads = PENDING_NETWORK_CHUNK_UNLOADS.get(event.getLevel());
+            boolean canceledUnload = false;
+            if (pendingUnloads != null) {
+                canceledUnload = pendingUnloads.remove(chunkPos) != null;
+                if (pendingUnloads.isEmpty()) PENDING_NETWORK_CHUNK_UNLOADS.remove(event.getLevel());
+            }
+            if (canceledUnload) return;
+            ChunkHolder holder = event.getChunkHolder();
+            if (holder != null && holder.getLatestChunk() instanceof LevelChunk) {
+                queueNetworkChunkLoad(event.getLevel(), chunkPos);
+            }
+            return;
+        }
+        ChunkHolder holder = event.getChunkHolder();
+        if (holder == null) return;
+        LevelChunk chunk = currentFullChunk(holder);
+        if (chunk == null) return;
+        ServerLevel level = event.getLevel();
+        PENDING_NETWORK_CHUNK_UNLOADS.computeIfAbsent(level, ignored -> new HashMap<>())
+                .put(chunkPos, chunk);
+        scheduleNetworkChunkFlush(level);
+    }
+
+    private static LevelChunk currentFullChunk(ChunkHolder holder) {
+        return holder.getFullChunkFuture()
+                .getNow(ChunkHolder.UNLOADED_LEVEL_CHUNK)
+                .orElse(null);
+    }
+
+    private static void scheduleNetworkChunkFlush(ServerLevel level) {
+        if (!PENDING_NETWORK_CHUNK_FLUSHES.add(level)) return;
+        var server = level.getServer();
+        server.tell(new net.minecraft.server.TickTask(server.getTickCount() + 1,
+                () -> flushNetworkChunkChanges(level)));
+    }
+
+    private static void flushNetworkChunkChanges(Level level) {
+        PENDING_NETWORK_CHUNK_FLUSHES.remove(level);
+        Set<ChunkPos> loadedChunks = PENDING_NETWORK_CHUNK_LOADS.remove(level);
+        Map<ChunkPos, LevelChunk> unloadedChunks = PENDING_NETWORK_CHUNK_UNLOADS.remove(level);
+        Set<BlockPos> boundaryStarts = new HashSet<>();
+        if (unloadedChunks != null) {
+            for (var entry : unloadedChunks.entrySet()) {
+                if (level.hasChunk(entry.getKey().x, entry.getKey().z)
+                        || !mayContainNetworkBlock(entry.getValue())) continue;
+                collectLoadedNetworkBoundary(level, entry.getValue(), boundaryStarts);
+            }
+        }
+        if (loadedChunks != null) {
+            for (ChunkPos chunkPos : loadedChunks) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(chunkPos.x, chunkPos.z);
+                if (chunk != null && mayContainNetworkBlock(chunk)) {
+                    collectLoadedNetworkBoundary(level, chunk, boundaryStarts);
+                }
+            }
+        }
+
+        for (BlockPos corePos : findLoadedBoundaryCores(level, boundaryStarts)) {
+            if (level.hasChunkAt(corePos)
+                    && level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core) {
+                core.rebuildNetwork(level);
+            }
+        }
+    }
+
+    private static boolean mayContainNetworkBlock(LevelChunk chunk) {
+        for (var section : chunk.getSections()) {
+            if (section.maybeHas(state -> state.getBlock() instanceof IStorageNetworkBlock)) return true;
+        }
+        return false;
+    }
+
+    private static void collectLoadedNetworkBoundary(Level level, LevelChunk chunk, Set<BlockPos> starts) {
+        ChunkPos chunkPos = chunk.getPos();
+        int minX = chunkPos.getMinBlockX();
+        int maxX = chunkPos.getMaxBlockX();
+        int minZ = chunkPos.getMinBlockZ();
+        int maxZ = chunkPos.getMaxBlockZ();
+
+        for (int y = chunk.getMinBuildHeight(); y < chunk.getMaxBuildHeight(); y++) {
+            for (int offset = 0; offset < 16; offset++) {
+                addChunkNetworkBoundary(
+                        level,
+                        chunk,
+                        new BlockPos(minX, y, minZ + offset),
+                        new BlockPos(minX - 1, y, minZ + offset),
+                        starts);
+                addChunkNetworkBoundary(
+                        level,
+                        chunk,
+                        new BlockPos(maxX, y, minZ + offset),
+                        new BlockPos(maxX + 1, y, minZ + offset),
+                        starts);
+                addChunkNetworkBoundary(
+                        level,
+                        chunk,
+                        new BlockPos(minX + offset, y, minZ),
+                        new BlockPos(minX + offset, y, minZ - 1),
+                        starts);
+                addChunkNetworkBoundary(
+                        level,
+                        chunk,
+                        new BlockPos(minX + offset, y, maxZ),
+                        new BlockPos(minX + offset, y, maxZ + 1),
+                        starts);
+            }
+        }
+    }
+
+    private static void addChunkNetworkBoundary(
+            Level level,
+            LevelChunk chunk,
+            BlockPos inside,
+            BlockPos outside,
+            Set<BlockPos> starts
+    ) {
+        if (!(chunk.getBlockState(inside).getBlock() instanceof IStorageNetworkBlock)
+                || !level.hasChunkAt(outside)
+                || !(level.getBlockState(outside).getBlock() instanceof IStorageNetworkBlock)
+                || starts.size() >= MAX_NETWORK_BLOCKS) return;
+        starts.add(outside.immutable());
+    }
+
+    private static Set<BlockPos> findLoadedBoundaryCores(Level level, Set<BlockPos> starts) {
+        Set<BlockPos> corePositions = new HashSet<>();
+        Set<BlockPos> visited = new HashSet<>();
+        Queue<BlockPos> queue = new ArrayDeque<>();
+
+        for (BlockPos start : starts) {
+            if (visited.size() >= MAX_NETWORK_BLOCKS || !level.hasChunkAt(start)
+                    || !(level.getBlockState(start).getBlock() instanceof IStorageNetworkBlock)
+                    || !visited.add(start)) continue;
+            queue.add(start);
+        }
+
+        int depth = 0;
+        while (!queue.isEmpty() && depth < NETWORK_SCAN_DEPTH) {
+            int size = queue.size();
+            for (int i = 0; i < size; i++) {
+                BlockPos current = queue.remove();
+                var networkBlock = (IStorageNetworkBlock) level.getBlockState(current).getBlock();
+                if (networkBlock.isStorageCore()
+                        && level.getBlockEntity(current) instanceof StorageCoreBlockEntity) {
+                    corePositions.add(current);
+                }
+                if (visited.size() >= MAX_NETWORK_BLOCKS) continue;
+                for (Direction direction : Direction.values()) {
+                    BlockPos next = current.relative(direction);
+                    if (visited.size() >= MAX_NETWORK_BLOCKS) break;
+                    if (!visited.contains(next) && level.hasChunkAt(next)
+                            && level.getBlockState(next).getBlock() instanceof IStorageNetworkBlock) {
+                        visited.add(next);
+                        queue.add(next);
+                    }
+                }
+            }
+            depth++;
+        }
+        return corePositions;
     }
 
     static void scheduleNetworkRebuildAfterRemoval(Level level, BlockPos pos) {

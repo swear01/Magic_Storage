@@ -653,29 +653,37 @@ public final class CreativeStorageUnitTests {
     public static void unloading_and_reloading_creative_capacity_preserves_core_contents(GameTestHelper helper) {
         var level = helper.getLevel();
         BlockPos anchor = helper.absolutePos(new BlockPos(1, 3, 1));
-        ChunkPos coreChunk = new ChunkPos(anchor);
+        ChunkPos anchorChunk = new ChunkPos(anchor);
         BlockPos corePos = null;
         BlockPos finiteUnitPos = null;
         BlockPos creativeUnitPos = null;
-        Direction networkDirection = null;
         for (Direction direction : new Direction[]{
                 Direction.EAST, Direction.WEST, Direction.SOUTH, Direction.NORTH}) {
-            BlockPos candidateCore = switch (direction) {
+            BlockPos remoteProbe = switch (direction) {
                 case EAST -> new BlockPos(
-                        coreChunk.getMaxBlockX() - 1, anchor.getY(), coreChunk.getMiddleBlockZ());
+                        anchorChunk.getMaxBlockX() - 1, anchor.getY(), anchorChunk.getMiddleBlockZ())
+                        .relative(direction, 34);
                 case WEST -> new BlockPos(
-                        coreChunk.getMinBlockX() + 1, anchor.getY(), coreChunk.getMiddleBlockZ());
+                        anchorChunk.getMinBlockX() + 1, anchor.getY(), anchorChunk.getMiddleBlockZ())
+                        .relative(direction, 34);
                 case SOUTH -> new BlockPos(
-                        coreChunk.getMiddleBlockX(), anchor.getY(), coreChunk.getMaxBlockZ() - 1);
+                        anchorChunk.getMiddleBlockX(), anchor.getY(), anchorChunk.getMaxBlockZ() - 1)
+                        .relative(direction, 34);
                 default -> new BlockPos(
-                        coreChunk.getMiddleBlockX(), anchor.getY(), coreChunk.getMinBlockZ() + 1);
+                        anchorChunk.getMiddleBlockX(), anchor.getY(), anchorChunk.getMinBlockZ() + 1)
+                        .relative(direction, 34);
             };
-            BlockPos candidateCreative = candidateCore.relative(direction, 34);
-            if (!level.getForcedChunks().contains(new ChunkPos(candidateCreative).toLong())) {
-                corePos = candidateCore;
-                finiteUnitPos = candidateCore.relative(direction);
-                creativeUnitPos = candidateCreative;
-                networkDirection = direction;
+            ChunkPos candidateChunk = new ChunkPos(remoteProbe);
+            if (!level.getForcedChunks().contains(candidateChunk.toLong())) {
+                int y = level.getMaxBuildHeight() - 2;
+                creativeUnitPos = switch (direction) {
+                    case EAST -> new BlockPos(candidateChunk.getMinBlockX(), y, candidateChunk.getMiddleBlockZ());
+                    case WEST -> new BlockPos(candidateChunk.getMaxBlockX(), y, candidateChunk.getMiddleBlockZ());
+                    case SOUTH -> new BlockPos(candidateChunk.getMiddleBlockX(), y, candidateChunk.getMinBlockZ());
+                    default -> new BlockPos(candidateChunk.getMiddleBlockX(), y, candidateChunk.getMaxBlockZ());
+                };
+                corePos = creativeUnitPos.relative(direction.getOpposite());
+                finiteUnitPos = corePos.relative(direction.getOpposite());
                 break;
             }
         }
@@ -685,73 +693,133 @@ public final class CreativeStorageUnitTests {
         }
 
         BlockPos finalCorePos = corePos;
+        BlockPos finalFiniteUnitPos = finiteUnitPos;
         BlockPos finalCreativeUnitPos = creativeUnitPos;
-        Direction finalNetworkDirection = networkDirection;
         ChunkPos creativeChunk = new ChunkPos(creativeUnitPos);
+        ChunkPos loadedCoreChunk = new ChunkPos(corePos);
+        level.getChunkAt(corePos);
+        var creativeLevelChunk = level.getChunkAt(creativeUnitPos);
+        java.util.Map<BlockPos, net.minecraft.world.level.block.state.BlockState> irrelevantBoundary =
+                fillChunkBoundaryPrefix(
+                        creativeLevelChunk,
+                        MagicStorage.MAX_NETWORK_BLOCKS,
+                        MagicStorage.STORAGE_TERMINAL.get().defaultBlockState(),
+                        creativeUnitPos);
+        if (irrelevantBoundary.size() != MagicStorage.MAX_NETWORK_BLOCKS) {
+            helper.fail("Could not saturate the irrelevant chunk boundary");
+            return;
+        }
         level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
         level.setBlock(finiteUnitPos, MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
-        java.util.Set<ChunkPos> remoteChunks = new java.util.HashSet<>();
-        for (int distance = 2; distance < 34; distance++) {
-            BlockPos bridgePos = corePos.relative(networkDirection, distance);
-            ChunkPos bridgeChunk = new ChunkPos(bridgePos);
-            remoteChunks.add(bridgeChunk);
-            level.getChunkAt(bridgePos);
-            level.setBlock(bridgePos,
-                    MagicStorage.STORAGE_TERMINAL.get().defaultBlockState(), Block.UPDATE_ALL);
-        }
-        remoteChunks.add(creativeChunk);
-        level.getChunkAt(creativeUnitPos);
         level.setBlock(creativeUnitPos,
                 MagicStorage.CREATIVE_STORAGE_UNIT.get().defaultBlockState(), Block.UPDATE_ALL);
 
-        helper.runAfterDelay(2, () -> {
-            if (!(level.getBlockEntity(finalCorePos) instanceof StorageCoreBlockEntity core)) {
-                helper.fail("Storage Core block entity missing");
-                return;
-            }
-            core.rebuildNetwork(level);
-            for (int damage = 0; damage < 11; damage++) {
-                ItemStack variant = new ItemStack(Items.STONE_PICKAXE);
-                variant.setDamageValue(damage);
-                if (core.insertItem(variant) != 1) {
-                    helper.fail("Could not seed unload over-capacity type " + damage);
-                    return;
-                }
-            }
-            for (ChunkPos remoteChunk : remoteChunks) {
-                level.getChunkSource().removeRegionTicket(
-                        net.minecraft.server.level.TicketType.UNKNOWN,
-                        remoteChunk,
-                        0,
-                        remoteChunk);
-            }
-            helper.succeedWhen(() -> {
-                helper.assertFalse(level.hasChunkAt(finalCreativeUnitPos),
-                        "Waiting for Creative Storage Unit chunk to unload: "
-                                + level.getChunkSource().getChunkDebugData(creativeChunk));
-                core.rebuildNetwork(level);
-                helper.assertTrue(!core.getTypeCapacity().unlimited()
-                                && core.getTotalTypeSlots() == 10
-                                && core.getTypeCount() == 11,
-                        "Unloaded creative capacity must leave Core contents over finite capacity");
-
-                level.getChunkAt(finalCreativeUnitPos);
-                core.rebuildNetwork(level);
-                helper.assertTrue(core.getTypeCapacity().unlimited()
+        if (!(level.getBlockEntity(finalCorePos) instanceof StorageCoreBlockEntity core)) {
+            helper.fail("Storage Core block entity missing");
+            return;
+        }
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(
+                        core.getTypeCapacity().unlimited()
+                                && core.getConnectedBlocks().contains(finalCreativeUnitPos),
+                        "Waiting for initial remote Creative Storage Unit capacity"))
+                .thenExecute(() -> {
+                    for (int damage = 0; damage < 11; damage++) {
+                        ItemStack variant = new ItemStack(Items.STONE_PICKAXE);
+                        variant.setDamageValue(damage);
+                        if (core.insertItem(variant) != 1) {
+                            helper.fail("Could not seed unload over-capacity type " + damage);
+                            return;
+                        }
+                    }
+                    level.getChunkSource().removeRegionTicket(
+                            net.minecraft.server.level.TicketType.UNKNOWN,
+                            creativeChunk,
+                            0,
+                            creativeChunk);
+                })
+                .thenWaitUntil(() -> {
+                    helper.assertTrue(level.hasChunkAt(finalCorePos),
+                            "Storage Core boundary chunk must remain loaded");
+                    helper.assertFalse(level.hasChunkAt(finalCreativeUnitPos),
+                            "Waiting for Creative Storage Unit chunk to unload: "
+                                    + level.getChunkSource().getChunkDebugData(creativeChunk));
+                    helper.assertTrue(!core.getTypeCapacity().unlimited()
+                                    && core.getTotalTypeSlots() == 10
+                                    && core.getTypeCount() == 11,
+                            "Unloaded creative capacity must leave Core contents over finite capacity: capacity="
+                                    + core.getTypeCapacity() + ", types=" + core.getTypeCount());
+                })
+                .thenExecute(() -> level.getChunkAt(finalCreativeUnitPos))
+                .thenWaitUntil(() -> helper.assertTrue(
+                        level.hasChunkAt(finalCreativeUnitPos)
+                                && core.getTypeCapacity().unlimited()
                                 && core.getTypeCount() == 11
-                                && core.getConnectedBlocks().contains(
-                                        finalCorePos.relative(finalNetworkDirection, 34)),
-                        "Reloading the Creative Storage Unit chunk must restore unlimited capacity");
-                for (int distance = 34; distance >= 0; distance--) {
-                    level.removeBlock(finalCorePos.relative(finalNetworkDirection, distance), false);
+                                && core.getConnectedBlocks().contains(finalCreativeUnitPos),
+                        "Reloading the Creative Storage Unit chunk must restore unlimited capacity: capacity="
+                                + core.getTypeCapacity() + ", connected="
+                                + core.getConnectedBlocks().contains(finalCreativeUnitPos)))
+                .thenExecute(() -> {
+                    var reloadedChunk = level.getChunkAt(finalCreativeUnitPos);
+                    for (var entry : irrelevantBoundary.entrySet()) {
+                        setChunkBlockState(reloadedChunk, entry.getKey(), entry.getValue());
+                    }
+                    level.removeBlock(finalCreativeUnitPos, false);
+                    level.removeBlock(finalFiniteUnitPos, false);
+                    level.removeBlock(finalCorePos, false);
+                    level.getChunkSource().removeRegionTicket(
+                            net.minecraft.server.level.TicketType.UNKNOWN,
+                            creativeChunk,
+                            0,
+                            creativeChunk);
+                    level.getChunkSource().removeRegionTicket(
+                            net.minecraft.server.level.TicketType.UNKNOWN,
+                            loadedCoreChunk,
+                            0,
+                            loadedCoreChunk);
+                })
+                .thenSucceed();
+    }
+
+    private static java.util.Map<BlockPos, net.minecraft.world.level.block.state.BlockState> fillChunkBoundaryPrefix(
+            net.minecraft.world.level.chunk.LevelChunk chunk,
+            int count,
+            net.minecraft.world.level.block.state.BlockState state,
+            BlockPos excluded
+    ) {
+        java.util.Map<BlockPos, net.minecraft.world.level.block.state.BlockState> positions =
+                new java.util.HashMap<>();
+        ChunkPos chunkPos = chunk.getPos();
+        for (int y = chunk.getMinBuildHeight(); y < chunk.getMaxBuildHeight() && positions.size() < count; y++) {
+            for (int offset = 0; offset < 16 && positions.size() < count; offset++) {
+                BlockPos[] candidates = {
+                        new BlockPos(chunkPos.getMinBlockX(), y, chunkPos.getMinBlockZ() + offset),
+                        new BlockPos(chunkPos.getMaxBlockX(), y, chunkPos.getMinBlockZ() + offset),
+                        new BlockPos(chunkPos.getMinBlockX() + offset, y, chunkPos.getMinBlockZ()),
+                        new BlockPos(chunkPos.getMinBlockX() + offset, y, chunkPos.getMaxBlockZ())
+                };
+                for (BlockPos pos : candidates) {
+                    if (!pos.equals(excluded) && !positions.containsKey(pos)) {
+                        positions.put(pos.immutable(), chunk.getBlockState(pos));
+                        setChunkBlockState(chunk, pos, state);
+                        if (positions.size() == count) break;
+                    }
                 }
-                level.getChunkSource().removeRegionTicket(
-                        net.minecraft.server.level.TicketType.UNKNOWN,
-                        creativeChunk,
-                        0,
-                        creativeChunk);
-            });
-        });
+            }
+        }
+        return positions;
+    }
+
+    private static void setChunkBlockState(
+            net.minecraft.world.level.chunk.LevelChunk chunk,
+            BlockPos pos,
+            net.minecraft.world.level.block.state.BlockState state
+    ) {
+        chunk.getSection(chunk.getSectionIndex(pos.getY())).setBlockState(
+                pos.getX() & 15,
+                pos.getY() & 15,
+                pos.getZ() & 15,
+                state);
     }
 
     private static net.minecraft.network.RegistryFriendlyByteBuf menuBuffer(
