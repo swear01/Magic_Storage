@@ -31,7 +31,10 @@ public class ExportBusBlockEntity extends BlockEntity {
     }
 
     public void tick() {
-        if (level == null || level.isClientSide() || !busConfiguration.supported()) return;
+        if (level == null || level.isClientSide()
+                || !busConfiguration.supported()
+                || !busConfiguration.automationEnabled()
+                || busConfiguration.mode() != BusMode.DIRECTIONAL) return;
 
         if (cooldown > 0) {
             cooldown--;
@@ -45,8 +48,6 @@ public class ExportBusBlockEntity extends BlockEntity {
             return;
         }
 
-        if (filterItem == null) return;
-
         Direction facing = getBlockState().getValue(ExportBusBlock.FACING);
         BlockPos targetPos = getBlockPos().relative(facing);
 
@@ -55,8 +56,16 @@ public class ExportBusBlockEntity extends BlockEntity {
         IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, targetPos, facing.getOpposite());
         if (handler == null) return;
 
-        transferOneStack(core, filterItem, handler, Actor.bus(getBlockPos()),
-                stack -> net.minecraft.world.level.block.Block.popResource(level, getBlockPos(), stack));
+        BusFilterPolicy filterPolicy = BusFilterPolicy.compile(
+                busConfiguration, level.registryAccess());
+        List<ItemKey> candidates = core.getDisplayStacks().stream()
+                .map(ItemKey::of)
+                .toList();
+        for (ItemKey candidate : filterPolicy.orderedCandidates(candidates)) {
+            if (transferOneStack(core, candidate, handler, Actor.bus(getBlockPos()),
+                    stack -> net.minecraft.world.level.block.Block.popResource(
+                            level, getBlockPos(), stack))) return;
+        }
     }
 
     static boolean transferOneStack(StorageCoreBlockEntity core, ItemKey filterItem, IItemHandler handler,
@@ -150,6 +159,7 @@ public class ExportBusBlockEntity extends BlockEntity {
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
+        cooldown = 0;
         if (tag.contains("coreX")) {
             corePos = new BlockPos(tag.getInt("coreX"), tag.getInt("coreY"), tag.getInt("coreZ"));
         }

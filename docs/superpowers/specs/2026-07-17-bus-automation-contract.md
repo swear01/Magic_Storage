@@ -1,9 +1,10 @@
 # Bus Automation Contract
 
 > Status: authoritative design for GitHub issue #6. Phase 1 state/migration and
-> the Phase 2 deterministic filter-policy foundation are implemented; transfer,
-> configuration, capability, and security changes remain unauthorized until their
-> phase-specific RED tests exist.
+> Phase 2a deterministic filter policy are implemented. Phase 2b now wires that
+> policy and the automation gate into existing directional transfers; configuration
+> packets, ownership enforcement, capability invalidation, and later phases still
+> require their own RED tests.
 
 ## Goal
 
@@ -391,11 +392,14 @@ still use the legacy actor and directional behavior; no later-phase field is act
 Add Import filtering, ordered Export candidates, atomic server menu packets,
 ownership checks, and capability invalidation. Keep both buses directional.
 
-Filter-policy foundation implemented 2026-07-17: immutable visible rule states,
-four exact match contracts, Allow/Deny empty semantics, unsupported fail-closed,
-and rule-first/global deterministic candidate ordering. It is not yet wired into
-Import/Export transfers; packets, ownership, invalidation, and directional behavior
-tests remain in this phase.
+Implemented through directional transfer wiring on 2026-07-17: immutable visible
+rule states, four exact match contracts, Allow/Deny empty semantics, unsupported
+fail-closed, rule-first/global deterministic candidate ordering, source-slot-order
+active Import filtering, matching passive Import simulation/execution, ordered
+active Export selection, and the automation-enabled gate. Runtime config reload
+resets the transfer cooldown so committed policy applies immediately. Export drops
+preserve owner-stripped non-exact rules. Packets, ownership enforcement, capability
+invalidation, and player configuration behavior remain in this phase.
 
 ### Phase 3 — Directionless capabilities
 

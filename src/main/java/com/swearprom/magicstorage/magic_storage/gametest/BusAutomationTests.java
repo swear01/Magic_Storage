@@ -9,11 +9,15 @@ import com.swearprom.magicstorage.magic_storage.BusKind;
 import com.swearprom.magicstorage.magic_storage.BusMode;
 import com.swearprom.magicstorage.magic_storage.BusOperationDirection;
 import com.swearprom.magicstorage.magic_storage.BusOperationId;
+import com.swearprom.magicstorage.magic_storage.ExportBusBlock;
 import com.swearprom.magicstorage.magic_storage.ExportBusBlockEntity;
+import com.swearprom.magicstorage.magic_storage.ImportBusBlock;
 import com.swearprom.magicstorage.magic_storage.ImportBusBlockEntity;
 import com.swearprom.magicstorage.magic_storage.ItemKey;
 import com.swearprom.magicstorage.magic_storage.MagicStorage;
+import com.swearprom.magicstorage.magic_storage.StorageCoreBlockEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -21,10 +25,17 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -379,6 +390,272 @@ public final class BusAutomationTests {
             return;
         }
         helper.succeed();
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void directional_import_keeps_source_slot_order_while_filtering(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        BlockPos busPos = corePos.east();
+        BlockPos sourcePos = busPos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.IMPORT_BUS.get().defaultBlockState()
+                .setValue(ImportBusBlock.FACING, Direction.EAST), Block.UPDATE_ALL);
+        level.setBlock(sourcePos, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !(level.getBlockEntity(busPos) instanceof ImportBusBlockEntity bus)
+                    || !(level.getBlockEntity(sourcePos) instanceof BarrelBlockEntity source)) {
+                helper.fail("Directional Import fixture is incomplete");
+                return;
+            }
+            core.rebuildNetwork(level);
+            BusConfiguration config = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    true,
+                    true,
+                    BusFilterMode.ALLOW,
+                    List.of(BusFilterRule.item(ResourceLocation.withDefaultNamespace("stone"))),
+                    Optional.empty(),
+                    1);
+            if (!applyConfiguration(level, busPos, MagicStorage.IMPORT_BUS_BE.get(),
+                    MagicStorage.IMPORT_BUS_ITEM.get(), config)) {
+                helper.fail("Could not apply Import filter configuration");
+                return;
+            }
+            source.setItem(0, new ItemStack(Items.DIRT, 4));
+            source.setItem(1, new ItemStack(Items.STONE, 4));
+            source.setChanged();
+            bus.tick();
+            if (core.getItemCount(ItemKey.of(new ItemStack(Items.DIRT))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 4
+                    || source.getItem(0).getCount() != 4
+                    || !source.getItem(1).isEmpty()) {
+                helper.fail("Directional Import did not skip denied slot 0 and transfer allowed slot 1");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void passive_import_filter_matches_simulation_and_preserves_caller_stack(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        BlockPos busPos = corePos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.IMPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Passive Import Core is missing");
+                return;
+            }
+            core.rebuildNetwork(level);
+            BusConfiguration config = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    true,
+                    true,
+                    BusFilterMode.ALLOW,
+                    List.of(BusFilterRule.item(ResourceLocation.withDefaultNamespace("stone"))),
+                    Optional.empty(),
+                    1);
+            if (!applyConfiguration(level, busPos, MagicStorage.IMPORT_BUS_BE.get(),
+                    MagicStorage.IMPORT_BUS_ITEM.get(), config)) {
+                helper.fail("Could not apply passive Import filter configuration");
+                return;
+            }
+            IItemHandler handler = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, busPos, Direction.UP);
+            if (handler == null) {
+                helper.fail("Passive Import capability is missing");
+                return;
+            }
+            ItemStack denied = new ItemStack(Items.DIRT, 5);
+            ItemStack deniedRemainder = handler.insertItem(0, denied, false);
+            ItemStack allowed = new ItemStack(Items.STONE, 5);
+            ItemStack simulatedRemainder = handler.insertItem(0, allowed, true);
+            if (denied.getCount() != 5 || allowed.getCount() != 5
+                    || deniedRemainder.getCount() != 5 || !simulatedRemainder.isEmpty()
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 0) {
+                helper.fail("Passive Import simulation/filter mutated input or Core state");
+                return;
+            }
+            ItemStack committedRemainder = handler.insertItem(0, allowed, false);
+            if (!committedRemainder.isEmpty() || allowed.getCount() != 5
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.DIRT))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 5) {
+                helper.fail("Passive Import execution diverged from filtered simulation");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void directional_export_uses_filter_rule_order_not_core_iteration(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        BlockPos busPos = corePos.east();
+        BlockPos targetPos = busPos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.EXPORT_BUS.get().defaultBlockState()
+                .setValue(ExportBusBlock.FACING, Direction.EAST), Block.UPDATE_ALL);
+        level.setBlock(targetPos, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !(level.getBlockEntity(busPos) instanceof ExportBusBlockEntity bus)
+                    || !(level.getBlockEntity(targetPos) instanceof BarrelBlockEntity target)) {
+                helper.fail("Directional Export fixture is incomplete");
+                return;
+            }
+            core.rebuildNetwork(level);
+            core.insertItem(new ItemStack(Items.STONE, 2));
+            core.insertItem(new ItemStack(Items.DIRT, 2));
+            BusConfiguration config = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    false,
+                    true,
+                    BusFilterMode.ALLOW,
+                    List.of(
+                            BusFilterRule.item(ResourceLocation.withDefaultNamespace("dirt")),
+                            BusFilterRule.item(ResourceLocation.withDefaultNamespace("stone"))),
+                    Optional.empty(),
+                    1);
+            if (!applyConfiguration(level, busPos, MagicStorage.EXPORT_BUS_BE.get(),
+                    MagicStorage.EXPORT_BUS_ITEM.get(), config)) {
+                helper.fail("Could not apply ordered Export filter configuration");
+                return;
+            }
+            bus.tick();
+            if (!target.getItem(0).is(Items.DIRT) || target.getItem(0).getCount() != 2
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.DIRT))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 2) {
+                helper.fail("Directional Export ignored filter rule order");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void disabled_automation_blocks_active_and_passive_import(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        BlockPos busPos = corePos.east();
+        BlockPos sourcePos = busPos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.IMPORT_BUS.get().defaultBlockState()
+                .setValue(ImportBusBlock.FACING, Direction.EAST), Block.UPDATE_ALL);
+        level.setBlock(sourcePos, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !(level.getBlockEntity(busPos) instanceof ImportBusBlockEntity bus)
+                    || !(level.getBlockEntity(sourcePos) instanceof BarrelBlockEntity source)) {
+                helper.fail("Disabled automation fixture is incomplete");
+                return;
+            }
+            core.rebuildNetwork(level);
+            BusConfiguration config = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    true,
+                    false,
+                    BusFilterMode.DENY,
+                    List.of(),
+                    Optional.empty(),
+                    1);
+            if (!applyConfiguration(level, busPos, MagicStorage.IMPORT_BUS_BE.get(),
+                    MagicStorage.IMPORT_BUS_ITEM.get(), config)) {
+                helper.fail("Could not disable Import automation");
+                return;
+            }
+            source.setItem(0, new ItemStack(Items.STONE, 3));
+            source.setChanged();
+            bus.tick();
+            IItemHandler handler = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, busPos, Direction.UP);
+            ItemStack passive = new ItemStack(Items.DIRT, 3);
+            ItemStack passiveRemainder = handler == null
+                    ? passive.copy()
+                    : handler.insertItem(0, passive, false);
+            if (source.getItem(0).getCount() != 3 || passiveRemainder.getCount() != 3
+                    || core.getTypeCount() != 0) {
+                helper.fail("Disabled automation still mutated active or passive Import state");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void export_drop_preserves_non_exact_filter_configuration(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos busPos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(busPos, MagicStorage.EXPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+        if (!(level.getBlockEntity(busPos) instanceof ExportBusBlockEntity bus)) {
+            helper.fail("Export Bus is missing for drop configuration test");
+            return;
+        }
+        BusConfiguration config = BusConfiguration.current(
+                BusMode.DIRECTIONAL,
+                BusConfiguration.ALL_SIDES_MASK,
+                false,
+                true,
+                BusFilterMode.ALLOW,
+                List.of(BusFilterRule.item(ResourceLocation.withDefaultNamespace("stone"))),
+                Optional.of(UUID.randomUUID()),
+                4);
+        if (!applyConfiguration(level, busPos, MagicStorage.EXPORT_BUS_BE.get(),
+                MagicStorage.EXPORT_BUS_ITEM.get(), config)) {
+            helper.fail("Could not apply non-exact Export configuration");
+            return;
+        }
+        ItemStack busDrop = Block.getDrops(level.getBlockState(busPos), level, busPos, bus).stream()
+                .filter(stack -> stack.is(MagicStorage.EXPORT_BUS_ITEM.get()))
+                .findFirst()
+                .orElse(ItemStack.EMPTY);
+        if (busDrop.isEmpty() || !busDrop.has(DataComponents.BLOCK_ENTITY_DATA)) {
+            helper.fail("Export drop lost non-exact filter configuration");
+            return;
+        }
+        BusConfiguration dropped = BusConfiguration.load(
+                busDrop.get(DataComponents.BLOCK_ENTITY_DATA).copyTag(),
+                BusKind.EXPORT,
+                level.registryAccess());
+        if (!dropped.supported() || dropped.owner().isPresent()
+                || dropped.filterRules().size() != 1
+                || dropped.filterRules().getFirst().type() != BusFilterRule.Type.ITEM
+                || !dropped.filterRules().getFirst().id()
+                .equals(Optional.of(ResourceLocation.withDefaultNamespace("stone")))) {
+            helper.fail("Export drop did not preserve owner-stripped non-exact filter state");
+            return;
+        }
+        helper.succeed();
+    }
+
+    private static boolean applyConfiguration(
+            net.minecraft.world.level.Level level,
+            BlockPos pos,
+            BlockEntityType<?> blockEntityType,
+            Item blockItem,
+            BusConfiguration configuration
+    ) {
+        CompoundTag tag = new CompoundTag();
+        configuration.save(tag, level.registryAccess());
+        ItemStack carrier = new ItemStack(blockItem);
+        BlockItem.setBlockEntityData(carrier, blockEntityType, tag);
+        return BlockItem.updateCustomBlockEntityTag(level, null, pos, carrier);
     }
 
     private static BusConfiguration filterConfig(BusFilterMode mode, List<BusFilterRule> rules) {

@@ -103,13 +103,14 @@ public class ExportBusBlock extends Block implements EntityBlock, IStorageNetwor
     @Override
     protected List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
         List<ItemStack> drops = super.getDrops(state, params);
-        if (!(params.getOptionalParameter(LootContextParams.BLOCK_ENTITY) instanceof ExportBusBlockEntity bus)
-                || bus.getFilter() == null) {
+        if (!(params.getOptionalParameter(LootContextParams.BLOCK_ENTITY) instanceof ExportBusBlockEntity bus)) {
             return drops;
         }
 
         var tag = new CompoundTag();
-        tag.put("filter", bus.getFilter().toStack(1).save(params.getLevel().registryAccess()));
+        if (bus.getFilter() != null) {
+            tag.put("filter", bus.getFilter().toStack(1).save(params.getLevel().registryAccess()));
+        }
         bus.getBusConfiguration().withoutOwner().save(tag, params.getLevel().registryAccess());
         for (ItemStack drop : drops) {
             if (drop.is(MagicStorage.EXPORT_BUS_ITEM.get())) {

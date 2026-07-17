@@ -39,7 +39,11 @@ public class ImportBusBlockEntity extends BlockEntity {
         @Override
         public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
             if (slot != 0 || stack.isEmpty() || level == null || level.isClientSide()
-                    || !busConfiguration.supported()) return stack.copy();
+                    || !busConfiguration.supported()
+                    || !busConfiguration.automationEnabled()) return stack.copy();
+            BusFilterPolicy policy = BusFilterPolicy.compile(
+                    busConfiguration, level.registryAccess());
+            if (!policy.allows(ItemKey.of(stack))) return stack.copy();
             StorageCoreBlockEntity core = resolveCore();
             if (core == null || core.isConflicted()) return stack.copy();
             Actor actor = Actor.bus(getBlockPos());
@@ -47,6 +51,10 @@ public class ImportBusBlockEntity extends BlockEntity {
             long accepted = core.insertItem(probe, Action.SIMULATE, actor);
             if (accepted <= 0) return stack.copy();
             if (!simulate) {
+                if (!busConfiguration.supported()
+                        || !busConfiguration.automationEnabled()
+                        || !BusFilterPolicy.compile(busConfiguration, level.registryAccess())
+                        .allows(ItemKey.of(stack))) return stack.copy();
                 ItemStack committed = stack.copyWithCount((int) Math.min(accepted, stack.getCount()));
                 accepted = core.insertItem(committed, Action.EXECUTE, actor);
             }
@@ -79,7 +87,10 @@ public class ImportBusBlockEntity extends BlockEntity {
     }
 
     public void tick() {
-        if (level == null || level.isClientSide() || !busConfiguration.supported()) return;
+        if (level == null || level.isClientSide()
+                || !busConfiguration.supported()
+                || !busConfiguration.automationEnabled()
+                || busConfiguration.mode() != BusMode.DIRECTIONAL) return;
 
         if (cooldown > 0) {
             cooldown--;
@@ -104,15 +115,28 @@ public class ImportBusBlockEntity extends BlockEntity {
         IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, targetPos, facing.getOpposite());
         if (handler == null) return;
 
-        transferOneStack(core, handler, Actor.bus(getBlockPos()),
+        transferOneStack(core, handler,
+                BusFilterPolicy.compile(busConfiguration, level.registryAccess()),
+                Actor.bus(getBlockPos()),
                 stack -> net.minecraft.world.level.block.Block.popResource(level, getBlockPos(), stack));
     }
 
     static boolean transferOneStack(StorageCoreBlockEntity core, IItemHandler handler, Actor actor,
                                     Consumer<ItemStack> overflow) {
+        return transferOneStack(core, handler, null, actor, overflow);
+    }
+
+    static boolean transferOneStack(
+            StorageCoreBlockEntity core,
+            IItemHandler handler,
+            BusFilterPolicy filterPolicy,
+            Actor actor,
+            Consumer<ItemStack> overflow
+    ) {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             ItemStack peek = handler.extractItem(slot, 64, true);
             if (peek.isEmpty()) continue;
+            if (filterPolicy != null && !filterPolicy.allows(ItemKey.of(peek))) continue;
             long accepted = core.insertItem(peek, Action.SIMULATE, actor);
             if (accepted <= 0) continue;
             ItemStack real = handler.extractItem(slot, (int) accepted, false);
@@ -180,6 +204,7 @@ public class ImportBusBlockEntity extends BlockEntity {
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
+        cooldown = 0;
         if (tag.contains("coreX")) {
             corePos = new BlockPos(tag.getInt("coreX"), tag.getInt("coreY"), tag.getInt("coreZ"));
         }
