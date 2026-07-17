@@ -384,7 +384,7 @@ public class CraftingTests {
         });
     }
 
-    @GameTest(template = "platform")
+    @GameTest(template = "platform", batch = "crafting_max_above_preview_cap")
     public static void max_exhausts_more_than_the_synced_preview_cap_into_inventory_and_core(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
