@@ -9,6 +9,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
@@ -34,6 +35,105 @@ public class PersistenceTests {
         if (CoreStorageRecord.MAX_SEGMENT_TYPES != 63) {
             helper.fail("Core storage records must use 63-type persistence segments");
             return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void core_storage_record_round_trip_preserves_all_state(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        UUID storageId = UUID.randomUUID();
+        CoreStorageRecord source = CoreStorageRecord.fresh(storageId);
+        UUID networkId = source.networkId();
+        for (EnergyType type : EnergyType.values()) {
+            source.energy().put(type, 101L + type.ordinal());
+        }
+        ItemStack namedDiamond = new ItemStack(Items.DIAMOND);
+        namedDiamond.set(DataComponents.CUSTOM_NAME, Component.literal("Repository Diamond"));
+        source.putItem(ItemKey.of(namedDiamond), Long.MAX_VALUE - 7);
+        source.machines().setItem(MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE, 3));
+        source.descriptorAmounts().put(MachineEnergyTable.AXE_ID, 37L);
+        source.infiniteDescriptors().add(ResourceLocation.fromNamespaceAndPath(
+                MagicStorage.MODID, "round_trip_infinite"));
+
+        CompoundTag unresolvedInventory = unresolvedInventoryEntry(
+                registries, "removed_addon:storage_item", 73);
+        CompoundTag unresolvedMachine = unresolvedMachineEntry(
+                registries, "removed_addon:machine", "removed_addon:machine_item", 5);
+        CompoundTag unresolvedDescriptor = new CompoundTag();
+        unresolvedDescriptor.putString("descriptorId", "removed_addon:consumable");
+        unresolvedDescriptor.putLong("amount", 19);
+        unresolvedDescriptor.putBoolean("infinite", false);
+        source.unresolvedInventoryEntries().add(unresolvedInventory.copy());
+        source.unresolvedMachineEntries().add(unresolvedMachine.copy());
+        source.unresolvedDescriptorEntries().add(unresolvedDescriptor.copy());
+
+        CompoundTag encoded = source.save(registries);
+        CoreStorageRecord.LoadResult decoded = CoreStorageRecord.load(encoded, registries);
+        if (!decoded.success()) {
+            helper.fail("Core storage record did not decode: " + decoded.error());
+            return;
+        }
+        CoreStorageRecord restored = decoded.record();
+        if (!restored.storageId().equals(storageId) || !restored.networkId().equals(networkId)) {
+            helper.fail("Storage or network UUID changed during repository round trip");
+            return;
+        }
+        for (EnergyType type : EnergyType.values()) {
+            if (restored.energy().getOrDefault(type, 0L) != 101L + type.ordinal()) {
+                helper.fail("Energy did not round trip for " + type);
+                return;
+            }
+        }
+        if (restored.getItemCount(ItemKey.of(namedDiamond)) != Long.MAX_VALUE - 7
+                || restored.machines().getItem(MachineEnergyTable.FURNACE_SLOT).getCount() != 3
+                || restored.descriptorAmounts().getOrDefault(MachineEnergyTable.AXE_ID, 0L) != 37
+                || restored.unresolvedInventoryEntries().size() != 1
+                || restored.unresolvedMachineEntries().size() != 1
+                || restored.unresolvedDescriptorEntries().size() != 2) {
+            helper.fail("Core storage record lost durable state during round trip");
+            return;
+        }
+        if (!restored.unresolvedInventoryEntries().getFirst().equals(unresolvedInventory)
+                || !restored.unresolvedMachineEntries().getFirst().equals(unresolvedMachine)) {
+            helper.fail("Unavailable addon NBT changed during repository round trip");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void core_storage_record_segments_never_exceed_63_types(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        int[] cases = {0, 1, 63, 64, 785, 786};
+        int[] expectedSegments = {0, 1, 1, 2, 13, 13};
+        for (int caseIndex = 0; caseIndex < cases.length; caseIndex++) {
+            CoreStorageRecord record = CoreStorageRecord.fresh(UUID.randomUUID());
+            for (int index = 0; index < cases[caseIndex]; index++) {
+                ItemStack variant = new ItemStack(Items.PAPER);
+                variant.set(DataComponents.CUSTOM_NAME, Component.literal("segment-" + index));
+                record.putItem(ItemKey.of(variant), index + 1L);
+            }
+            CompoundTag encoded = record.save(registries);
+            ListTag segments = encoded.getList("inventorySegments", Tag.TAG_COMPOUND);
+            if (segments.size() != expectedSegments[caseIndex]) {
+                helper.fail(cases[caseIndex] + " types used " + segments.size()
+                        + " segments instead of " + expectedSegments[caseIndex]);
+                return;
+            }
+            for (int segmentIndex = 0; segmentIndex < segments.size(); segmentIndex++) {
+                int entries = segments.getCompound(segmentIndex)
+                        .getList("entries", Tag.TAG_COMPOUND).size();
+                if (entries > CoreStorageRecord.MAX_SEGMENT_TYPES) {
+                    helper.fail("Segment exceeded 63 types: " + entries);
+                    return;
+                }
+            }
+            CoreStorageRecord.LoadResult decoded = CoreStorageRecord.load(encoded, registries);
+            if (!decoded.success() || decoded.record().typeCount() != cases[caseIndex]) {
+                helper.fail("Segmented record did not restore " + cases[caseIndex] + " types");
+                return;
+            }
         }
         helper.succeed();
     }
@@ -1075,5 +1175,32 @@ public class PersistenceTests {
         var tag = new CompoundTag();
         tag.put("machines", machines);
         return tag;
+    }
+
+    private static CompoundTag unresolvedInventoryEntry(
+            net.minecraft.core.HolderLookup.Provider registries,
+            String itemId,
+            long count
+    ) {
+        CompoundTag rawItem = (CompoundTag) new ItemStack(Items.PAPER).save(registries);
+        rawItem.putString("id", itemId);
+        CompoundTag entry = new CompoundTag();
+        entry.put("item", rawItem);
+        entry.putLong("count", count);
+        return entry;
+    }
+
+    private static CompoundTag unresolvedMachineEntry(
+            net.minecraft.core.HolderLookup.Provider registries,
+            String descriptorId,
+            String itemId,
+            int count
+    ) {
+        CompoundTag rawItem = (CompoundTag) new ItemStack(Items.FURNACE, count).save(registries);
+        rawItem.putString("id", itemId);
+        CompoundTag entry = new CompoundTag();
+        entry.putString("descriptorId", descriptorId);
+        entry.put("item", rawItem);
+        return entry;
     }
 }

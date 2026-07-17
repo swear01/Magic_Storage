@@ -1,0 +1,442 @@
+package com.swearprom.magicstorage.magic_storage;
+
+import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.UUID;
+
+final class CoreStorageRecord {
+    static final int MAX_SEGMENT_TYPES = 63;
+
+    static final String TAG_STORAGE_ID = "storageId";
+    static final String TAG_NETWORK_ID = "networkId";
+    static final String TAG_ENERGY = "energy";
+    static final String TAG_DESCRIPTOR_CONSUMABLES = "descriptorConsumables";
+    static final String TAG_MACHINE_DESCRIPTORS = "machineDescriptors";
+    static final String TAG_INVENTORY_SEGMENTS = "inventorySegments";
+    static final String TAG_ENTRIES = "entries";
+    static final String TAG_DESCRIPTOR_ID = "descriptorId";
+    static final String TAG_ITEM = "item";
+    static final String TAG_COUNT = "count";
+    static final String TAG_AMOUNT = "amount";
+    static final String TAG_INFINITE = "infinite";
+
+    private final UUID storageId;
+    private final UUID networkId;
+    private final Map<EnergyType, Long> energy = new EnumMap<>(EnergyType.class);
+    private final Map<ResourceLocation, Long> descriptorAmounts = new java.util.HashMap<>();
+    private final Set<ResourceLocation> infiniteDescriptors = new java.util.HashSet<>();
+    private final List<CompoundTag> unresolvedDescriptorEntries = new ArrayList<>();
+    private final List<CompoundTag> unresolvedMachineEntries = new ArrayList<>();
+    private final Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
+    private final List<CompoundTag> unresolvedInventoryEntries = new ArrayList<>();
+    private final SimpleContainer machines;
+
+    private Runnable dirtyCallback = () -> {
+    };
+    private Runnable machineMutationCallback = this::markChanged;
+    private boolean suppressMachineCallback;
+
+    private CoreStorageRecord(UUID storageId, UUID networkId) {
+        this.storageId = java.util.Objects.requireNonNull(storageId, "storageId");
+        this.networkId = java.util.Objects.requireNonNull(networkId, "networkId");
+        for (EnergyType type : EnergyType.values()) {
+            energy.put(type, 0L);
+        }
+        machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS) {
+            @Override
+            public int getMaxStackSize() {
+                return 64;
+            }
+
+            @Override
+            public boolean canPlaceItem(int slot, ItemStack stack) {
+                MachineDescriptor descriptor = MachineEnergyTable.get(slot);
+                return descriptor != null
+                        && descriptor.category() != MachineEnergyTable.Category.CONSUMABLE
+                        && descriptor.maxInstalledCount() > 0
+                        && descriptor.accepts(stack);
+            }
+
+            @Override
+            public void setChanged() {
+                super.setChanged();
+                if (!suppressMachineCallback) {
+                    machineMutationCallback.run();
+                }
+            }
+        };
+    }
+
+    static CoreStorageRecord fresh(UUID storageId) {
+        return new CoreStorageRecord(storageId, UUID.randomUUID());
+    }
+
+    static LoadResult load(CompoundTag tag, HolderLookup.Provider registries) {
+        CompoundTag raw = tag.copy();
+        UUID storageId = tag.hasUUID(TAG_STORAGE_ID) ? tag.getUUID(TAG_STORAGE_ID) : null;
+        if (storageId == null) {
+            return LoadResult.failure(null, raw, "missing storageId");
+        }
+        if (!tag.hasUUID(TAG_NETWORK_ID)) {
+            return LoadResult.failure(storageId, raw, "missing networkId");
+        }
+        if (!tag.contains(TAG_ENERGY, Tag.TAG_COMPOUND)
+                || !tag.contains(TAG_DESCRIPTOR_CONSUMABLES, Tag.TAG_LIST)
+                || !tag.contains(TAG_MACHINE_DESCRIPTORS, Tag.TAG_LIST)
+                || !tag.contains(TAG_INVENTORY_SEGMENTS, Tag.TAG_LIST)) {
+            return LoadResult.failure(storageId, raw, "missing mandatory record payload");
+        }
+
+        CoreStorageRecord record = new CoreStorageRecord(storageId, tag.getUUID(TAG_NETWORK_ID));
+        try {
+            record.loadEnergy(tag.getCompound(TAG_ENERGY));
+            record.loadDescriptorEntries(
+                    tag.getList(TAG_DESCRIPTOR_CONSUMABLES, Tag.TAG_COMPOUND));
+            record.loadMachineEntries(
+                    tag.getList(TAG_MACHINE_DESCRIPTORS, Tag.TAG_COMPOUND), registries);
+            String inventoryError = record.loadInventorySegments(
+                    tag.getList(TAG_INVENTORY_SEGMENTS, Tag.TAG_COMPOUND), registries);
+            if (inventoryError != null) {
+                return LoadResult.failure(storageId, raw, inventoryError);
+            }
+            return LoadResult.success(record);
+        } catch (RuntimeException exception) {
+            return LoadResult.failure(storageId, raw,
+                    exception.getClass().getSimpleName() + ": " + exception.getMessage());
+        }
+    }
+
+    CompoundTag save(HolderLookup.Provider registries) {
+        CompoundTag tag = new CompoundTag();
+        tag.putUUID(TAG_STORAGE_ID, storageId);
+        tag.putUUID(TAG_NETWORK_ID, networkId);
+
+        CompoundTag energyTag = new CompoundTag();
+        for (EnergyType type : EnergyType.values()) {
+            energyTag.putLong(type.getId(), Math.max(0, energy.getOrDefault(type, 0L)));
+        }
+        tag.put(TAG_ENERGY, energyTag);
+
+        ListTag descriptorTags = new ListTag();
+        Set<ResourceLocation> descriptorIds = new TreeSet<>(Comparator.comparing(ResourceLocation::toString));
+        descriptorIds.addAll(descriptorAmounts.keySet());
+        descriptorIds.addAll(infiniteDescriptors);
+        for (ResourceLocation descriptorId : descriptorIds) {
+            CompoundTag entry = new CompoundTag();
+            entry.putString(TAG_DESCRIPTOR_ID, descriptorId.toString());
+            entry.putLong(TAG_AMOUNT, Math.max(0, descriptorAmounts.getOrDefault(descriptorId, 0L)));
+            entry.putBoolean(TAG_INFINITE, infiniteDescriptors.contains(descriptorId));
+            descriptorTags.add(entry);
+        }
+        unresolvedDescriptorEntries.forEach(entry -> descriptorTags.add(entry.copy()));
+        tag.put(TAG_DESCRIPTOR_CONSUMABLES, descriptorTags);
+
+        ListTag machineTags = new ListTag();
+        List<MachineDescriptor> descriptors = MachineEnergyTable.entries();
+        for (int slot = 0; slot < descriptors.size(); slot++) {
+            ItemStack stack = machines.getItem(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            CompoundTag entry = new CompoundTag();
+            entry.putString(TAG_DESCRIPTOR_ID, descriptors.get(slot).id().toString());
+            entry.put(TAG_ITEM, stack.save(registries));
+            machineTags.add(entry);
+        }
+        unresolvedMachineEntries.forEach(entry -> machineTags.add(entry.copy()));
+        tag.put(TAG_MACHINE_DESCRIPTORS, machineTags);
+
+        List<CompoundTag> inventoryEntries = new ArrayList<>();
+        for (Object2LongOpenHashMap<ItemKey> variants : inventory.values()) {
+            for (var entry : variants.object2LongEntrySet()) {
+                long count = entry.getLongValue();
+                if (count <= 0) {
+                    continue;
+                }
+                CompoundTag inventoryEntry = new CompoundTag();
+                inventoryEntry.put(TAG_ITEM, entry.getKey().toStack(1).save(registries));
+                inventoryEntry.putLong(TAG_COUNT, count);
+                inventoryEntries.add(inventoryEntry);
+            }
+        }
+        inventoryEntries.sort(Comparator
+                .comparing((CompoundTag entry) -> entry.getCompound(TAG_ITEM).getString("id"))
+                .thenComparing(entry -> entry.getCompound(TAG_ITEM).toString())
+                .thenComparingLong(entry -> entry.getLong(TAG_COUNT)));
+        unresolvedInventoryEntries.forEach(entry -> inventoryEntries.add(entry.copy()));
+
+        ListTag segments = new ListTag();
+        for (int start = 0; start < inventoryEntries.size(); start += MAX_SEGMENT_TYPES) {
+            ListTag entries = new ListTag();
+            int end = Math.min(inventoryEntries.size(), start + MAX_SEGMENT_TYPES);
+            for (int index = start; index < end; index++) {
+                entries.add(inventoryEntries.get(index));
+            }
+            CompoundTag segment = new CompoundTag();
+            segment.put(TAG_ENTRIES, entries);
+            segments.add(segment);
+        }
+        tag.put(TAG_INVENTORY_SEGMENTS, segments);
+        return tag;
+    }
+
+    private void loadEnergy(CompoundTag tag) {
+        for (EnergyType type : EnergyType.values()) {
+            energy.put(type, Math.max(0, tag.getLong(type.getId())));
+        }
+    }
+
+    private void loadDescriptorEntries(ListTag entries) {
+        for (int index = 0; index < entries.size(); index++) {
+            CompoundTag entry = entries.getCompound(index);
+            ResourceLocation descriptorId = ResourceLocation.tryParse(entry.getString(TAG_DESCRIPTOR_ID));
+            MachineDescriptor descriptor = descriptorId == null ? null : MachineEnergyTable.get(descriptorId);
+            if (descriptor == null || descriptor.category() != MachineEnergyTable.Category.CONSUMABLE) {
+                unresolvedDescriptorEntries.add(entry.copy());
+                continue;
+            }
+            if (entry.getBoolean(TAG_INFINITE)) {
+                infiniteDescriptors.add(descriptorId);
+                descriptorAmounts.remove(descriptorId);
+                continue;
+            }
+            long amount = Math.max(0, entry.getLong(TAG_AMOUNT));
+            if (amount <= 0) {
+                continue;
+            }
+            long current = descriptorAmounts.getOrDefault(descriptorId, 0L);
+            descriptorAmounts.put(descriptorId, saturatingAdd(current, amount));
+        }
+    }
+
+    private void loadMachineEntries(ListTag entries, HolderLookup.Provider registries) {
+        suppressMachineCallback = true;
+        try {
+            for (int index = 0; index < entries.size(); index++) {
+                CompoundTag entry = entries.getCompound(index);
+                if (!entry.contains(TAG_ITEM, Tag.TAG_COMPOUND)) {
+                    unresolvedMachineEntries.add(entry.copy());
+                    continue;
+                }
+                ResourceLocation descriptorId = ResourceLocation.tryParse(entry.getString(TAG_DESCRIPTOR_ID));
+                MachineDescriptor descriptor = descriptorId == null ? null : MachineEnergyTable.get(descriptorId);
+                ItemStack stack = parsePersistedItem(entry.getCompound(TAG_ITEM), registries);
+                int slot = descriptorId == null ? -1 : MachineEnergyTable.findSlot(descriptorId);
+                if (descriptor == null || descriptor.category() == MachineEnergyTable.Category.CONSUMABLE
+                        || stack.isEmpty() || slot < 0 || !descriptor.accepts(stack)) {
+                    unresolvedMachineEntries.add(entry.copy());
+                    continue;
+                }
+
+                ItemStack existing = machines.getItem(slot);
+                int room = Math.max(0, descriptor.maxInstalledCount() - existing.getCount());
+                int accepted = Math.min(room, stack.getCount());
+                if (accepted > 0) {
+                    machines.setItem(slot, stack.copyWithCount(existing.getCount() + accepted));
+                }
+                if (accepted < stack.getCount()) {
+                    CompoundTag remainder = entry.copy();
+                    remainder.put(TAG_ITEM, stack.copyWithCount(stack.getCount() - accepted).save(registries));
+                    unresolvedMachineEntries.add(remainder);
+                }
+            }
+        } finally {
+            suppressMachineCallback = false;
+        }
+    }
+
+    private String loadInventorySegments(ListTag segments, HolderLookup.Provider registries) {
+        for (int segmentIndex = 0; segmentIndex < segments.size(); segmentIndex++) {
+            CompoundTag segment = segments.getCompound(segmentIndex);
+            if (!segment.contains(TAG_ENTRIES, Tag.TAG_LIST)) {
+                return "inventory segment " + segmentIndex + " has no entries list";
+            }
+            ListTag entries = segment.getList(TAG_ENTRIES, Tag.TAG_COMPOUND);
+            if (entries.size() > MAX_SEGMENT_TYPES) {
+                return "inventory segment " + segmentIndex + " exceeds " + MAX_SEGMENT_TYPES + " types";
+            }
+            for (int entryIndex = 0; entryIndex < entries.size(); entryIndex++) {
+                CompoundTag entry = entries.getCompound(entryIndex);
+                if (!entry.contains(TAG_ITEM, Tag.TAG_COMPOUND)) {
+                    return "inventory entry has no item";
+                }
+                long count = entry.getLong(TAG_COUNT);
+                if (count <= 0) {
+                    return "inventory entry has non-positive count";
+                }
+                ItemStack stack = parsePersistedItem(entry.getCompound(TAG_ITEM), registries);
+                if (stack.isEmpty()) {
+                    unresolvedInventoryEntries.add(entry.copy());
+                    continue;
+                }
+                putItemInternal(ItemKey.of(stack), count);
+            }
+        }
+        return null;
+    }
+
+    private static ItemStack parsePersistedItem(
+            CompoundTag itemTag,
+            HolderLookup.Provider registries
+    ) {
+        ResourceLocation itemId = ResourceLocation.tryParse(itemTag.getString("id"));
+        if (itemId == null || registries.lookupOrThrow(Registries.ITEM)
+                .get(ResourceKey.create(Registries.ITEM, itemId)).isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+        return ItemStack.parse(registries, itemTag).orElse(ItemStack.EMPTY);
+    }
+
+    UUID storageId() {
+        return storageId;
+    }
+
+    UUID networkId() {
+        return networkId;
+    }
+
+    Map<EnergyType, Long> energy() {
+        return energy;
+    }
+
+    SimpleContainer machines() {
+        return machines;
+    }
+
+    Map<ResourceLocation, Long> descriptorAmounts() {
+        return descriptorAmounts;
+    }
+
+    Set<ResourceLocation> infiniteDescriptors() {
+        return infiniteDescriptors;
+    }
+
+    List<CompoundTag> unresolvedDescriptorEntries() {
+        return unresolvedDescriptorEntries;
+    }
+
+    List<CompoundTag> unresolvedMachineEntries() {
+        return unresolvedMachineEntries;
+    }
+
+    Map<Item, Object2LongOpenHashMap<ItemKey>> inventory() {
+        return inventory;
+    }
+
+    List<CompoundTag> unresolvedInventoryEntries() {
+        return unresolvedInventoryEntries;
+    }
+
+    int typeCount() {
+        long count = unresolvedInventoryEntries.size();
+        for (Object2LongOpenHashMap<ItemKey> variants : inventory.values()) {
+            count += variants.size();
+            if (count >= Integer.MAX_VALUE) {
+                return Integer.MAX_VALUE;
+            }
+        }
+        return (int) count;
+    }
+
+    long itemCount() {
+        long total = 0;
+        for (Object2LongOpenHashMap<ItemKey> variants : inventory.values()) {
+            for (var entry : variants.object2LongEntrySet()) {
+                total = saturatingAdd(total, Math.max(0, entry.getLongValue()));
+            }
+        }
+        for (CompoundTag unresolved : unresolvedInventoryEntries) {
+            total = saturatingAdd(total, Math.max(0, unresolved.getLong(TAG_COUNT)));
+        }
+        return total;
+    }
+
+    long getItemCount(ItemKey key) {
+        Object2LongOpenHashMap<ItemKey> variants = inventory.get(key.item());
+        return variants == null ? 0 : variants.getLong(key);
+    }
+
+    void putItem(ItemKey key, long amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("Core storage amount must be positive");
+        }
+        putItemInternal(key, amount);
+        markChanged();
+    }
+
+    private void putItemInternal(ItemKey key, long amount) {
+        Object2LongOpenHashMap<ItemKey> variants =
+                inventory.computeIfAbsent(key.item(), ignored -> new Object2LongOpenHashMap<>());
+        variants.put(key, saturatingAdd(variants.getLong(key), amount));
+    }
+
+    boolean isEmpty() {
+        if (!inventory.isEmpty() || !machines.isEmpty() || !descriptorAmounts.isEmpty()
+                || !infiniteDescriptors.isEmpty() || !unresolvedDescriptorEntries.isEmpty()
+                || !unresolvedMachineEntries.isEmpty() || !unresolvedInventoryEntries.isEmpty()) {
+            return false;
+        }
+        for (long amount : energy.values()) {
+            if (amount > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void setDirtyCallback(Runnable callback) {
+        dirtyCallback = java.util.Objects.requireNonNull(callback, "callback");
+    }
+
+    void setMachineMutationCallback(Runnable callback) {
+        machineMutationCallback = java.util.Objects.requireNonNull(callback, "callback");
+    }
+
+    void clearMachineMutationCallback() {
+        machineMutationCallback = this::markChanged;
+    }
+
+    void markChanged() {
+        dirtyCallback.run();
+    }
+
+    private static long saturatingAdd(long left, long right) {
+        if (right <= 0) {
+            return left;
+        }
+        return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+    }
+
+    record LoadResult(CoreStorageRecord record, UUID storageId, CompoundTag raw, String error) {
+        static LoadResult success(CoreStorageRecord record) {
+            return new LoadResult(record, record.storageId(), null, null);
+        }
+
+        static LoadResult failure(UUID storageId, CompoundTag raw, String error) {
+            return new LoadResult(null, storageId, raw.copy(), error);
+        }
+
+        boolean success() {
+            return record != null;
+        }
+    }
+}
