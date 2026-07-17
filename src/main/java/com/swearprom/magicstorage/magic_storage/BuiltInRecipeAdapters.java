@@ -52,7 +52,7 @@ final class BuiltInRecipeAdapters {
             RecipeType.STONECUTTING,
             RecipeType.SMITHING
     );
-    private static final Map<Recipe<?>, List<RecipeAdapterMatch.Input>> SMITHING_INPUT_CACHE =
+    private static final Map<Recipe<?>, SmithingRepresentatives> SMITHING_INPUT_CACHE =
             Collections.synchronizedMap(new WeakHashMap<>());
     private static final RecipeAdapterRegistry REGISTRY = new RecipeAdapterRegistry(List.of(
             exact(SHAPED_ID, 0, ShapedRecipe.class, RecipeType.CRAFTING,
@@ -400,6 +400,26 @@ final class BuiltInRecipeAdapters {
     }
 
     private static List<RecipeAdapterMatch.Input> smithingInputs(SmithingTransformRecipe recipe) {
+        SmithingRepresentatives representatives = smithingRepresentatives(recipe);
+        return List.of(
+                RecipeAdapterMatch.Input.of(
+                        new SmithingInputIdentity(recipe, 0),
+                        recipe::isTemplateIngredient,
+                        representatives.templates(),
+                        1),
+                RecipeAdapterMatch.Input.of(
+                        new SmithingInputIdentity(recipe, 1),
+                        recipe::isBaseIngredient,
+                        representatives.bases(),
+                        1),
+                RecipeAdapterMatch.Input.of(
+                        new SmithingInputIdentity(recipe, 2),
+                        recipe::isAdditionIngredient,
+                        representatives.additions(),
+                        1));
+    }
+
+    private static SmithingRepresentatives smithingRepresentatives(SmithingTransformRecipe recipe) {
         synchronized (SMITHING_INPUT_CACHE) {
             return SMITHING_INPUT_CACHE.computeIfAbsent(recipe, ignored -> {
                 List<ItemStack> templates = new ArrayList<>();
@@ -412,30 +432,18 @@ final class BuiltInRecipeAdapters {
                     if (recipe.isBaseIngredient(stack)) bases.add(stack.copyWithCount(1));
                     if (recipe.isAdditionIngredient(stack)) additions.add(stack.copyWithCount(1));
                 }
-                return List.of(
-                        RecipeAdapterMatch.Input.of(
-                                new SmithingInputIdentity(recipe, 0),
-                                recipe::isTemplateIngredient,
-                                templates,
-                                1),
-                        RecipeAdapterMatch.Input.of(
-                                new SmithingInputIdentity(recipe, 1),
-                                recipe::isBaseIngredient,
-                                bases,
-                                1),
-                        RecipeAdapterMatch.Input.of(
-                                new SmithingInputIdentity(recipe, 2),
-                                recipe::isAdditionIngredient,
-                                additions,
-                                1));
+                return new SmithingRepresentatives(templates, bases, additions);
             });
         }
     }
 
     private static RecipeCandidateIndex smithingCandidateIndex(SmithingTransformRecipe recipe) {
-        List<ItemStack> representatives = smithingInputs(recipe).stream()
-                .flatMap(input -> input.representatives().stream())
-                .toList();
+        SmithingRepresentatives smithing = smithingRepresentatives(recipe);
+        List<ItemStack> representatives = new ArrayList<>(
+                smithing.templates().size() + smithing.bases().size() + smithing.additions().size());
+        representatives.addAll(smithing.templates());
+        representatives.addAll(smithing.bases());
+        representatives.addAll(smithing.additions());
         return RecipeCandidateIndex.nonExhaustive(representatives);
     }
 
@@ -464,6 +472,18 @@ final class BuiltInRecipeAdapters {
     }
 
     private record SmithingInputIdentity(Recipe<?> recipe, int role) {
+    }
+
+    private record SmithingRepresentatives(
+            List<ItemStack> templates,
+            List<ItemStack> bases,
+            List<ItemStack> additions
+    ) {
+        private SmithingRepresentatives {
+            templates = List.copyOf(templates);
+            bases = List.copyOf(bases);
+            additions = List.copyOf(additions);
+        }
     }
 
     private record ExactRecipeAdapter<R extends Recipe<?>>(

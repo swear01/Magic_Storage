@@ -553,6 +553,43 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertFalse((ROOT / "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingStationTable.java").exists())
         self.assertFalse((ROOT / "src/main/java/com/swearprom/magicstorage/magic_storage/RecipeEnergyTable.java").exists())
 
+    def test_smithing_weak_cache_values_do_not_retain_recipe_keys(self):
+        adapters = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/BuiltInRecipeAdapters.java"
+        )
+
+        self.assertRegex(
+            adapters,
+            r"Map<Recipe<\?>,\s*SmithingRepresentatives>\s+SMITHING_INPUT_CACHE",
+        )
+        self.assertRegex(
+            adapters,
+            r"private record SmithingRepresentatives\(\s*"
+            r"List<ItemStack> templates,\s*"
+            r"List<ItemStack> bases,\s*"
+            r"List<ItemStack> additions\s*\)",
+        )
+        cache_values = self.java_block(
+            adapters,
+            r"private static SmithingRepresentatives smithingRepresentatives\(",
+            "detached smithing cache value factory",
+        )
+        self.assertIn("SMITHING_INPUT_CACHE.computeIfAbsent", cache_values)
+        self.assertNotIn("RecipeAdapterMatch.Input", cache_values)
+        self.assertNotIn("SmithingInputIdentity", cache_values)
+        self.assertNotRegex(cache_values, r"recipe::is(?:Template|Base|Addition)Ingredient")
+
+        smithing_inputs = self.java_block(
+            adapters,
+            r"private static List<RecipeAdapterMatch\.Input> smithingInputs\(",
+            "transient exact smithing inputs",
+        )
+        self.assertEqual(3, smithing_inputs.count("new SmithingInputIdentity(recipe,"))
+        self.assertEqual(3, len(re.findall(
+            r"recipe::is(?:Template|Base|Addition)Ingredient",
+            smithing_inputs,
+        )))
+
     def test_emi_sends_context_amount_and_destination_for_exact_backing_recipe(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java")
         self.assertIn("context.getAmount()", text)
