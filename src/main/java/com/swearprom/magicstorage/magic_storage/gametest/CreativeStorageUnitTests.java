@@ -324,7 +324,18 @@ public final class CreativeStorageUnitTests {
             }
             var saved = new net.minecraft.nbt.CompoundTag();
             core.saveAdditional(saved, level.registryAccess());
-            core.loadAdditional(saved, level.registryAccess());
+            level.removeBlockEntity(corePos);
+            var reloaded = new StorageCoreBlockEntity(
+                    corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState());
+            reloaded.loadAdditional(saved, level.registryAccess());
+            level.setBlockEntity(reloaded);
+        });
+
+        helper.runAfterDelay(4, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Reloaded Storage Core block entity missing");
+                return;
+            }
             core.rebuildNetwork(level);
             if (!core.getTypeCapacity().unlimited()
                     || core.getItemCount(ItemKey.of(new ItemStack(Items.STONE))) != 7) {
