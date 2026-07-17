@@ -139,6 +139,188 @@ public class PersistenceTests {
     }
 
     @GameTest(template = "platform")
+    public static void core_storage_repository_enforces_exact_runtime_attachment(GameTestHelper helper) {
+        CoreStorageRepository repository = new CoreStorageRepository();
+        CoreStorageRepository.CoreLocation firstLocation = new CoreStorageRepository.CoreLocation(
+                helper.getLevel().dimension(), helper.absolutePos(new BlockPos(1, 3, 1)));
+        CoreStorageRepository.CoreLocation secondLocation = new CoreStorageRepository.CoreLocation(
+                helper.getLevel().dimension(), helper.absolutePos(new BlockPos(4, 3, 1)));
+        UUID firstOwner = UUID.randomUUID();
+        UUID secondOwner = UUID.randomUUID();
+        CoreStorageRecord record = repository.createFresh(firstLocation, firstOwner);
+
+        CoreStorageRepository.AttachResult duplicate = repository.attachExisting(
+                record.storageId(), secondLocation, secondOwner);
+        if (duplicate.success()
+                || duplicate.reason() != CoreStorageRepository.AttachFailure.DUPLICATE_ATTACHMENT) {
+            helper.fail("A second loaded Core attached to the same storage UUID");
+            return;
+        }
+        repository.release(record.storageId(), firstLocation, secondOwner);
+        if (repository.attachExisting(record.storageId(), secondLocation, secondOwner).success()) {
+            helper.fail("A non-owner token released another Core attachment");
+            return;
+        }
+        repository.release(record.storageId(), firstLocation, firstOwner);
+        CoreStorageRepository.AttachResult transferred = repository.attachExisting(
+                record.storageId(), secondLocation, secondOwner);
+        if (!transferred.success() || transferred.record() != record) {
+            helper.fail("Released repository record did not attach at the new location");
+            return;
+        }
+        int recordsBeforeMissingLookup = repository.recordCountForTesting();
+        CoreStorageRepository.AttachResult missing = repository.attachExisting(
+                UUID.randomUUID(), firstLocation, UUID.randomUUID());
+        if (missing.success() || missing.reason() != CoreStorageRepository.AttachFailure.MISSING_RECORD
+                || repository.recordCountForTesting() != recordsBeforeMissingLookup) {
+            helper.fail("Missing storage lookup manufactured a blank record");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void core_storage_recovery_reuses_one_record_without_payload_snapshot(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        CoreStorageRepository repository = new CoreStorageRepository();
+        CoreStorageRepository.CoreLocation origin = new CoreStorageRepository.CoreLocation(
+                helper.getLevel().dimension(), helper.absolutePos(new BlockPos(1, 3, 1)));
+        CoreStorageRepository.CoreLocation target = new CoreStorageRepository.CoreLocation(
+                helper.getLevel().dimension(), helper.absolutePos(new BlockPos(4, 3, 1)));
+        UUID originalOwnerToken = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+        CoreStorageRecord stored = repository.createFresh(origin, originalOwnerToken);
+        UUID networkId = stored.networkId();
+        stored.putItem(ItemKey.of(new ItemStack(Items.DIAMOND)), 81);
+
+        CoreStorageRepository.RecoverySummary summary = repository.prepareRecovery(
+                stored.storageId(), origin, originalOwnerToken, playerId, 1234L).orElseThrow();
+        if (!repository.reissueLatest(playerId).orElseThrow().id().equals(summary.id())) {
+            helper.fail("Recovery reissue created a different capability UUID");
+            return;
+        }
+        CompoundTag repositoryTag = repository.save(new CompoundTag(), registries);
+        ListTag recoveries = repositoryTag.getList("recoveries", Tag.TAG_COMPOUND);
+        if (recoveries.size() != 1
+                || !recoveries.getCompound(0).hasUUID("storageId")
+                || recoveries.getCompound(0).contains("contents")) {
+            helper.fail("Recovery entry copied Core payload instead of referencing storage UUID");
+            return;
+        }
+
+        repository.release(stored.storageId(), origin, originalOwnerToken);
+        UUID targetOwnerToken = UUID.randomUUID();
+        CoreStorageRecord temporaryFresh = repository.createFresh(target, targetOwnerToken);
+        CoreStorageRepository.ClaimResult claimed = repository.claimIntoFresh(
+                summary.id(), temporaryFresh.storageId(), target, targetOwnerToken);
+        if (!claimed.success() || claimed.record() != stored
+                || !claimed.record().networkId().equals(networkId)
+                || claimed.record().getItemCount(ItemKey.of(new ItemStack(Items.DIAMOND))) != 81
+                || repository.hasRecovery(summary.id())
+                || repository.hasRecord(temporaryFresh.storageId())) {
+            helper.fail("Recovery claim copied, reset, or failed to consume the repository mapping");
+            return;
+        }
+        CoreStorageRepository.ClaimResult duplicateClaim = repository.claimIntoFresh(
+                summary.id(), stored.storageId(), target, targetOwnerToken);
+        if (duplicateClaim.success()
+                || duplicateClaim.reason() != CoreStorageRepository.AttachFailure.RECOVERY_MISSING) {
+            helper.fail("A copied recovery token claimed the same storage twice");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void packed_record_only_allows_exact_origin_interruption_recovery(GameTestHelper helper) {
+        CoreStorageRepository repository = new CoreStorageRepository();
+        CoreStorageRepository.CoreLocation origin = new CoreStorageRepository.CoreLocation(
+                helper.getLevel().dimension(), helper.absolutePos(new BlockPos(1, 3, 1)));
+        CoreStorageRepository.CoreLocation copy = new CoreStorageRepository.CoreLocation(
+                helper.getLevel().dimension(), helper.absolutePos(new BlockPos(4, 3, 1)));
+        UUID originalToken = UUID.randomUUID();
+        CoreStorageRecord record = repository.createFresh(origin, originalToken);
+        UUID recoveryId = repository.prepareRecovery(
+                record.storageId(), origin, originalToken, UUID.randomUUID(), 99L).orElseThrow().id();
+        repository.release(record.storageId(), origin, originalToken);
+
+        CoreStorageRepository.AttachResult copiedAttach = repository.attachExisting(
+                record.storageId(), copy, UUID.randomUUID());
+        if (copiedAttach.success()
+                || copiedAttach.reason() != CoreStorageRepository.AttachFailure.PACKED) {
+            helper.fail("A stale copied Core attached a packed storage record");
+            return;
+        }
+        CoreStorageRepository.AttachResult originAttach = repository.attachExisting(
+                record.storageId(), origin, UUID.randomUUID());
+        if (!originAttach.success() || repository.hasRecovery(recoveryId)) {
+            helper.fail("Exact origin did not cancel an interrupted pack");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void corrupt_repository_records_are_preserved_and_fail_closed(GameTestHelper helper) {
+        UUID corruptId = UUID.randomUUID();
+        CompoundTag corrupt = new CompoundTag();
+        corrupt.putUUID("storageId", corruptId);
+        corrupt.putString("sentinel", "retain-me");
+        CompoundTag orphan = new CompoundTag();
+        orphan.putString("sentinel", "orphan-retain-me");
+        ListTag storages = new ListTag();
+        storages.add(corrupt.copy());
+        storages.add(orphan.copy());
+        CompoundTag root = new CompoundTag();
+        root.putInt("schemaVersion", 1);
+        root.put("storages", storages);
+        root.put("recoveries", new ListTag());
+
+        CoreStorageRepository repository = CoreStorageRepository.load(
+                root, helper.getLevel().registryAccess());
+        CoreStorageRepository.AttachResult attached = repository.attachExisting(
+                corruptId,
+                new CoreStorageRepository.CoreLocation(
+                        helper.getLevel().dimension(), helper.absolutePos(new BlockPos(1, 3, 1))),
+                UUID.randomUUID());
+        if (attached.success()
+                || attached.reason() != CoreStorageRepository.AttachFailure.CORRUPT_RECORD) {
+            helper.fail("Corrupt repository record did not fail closed");
+            return;
+        }
+        CompoundTag resaved = repository.save(new CompoundTag(), helper.getLevel().registryAccess());
+        ListTag retained = resaved.getList("storages", Tag.TAG_COMPOUND);
+        if (retained.size() != 2 || !retained.contains(corrupt) || !retained.contains(orphan)) {
+            helper.fail("Corrupt or orphan repository NBT was not retained exactly: " + retained);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void repository_deletes_only_empty_attached_records(GameTestHelper helper) {
+        CoreStorageRepository repository = new CoreStorageRepository();
+        CoreStorageRepository.CoreLocation location = new CoreStorageRepository.CoreLocation(
+                helper.getLevel().dimension(), helper.absolutePos(new BlockPos(1, 3, 1)));
+        UUID ownerToken = UUID.randomUUID();
+        CoreStorageRecord empty = repository.createFresh(location, ownerToken);
+        if (!repository.removeIfEmpty(empty.storageId(), location, ownerToken)
+                || repository.hasRecord(empty.storageId())) {
+            helper.fail("Empty Core record was not deleted on removal");
+            return;
+        }
+
+        CoreStorageRecord populated = repository.createFresh(location, ownerToken);
+        populated.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1);
+        if (repository.removeIfEmpty(populated.storageId(), location, ownerToken)
+                || !repository.hasRecord(populated.storageId())) {
+            helper.fail("Non-empty Core record was deleted on removal");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
     public static void storage_core_can_always_be_harvested_without_losing_its_drop(GameTestHelper helper) {
         if (MagicStorage.STORAGE_CORE.get().defaultBlockState().requiresCorrectToolForDrops()) {
             helper.fail("Storage Core must not delete contents when broken without the preferred tool");
