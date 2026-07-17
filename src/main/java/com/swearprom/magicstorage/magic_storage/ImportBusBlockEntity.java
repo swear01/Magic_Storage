@@ -11,8 +11,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 
-import java.util.function.Consumer;
 import java.util.List;
+import java.util.UUID;
+import java.util.function.Consumer;
 
 public class ImportBusBlockEntity extends BlockEntity {
 
@@ -23,6 +24,7 @@ public class ImportBusBlockEntity extends BlockEntity {
     private List<BlockPos> cachedPath = List.of();
     private int cooldown = 0;
     private long nextCoreSearchTick = Long.MIN_VALUE;
+    private BusConfiguration busConfiguration = BusConfiguration.defaults(BusKind.IMPORT);
     private final IItemHandler passiveItemHandler = new IItemHandler() {
         @Override
         public int getSlots() {
@@ -36,7 +38,8 @@ public class ImportBusBlockEntity extends BlockEntity {
 
         @Override
         public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-            if (slot != 0 || stack.isEmpty() || level == null || level.isClientSide()) return stack.copy();
+            if (slot != 0 || stack.isEmpty() || level == null || level.isClientSide()
+                    || !busConfiguration.supported()) return stack.copy();
             StorageCoreBlockEntity core = resolveCore();
             if (core == null || core.isConflicted()) return stack.copy();
             Actor actor = Actor.bus(getBlockPos());
@@ -76,7 +79,7 @@ public class ImportBusBlockEntity extends BlockEntity {
     }
 
     public void tick() {
-        if (level == null || level.isClientSide()) return;
+        if (level == null || level.isClientSide() || !busConfiguration.supported()) return;
 
         if (cooldown > 0) {
             cooldown--;
@@ -152,6 +155,17 @@ public class ImportBusBlockEntity extends BlockEntity {
         return cachedCore;
     }
 
+    public void assignOwnerOnPlacement(UUID owner) {
+        BusConfiguration assigned = busConfiguration.assignInitialOwner(owner);
+        if (assigned.equals(busConfiguration)) return;
+        busConfiguration = assigned;
+        setChanged();
+    }
+
+    public BusConfiguration getBusConfiguration() {
+        return busConfiguration;
+    }
+
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
@@ -160,6 +174,7 @@ public class ImportBusBlockEntity extends BlockEntity {
             tag.putInt("coreY", corePos.getY());
             tag.putInt("coreZ", corePos.getZ());
         }
+        busConfiguration.save(tag, registries);
     }
 
     @Override
@@ -168,5 +183,6 @@ public class ImportBusBlockEntity extends BlockEntity {
         if (tag.contains("coreX")) {
             corePos = new BlockPos(tag.getInt("coreX"), tag.getInt("coreY"), tag.getInt("coreZ"));
         }
+        busConfiguration = BusConfiguration.load(tag, BusKind.IMPORT, registries);
     }
 }

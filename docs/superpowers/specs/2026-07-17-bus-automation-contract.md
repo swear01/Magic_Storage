@@ -1,7 +1,8 @@
 # Bus Automation Contract
 
-> Status: authoritative design prerequisite for GitHub issue #6. No production
-> behavior changes are authorized until the RED tests for the relevant phase exist.
+> Status: authoritative design for GitHub issue #6. Phase 1 state/migration is
+> implemented; later behavior changes remain unauthorized until their phase-specific
+> RED tests exist.
 
 ## Goal
 
@@ -378,6 +379,11 @@ This document is the required pre-production decision record.
 Add the versioned config, structured actor types, deterministic filter value
 objects, owner capture, config revision, codecs, and migration tests. Keep active
 Import/Export and current capability availability unchanged.
+
+Implemented 2026-07-17: schema-1 config/raw preservation, exact legacy defaults,
+four rule value types, placement owner, owner-stripped Export drop state, structured
+actor identity, revision validation, and eight registered GameTests. Normal transfers
+still use the legacy actor and directional behavior; no later-phase field is active.
 
 ### Phase 2 — Filter and server configuration
 

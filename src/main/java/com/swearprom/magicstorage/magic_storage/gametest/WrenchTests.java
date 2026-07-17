@@ -297,6 +297,7 @@ public class WrenchTests {
                             .getHolderOrThrow(Enchantments.SHARPNESS),
                     3);
             bus.setFilter(filter);
+            bus.assignOwnerOnPlacement(UUID.randomUUID());
             bus.tick();
 
             var drops = Block.getDrops(level.getBlockState(busPos), level, busPos, bus);
@@ -312,8 +313,18 @@ public class WrenchTests {
                 return;
             }
             var data = busDrop.get(DataComponents.BLOCK_ENTITY_DATA).copyTag();
-            if (!data.contains("filter") || data.contains("coreX") || data.contains("coreY") || data.contains("coreZ")) {
-                helper.fail("Export Bus drop must contain filter only, got " + data);
+            if (!data.contains("filter")
+                    || !data.contains(BusConfiguration.TAG_BUS_CONFIG)
+                    || data.contains("coreX") || data.contains("coreY") || data.contains("coreZ")) {
+                helper.fail("Export Bus drop must preserve configuration without runtime Core hints, got " + data);
+                return;
+            }
+            var droppedConfig = BusConfiguration.load(
+                    data,
+                    BusKind.EXPORT,
+                    level.registryAccess());
+            if (!droppedConfig.supported() || droppedConfig.owner().isPresent()) {
+                helper.fail("Export Bus drop retained an owner or unsupported configuration");
                 return;
             }
 

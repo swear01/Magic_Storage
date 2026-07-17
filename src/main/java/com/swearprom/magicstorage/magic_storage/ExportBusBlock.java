@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
@@ -55,6 +56,15 @@ public class ExportBusBlock extends Block implements EntityBlock, IStorageNetwor
     }
 
     @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (!level.isClientSide() && placer instanceof Player player
+                && level.getBlockEntity(pos) instanceof ExportBusBlockEntity bus) {
+            bus.assignOwnerOnPlacement(player.getUUID());
+        }
+    }
+
+    @Override
     protected BlockState rotate(BlockState state, Rotation rotation) {
         return state.setValue(FACING, rotation.rotate(state.getValue(FACING)));
     }
@@ -100,6 +110,7 @@ public class ExportBusBlock extends Block implements EntityBlock, IStorageNetwor
 
         var tag = new CompoundTag();
         tag.put("filter", bus.getFilter().toStack(1).save(params.getLevel().registryAccess()));
+        bus.getBusConfiguration().withoutOwner().save(tag, params.getLevel().registryAccess());
         for (ItemStack drop : drops) {
             if (drop.is(MagicStorage.EXPORT_BUS_ITEM.get())) {
                 BlockItem.setBlockEntityData(drop, MagicStorage.EXPORT_BUS_BE.get(), tag.copy());

@@ -1,6 +1,9 @@
 package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -41,6 +44,15 @@ public class ImportBusBlock extends Block implements EntityBlock, IStorageNetwor
     @Override
     public BlockState getStateForPlacement(BlockPlaceContext ctx) {
         return defaultBlockState().setValue(FACING, ctx.getNearestLookingDirection().getOpposite());
+    }
+
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (!level.isClientSide() && placer instanceof Player player
+                && level.getBlockEntity(pos) instanceof ImportBusBlockEntity bus) {
+            bus.assignOwnerOnPlacement(player.getUUID());
+        }
     }
 
     @Override

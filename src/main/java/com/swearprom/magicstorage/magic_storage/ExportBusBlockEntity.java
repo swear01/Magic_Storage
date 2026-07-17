@@ -11,8 +11,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 
-import java.util.function.Consumer;
 import java.util.List;
+import java.util.UUID;
+import java.util.function.Consumer;
 
 public class ExportBusBlockEntity extends BlockEntity {
 
@@ -23,13 +24,14 @@ public class ExportBusBlockEntity extends BlockEntity {
     private List<BlockPos> cachedPath = List.of();
     private int cooldown = 0;
     private ItemKey filterItem = null;
+    private BusConfiguration busConfiguration = BusConfiguration.defaults(BusKind.EXPORT);
 
     public ExportBusBlockEntity(BlockPos pos, BlockState state) {
         super(MagicStorage.EXPORT_BUS_BE.get(), pos, state);
     }
 
     public void tick() {
-        if (level == null || level.isClientSide()) return;
+        if (level == null || level.isClientSide() || !busConfiguration.supported()) return;
 
         if (cooldown > 0) {
             cooldown--;
@@ -106,16 +108,29 @@ public class ExportBusBlockEntity extends BlockEntity {
     }
 
     public void setFilter(ItemStack stack) {
+        if (!busConfiguration.supported()) return;
         if (stack.isEmpty()) {
             filterItem = null;
         } else {
             filterItem = ItemKey.of(stack);
         }
+        busConfiguration = busConfiguration.withSingleExactFilter(stack);
         setChanged();
     }
 
     public ItemKey getFilter() {
         return filterItem;
+    }
+
+    public void assignOwnerOnPlacement(UUID owner) {
+        BusConfiguration assigned = busConfiguration.assignInitialOwner(owner);
+        if (assigned.equals(busConfiguration)) return;
+        busConfiguration = assigned;
+        setChanged();
+    }
+
+    public BusConfiguration getBusConfiguration() {
+        return busConfiguration;
     }
 
     @Override
@@ -129,6 +144,7 @@ public class ExportBusBlockEntity extends BlockEntity {
         if (filterItem != null) {
             tag.put("filter", filterItem.toStack(1).save(registries));
         }
+        busConfiguration.save(tag, registries);
     }
 
     @Override
@@ -137,9 +153,12 @@ public class ExportBusBlockEntity extends BlockEntity {
         if (tag.contains("coreX")) {
             corePos = new BlockPos(tag.getInt("coreX"), tag.getInt("coreY"), tag.getInt("coreZ"));
         }
-        if (tag.contains("filter")) {
-            ItemStack.parse(registries, tag.getCompound("filter"))
-                .ifPresent(stack -> filterItem = ItemKey.of(stack));
-        }
+        busConfiguration = BusConfiguration.load(tag, BusKind.EXPORT, registries);
+        filterItem = busConfiguration.filterRules().stream()
+                .filter(rule -> rule.type() == BusFilterRule.Type.EXACT_STACK)
+                .map(BusFilterRule::exactKey)
+                .flatMap(java.util.Optional::stream)
+                .findFirst()
+                .orElse(null);
     }
 }

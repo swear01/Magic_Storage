@@ -164,6 +164,19 @@ class StaticRegressionTests(unittest.TestCase):
             current = value
         self.fail(f"cyclic integer constant starting at {name}")
 
+    def test_every_gametest_class_is_registered_with_neoforge(self):
+        java_root = ROOT / "src/main/java"
+        unregistered = []
+        for path in sorted(java_root.rglob("*.java")):
+            text = path.read_text()
+            if "@GameTest(" in text and "@GameTestHolder(" not in text:
+                unregistered.append(str(path.relative_to(ROOT)))
+        self.assertEqual(
+            [],
+            unregistered,
+            "GameTest methods compile but never execute without @GameTestHolder",
+        )
+
     def test_terminal_layout_has_one_profile_driven_entrypoint(self):
         layout = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalLayout.java"
