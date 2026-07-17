@@ -264,7 +264,7 @@ BFS 從 storage_core 向六個方向掃描：
 放置 callback 合併到 next-tick topology pass；單一安全成長走 bounded incremental add，破壞、批次或不確定拓樸才走 bounded full rebuild。
 沒有 core 的連通群組不構成網路（所有功能停用）。
 
-Terminal/Import Bus/Export Bus cache access path，但每次操作前驗證路徑連續、每格 chunk 目前已載入且仍是 network block；失效時只尋找 alternate loaded path，不得為驗證連線載入 chunk。Import Bus 正面主動 pull 外，所有面另註冊 stable insert-only item-handler capability，外部 automation 可被動 push；handler 不保存 stack、不允許 extract，simulate/execute 都回 exact remainder。Active/passive lookup 共用10-tick missing-Core negative cache，不能讓外部 pipe 每次 probe 都重跑 bounded BFS。兩種Bus已完成schema-1 server-owned config、legacy/raw migration、placement owner與structured actor identity的Phase 1基礎，但合法mode/filter/automation欄位尚未接到搬運；Export Bus目前仍只做朝正面的主動輸出，無方向模式延後。
+Terminal/Import Bus/Export Bus cache access path，但每次操作前驗證路徑連續、每格 chunk 目前已載入且仍是 network block；失效時只尋找 alternate loaded path，不得為驗證連線載入 chunk。Import Bus 正面主動 pull 外，所有面另註冊 stable insert-only item-handler capability，外部 automation 可被動 push；handler 不保存 stack、不允許 extract，simulate/execute 都回 exact remainder。Active/passive lookup 共用10-tick missing-Core negative cache，不能讓外部 pipe 每次 probe 都重跑 bounded BFS。兩種Bus已完成schema-1 server-owned config、legacy/raw migration、placement owner、structured actor identity與deterministic filter-policy純函式基礎，但合法mode/filter/automation欄位尚未接到搬運；Export Bus目前仍只做朝正面的主動輸出，無方向模式延後。
 
 效能：Unit 沒有 BlockEntity，BFS 只做 `getBlockState()` 檢查；所有 BFS/full rebuild 都有深度與方塊數上限。
 ```

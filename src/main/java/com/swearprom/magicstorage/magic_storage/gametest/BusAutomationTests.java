@@ -3,6 +3,7 @@ package com.swearprom.magicstorage.magic_storage.gametest;
 import com.swearprom.magicstorage.magic_storage.BusActor;
 import com.swearprom.magicstorage.magic_storage.BusConfiguration;
 import com.swearprom.magicstorage.magic_storage.BusFilterMode;
+import com.swearprom.magicstorage.magic_storage.BusFilterPolicy;
 import com.swearprom.magicstorage.magic_storage.BusFilterRule;
 import com.swearprom.magicstorage.magic_storage.BusKind;
 import com.swearprom.magicstorage.magic_storage.BusMode;
@@ -17,6 +18,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -239,5 +241,175 @@ public final class BusAutomationTests {
         } catch (IllegalStateException expected) {
             helper.succeed();
         }
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void allow_and_deny_empty_filters_have_opposite_semantics(GameTestHelper helper) {
+        ItemKey stone = ItemKey.of(new ItemStack(Items.STONE));
+        BusFilterPolicy allow = BusFilterPolicy.compile(
+                filterConfig(BusFilterMode.ALLOW, List.of()), helper.getLevel().registryAccess());
+        BusFilterPolicy deny = BusFilterPolicy.compile(
+                filterConfig(BusFilterMode.DENY, List.of()), helper.getLevel().registryAccess());
+        if (allow.allows(stone) || !deny.allows(stone)) {
+            helper.fail("Empty Allow must match nothing and empty Deny must match everything");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void unsupported_filter_policy_never_allows_candidates(GameTestHelper helper) {
+        CompoundTag raw = new CompoundTag();
+        raw.putInt("schema", 99);
+        CompoundTag root = new CompoundTag();
+        root.put(BusConfiguration.TAG_BUS_CONFIG, raw);
+        BusConfiguration config = BusConfiguration.load(
+                root, BusKind.IMPORT, helper.getLevel().registryAccess());
+        BusFilterPolicy policy = BusFilterPolicy.compile(config, helper.getLevel().registryAccess());
+        ItemKey stone = ItemKey.of(new ItemStack(Items.STONE));
+        if (policy.allows(stone) || !policy.orderedCandidates(List.of(stone)).isEmpty()) {
+            helper.fail("Unsupported bus filter policy must fail closed");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void every_filter_rule_type_uses_its_exact_identity_contract(GameTestHelper helper) {
+        ItemStack namedDiamond = new ItemStack(Items.DIAMOND);
+        namedDiamond.set(DataComponents.CUSTOM_NAME, Component.literal("named"));
+        ItemKey namedKey = ItemKey.of(namedDiamond);
+        ItemKey plainDiamond = ItemKey.of(new ItemStack(Items.DIAMOND));
+        ItemKey oakPlanks = ItemKey.of(new ItemStack(Items.OAK_PLANKS));
+        ItemKey dirt = ItemKey.of(new ItemStack(Items.DIRT));
+        var registries = helper.getLevel().registryAccess();
+
+        BusFilterPolicy exact = BusFilterPolicy.compile(filterConfig(
+                BusFilterMode.ALLOW, List.of(BusFilterRule.exact(namedDiamond))), registries);
+        BusFilterPolicy item = BusFilterPolicy.compile(filterConfig(
+                BusFilterMode.ALLOW,
+                List.of(BusFilterRule.item(ResourceLocation.withDefaultNamespace("diamond")))), registries);
+        BusFilterPolicy tag = BusFilterPolicy.compile(filterConfig(
+                BusFilterMode.ALLOW,
+                List.of(BusFilterRule.tag(ResourceLocation.withDefaultNamespace("planks")))), registries);
+        BusFilterPolicy mod = BusFilterPolicy.compile(filterConfig(
+                BusFilterMode.ALLOW, List.of(BusFilterRule.mod("minecraft"))), registries);
+
+        if (!exact.allows(namedKey) || exact.allows(plainDiamond)
+                || !item.allows(namedKey) || !item.allows(plainDiamond) || item.allows(dirt)
+                || !tag.allows(oakPlanks) || tag.allows(dirt)
+                || !mod.allows(dirt)) {
+            helper.fail("Exact/item/tag/mod filter semantics diverged");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void duplicate_and_unavailable_rules_stay_visible_but_never_match(GameTestHelper helper) {
+        CompoundTag configTag = currentConfigTag(BusFilterMode.ALLOW);
+        ListTag rules = new ListTag();
+        rules.add(itemRule("minecraft:stone"));
+        rules.add(itemRule("minecraft:stone"));
+        rules.add(itemRule("missing_addon:missing_item"));
+        configTag.put("filterRules", rules);
+        CompoundTag root = new CompoundTag();
+        root.put(BusConfiguration.TAG_BUS_CONFIG, configTag);
+
+        BusConfiguration config = BusConfiguration.load(
+                root, BusKind.EXPORT, helper.getLevel().registryAccess());
+        BusFilterPolicy policy = BusFilterPolicy.compile(config, helper.getLevel().registryAccess());
+        if (!config.supported()
+                || policy.ruleSlots().size() != 3
+                || policy.ruleSlots().get(0).state() != BusFilterPolicy.RuleState.ACTIVE
+                || policy.ruleSlots().get(1).state() != BusFilterPolicy.RuleState.DUPLICATE
+                || policy.ruleSlots().get(2).state() != BusFilterPolicy.RuleState.UNAVAILABLE
+                || !policy.allows(ItemKey.of(new ItemStack(Items.STONE)))
+                || policy.allows(ItemKey.of(new ItemStack(Items.DIRT)))) {
+            helper.fail("Duplicate/unavailable filter rules were hidden or became matchable");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void allow_candidates_follow_rule_order_then_canonical_item_identity(GameTestHelper helper) {
+        ItemStack stoneB = new ItemStack(Items.STONE);
+        stoneB.set(DataComponents.CUSTOM_NAME, Component.literal("B"));
+        ItemStack stoneA = new ItemStack(Items.STONE);
+        stoneA.set(DataComponents.CUSTOM_NAME, Component.literal("A"));
+        ItemKey dirt = ItemKey.of(new ItemStack(Items.DIRT));
+        ItemKey keyA = ItemKey.of(stoneA);
+        ItemKey keyB = ItemKey.of(stoneB);
+        BusFilterPolicy policy = BusFilterPolicy.compile(filterConfig(
+                BusFilterMode.ALLOW,
+                List.of(
+                        BusFilterRule.item(ResourceLocation.withDefaultNamespace("dirt")),
+                        BusFilterRule.item(ResourceLocation.withDefaultNamespace("stone"))
+                )), helper.getLevel().registryAccess());
+
+        List<ItemKey> ordered = policy.orderedCandidates(List.of(keyB, keyA, dirt));
+        List<ItemKey> reversed = policy.orderedCandidates(List.of(dirt, keyA, keyB));
+        if (!ordered.equals(List.of(dirt, keyA, keyB)) || !reversed.equals(ordered)) {
+            helper.fail("Allow candidates ignored rule order or canonical component order: " + ordered);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void deny_candidates_use_global_deterministic_order(GameTestHelper helper) {
+        ItemStack stoneB = new ItemStack(Items.STONE);
+        stoneB.set(DataComponents.CUSTOM_NAME, Component.literal("B"));
+        ItemStack stoneA = new ItemStack(Items.STONE);
+        stoneA.set(DataComponents.CUSTOM_NAME, Component.literal("A"));
+        ItemKey diamond = ItemKey.of(new ItemStack(Items.DIAMOND));
+        ItemKey dirt = ItemKey.of(new ItemStack(Items.DIRT));
+        ItemKey keyA = ItemKey.of(stoneA);
+        ItemKey keyB = ItemKey.of(stoneB);
+        BusFilterPolicy policy = BusFilterPolicy.compile(filterConfig(
+                BusFilterMode.DENY,
+                List.of(BusFilterRule.item(ResourceLocation.withDefaultNamespace("dirt")))),
+                helper.getLevel().registryAccess());
+
+        List<ItemKey> ordered = policy.orderedCandidates(List.of(keyB, dirt, keyA, diamond));
+        List<ItemKey> reversed = policy.orderedCandidates(List.of(diamond, keyA, dirt, keyB));
+        if (!ordered.equals(List.of(diamond, keyA, keyB)) || !reversed.equals(ordered)) {
+            helper.fail("Deny candidates were not globally deterministic: " + ordered);
+            return;
+        }
+        helper.succeed();
+    }
+
+    private static BusConfiguration filterConfig(BusFilterMode mode, List<BusFilterRule> rules) {
+        return BusConfiguration.current(
+                BusMode.DIRECTIONAL,
+                BusConfiguration.ALL_SIDES_MASK,
+                false,
+                true,
+                mode,
+                rules,
+                Optional.empty(),
+                0
+        );
+    }
+
+    private static CompoundTag currentConfigTag(BusFilterMode mode) {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("schema", 1);
+        tag.putString("mode", "directional");
+        tag.putInt("sideMask", BusConfiguration.ALL_SIDES_MASK);
+        tag.putBoolean("unsidedAccess", false);
+        tag.putBoolean("automationEnabled", true);
+        tag.putString("filterMode", mode.name().toLowerCase(java.util.Locale.ROOT));
+        tag.putLong("configRevision", 0);
+        return tag;
+    }
+
+    private static CompoundTag itemRule(String id) {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("type", "item");
+        tag.putString("id", id);
+        return tag;
     }
 }

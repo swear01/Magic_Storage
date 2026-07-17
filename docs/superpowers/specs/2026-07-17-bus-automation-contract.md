@@ -1,8 +1,9 @@
 # Bus Automation Contract
 
-> Status: authoritative design for GitHub issue #6. Phase 1 state/migration is
-> implemented; later behavior changes remain unauthorized until their phase-specific
-> RED tests exist.
+> Status: authoritative design for GitHub issue #6. Phase 1 state/migration and
+> the Phase 2 deterministic filter-policy foundation are implemented; transfer,
+> configuration, capability, and security changes remain unauthorized until their
+> phase-specific RED tests exist.
 
 ## Goal
 
@@ -389,6 +390,12 @@ still use the legacy actor and directional behavior; no later-phase field is act
 
 Add Import filtering, ordered Export candidates, atomic server menu packets,
 ownership checks, and capability invalidation. Keep both buses directional.
+
+Filter-policy foundation implemented 2026-07-17: immutable visible rule states,
+four exact match contracts, Allow/Deny empty semantics, unsupported fail-closed,
+and rule-first/global deterministic candidate ordering. It is not yet wired into
+Import/Export transfers; packets, ownership, invalidation, and directional behavior
+tests remain in this phase.
 
 ### Phase 3 — Directionless capabilities
 
