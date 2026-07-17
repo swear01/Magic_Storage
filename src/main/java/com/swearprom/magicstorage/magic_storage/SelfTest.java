@@ -15,9 +15,16 @@ import net.minecraft.world.item.crafting.CampfireCookingRecipe;
 import net.minecraft.world.item.crafting.CookingBookCategory;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.ShapedRecipe;
+import net.minecraft.world.item.crafting.ShapedRecipePattern;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.item.crafting.SmeltingRecipe;
+import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.minecraft.world.item.crafting.SmokingRecipe;
+import net.minecraft.world.item.crafting.StonecutterRecipe;
+import net.neoforged.neoforge.common.ItemAbilities;
+import net.neoforged.neoforge.common.crafting.DataComponentIngredient;
 
 import java.util.HashSet;
 import java.util.ArrayList;
@@ -35,6 +42,11 @@ class SelfTest {
         testFuelTable();
         testFuelAutoPriority();
         testRecipeEnergyTable();
+        testRecipeAdapterFoundation();
+        testRecipeAdapterRegistryContract();
+        testBuiltInRecipeAdapterFamilies();
+        testRecipeAdapterCandidateCoverage();
+        testRecipeAdapterReloadIdentity();
         testEnergyType();
         testEnergyCost();
         testFuelValue();
@@ -199,6 +211,207 @@ class SelfTest {
         var crafting = new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
                 NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT)));
         assertTrue("non-cooking recipe cost is null", RecipeEnergyTable.getCost(crafting) == null);
+    }
+
+    private static void testRecipeAdapterFoundation() {
+        var holder = new net.minecraft.world.item.crafting.RecipeHolder<>(
+                ResourceLocation.fromNamespaceAndPath("test_mod", "shapeless_adapter"),
+                new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                        NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT))));
+        var match = BuiltInRecipeAdapters.registry().classify(holder).orElse(null);
+
+        assertTrue("exact shapeless holders select the stable built-in adapter ID",
+                match != null && match.adapterId().equals(BuiltInRecipeAdapters.SHAPELESS_ID));
+    }
+
+    private static void testRecipeAdapterRegistryContract() {
+        RecipeAdapter later = testRecipeAdapter("later", 20);
+        RecipeAdapter samePriorityZ = testRecipeAdapter("same_z", 10);
+        RecipeAdapter samePriorityA = testRecipeAdapter("same_a", 10);
+        RecipeAdapterRegistry registry = new RecipeAdapterRegistry(
+                List.of(later, samePriorityZ, samePriorityA));
+        List<ResourceLocation> orderedIds = registry.adapters().stream()
+                .map(RecipeAdapter::id)
+                .toList();
+        var holder = new net.minecraft.world.item.crafting.RecipeHolder<>(
+                ResourceLocation.fromNamespaceAndPath("test_mod", "priority"),
+                new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                        NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT))));
+
+        assertTrue("adapter order is priority then stable ID",
+                orderedIds.equals(List.of(samePriorityA.id(), samePriorityZ.id(), later.id())));
+        assertTrue("adapters are keyed by stable ResourceLocation ID",
+                registry.get(samePriorityA.id()).orElse(null) == samePriorityA
+                        && registry.get(testRecipeId("missing_adapter")).isEmpty());
+        assertTrue("classification uses deterministic first-match priority",
+                registry.classify(holder).orElseThrow().adapterId().equals(samePriorityA.id()));
+
+        boolean duplicateRejected = false;
+        try {
+            new RecipeAdapterRegistry(List.of(
+                    testRecipeAdapter("duplicate", 0), testRecipeAdapter("duplicate", 1)));
+        } catch (IllegalArgumentException expected) {
+            duplicateRejected = true;
+        }
+        assertTrue("duplicate adapter IDs are rejected", duplicateRejected);
+    }
+
+    private static RecipeAdapter testRecipeAdapter(String path, int priority) {
+        return new RecipeAdapter() {
+            private final ResourceLocation id = ResourceLocation.fromNamespaceAndPath("test_mod", path);
+
+            @Override
+            public ResourceLocation id() {
+                return id;
+            }
+
+            @Override
+            public int priority() {
+                return priority;
+            }
+
+            @Override
+            public boolean supports(net.minecraft.world.item.crafting.RecipeHolder<?> holder) {
+                return true;
+            }
+
+            @Override
+            public RecipeCandidateIndex candidateIndex(
+                    net.minecraft.world.item.crafting.RecipeHolder<?> holder
+            ) {
+                return RecipeCandidateIndex.exhaustive(List.of(new ItemStack(Items.DIRT)));
+            }
+        };
+    }
+
+    private static void testBuiltInRecipeAdapterFamilies() {
+        List<RecipeHolder<?>> holders = List.of(
+                new RecipeHolder<>(testRecipeId("shaped"), new ShapedRecipe(
+                        "", CraftingBookCategory.MISC,
+                        new ShapedRecipePattern(1, 1,
+                                NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT)),
+                                java.util.Optional.empty()),
+                        new ItemStack(Items.STONE))),
+                new RecipeHolder<>(testRecipeId("shapeless"), new ShapelessRecipe(
+                        "", CraftingBookCategory.MISC, new ItemStack(Items.STONE),
+                        NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT)))),
+                new RecipeHolder<>(testRecipeId("smelting"), new SmeltingRecipe(
+                        "", CookingBookCategory.MISC, Ingredient.of(Items.DIRT),
+                        new ItemStack(Items.STONE), 0, 200)),
+                new RecipeHolder<>(testRecipeId("blasting"), new BlastingRecipe(
+                        "", CookingBookCategory.MISC, Ingredient.of(Items.DIRT),
+                        new ItemStack(Items.STONE), 0, 100)),
+                new RecipeHolder<>(testRecipeId("smoking"), new SmokingRecipe(
+                        "", CookingBookCategory.MISC, Ingredient.of(Items.BEEF),
+                        new ItemStack(Items.COOKED_BEEF), 0, 100)),
+                new RecipeHolder<>(testRecipeId("campfire"), new CampfireCookingRecipe(
+                        "", CookingBookCategory.MISC, Ingredient.of(Items.BEEF),
+                        new ItemStack(Items.COOKED_BEEF), 0, 600)),
+                new RecipeHolder<>(testRecipeId("stonecutting"), new StonecutterRecipe(
+                        "", Ingredient.of(Items.STONE), new ItemStack(Items.STONE_BRICKS))),
+                new RecipeHolder<>(testRecipeId("smithing"), new SmithingTransformRecipe(
+                        Ingredient.of(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE),
+                        Ingredient.of(Items.DIAMOND_SWORD),
+                        Ingredient.of(Items.NETHERITE_INGOT),
+                        new ItemStack(Items.NETHERITE_SWORD))),
+                new RecipeHolder<>(testRecipeId("axe"), new AxeTransformationRecipe(
+                        Ingredient.of(Items.OAK_LOG), new ItemStack(Items.STRIPPED_OAK_LOG),
+                        ItemAbilities.AXE_STRIP))
+        );
+        List<ResourceLocation> expectedAdapterIds = List.of(
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "shaped_crafting"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "shapeless_crafting"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "smelting"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "blasting"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "smoking"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "campfire_cooking"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "stonecutting"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "smithing_transform"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "axe_transformation")
+        );
+
+        for (int index = 0; index < holders.size(); index++) {
+            RecipeAdapterMatch match = BuiltInRecipeAdapters.registry()
+                    .classify(holders.get(index)).orElse(null);
+            assertTrue("exact built-in family selects adapter " + expectedAdapterIds.get(index),
+                    match != null && match.adapterId().equals(expectedAdapterIds.get(index)));
+        }
+        assertTrue("built-in adapter IDs have a stable deterministic order",
+                BuiltInRecipeAdapters.registry().adapters().stream()
+                        .map(RecipeAdapter::id).toList().equals(expectedAdapterIds));
+
+        ShapelessRecipe customFamily = new ShapelessRecipe(
+                "", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT))) {
+        };
+        assertTrue("custom recipe classes remain unsupported without a registered exact adapter",
+                BuiltInRecipeAdapters.registry().classify(
+                        new RecipeHolder<>(testRecipeId("custom_family"), customFamily)).isEmpty());
+    }
+
+    private static ResourceLocation testRecipeId(String path) {
+        return ResourceLocation.fromNamespaceAndPath("test_mod", path);
+    }
+
+    private static void testRecipeAdapterCandidateCoverage() {
+        RecipeHolder<ShapelessRecipe> simple = new RecipeHolder<>(
+                testRecipeId("simple_candidates"),
+                new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                        NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT))));
+        ItemStack exactStone = new ItemStack(Items.STONE);
+        exactStone.set(DataComponents.CUSTOM_NAME, Component.literal("exact"));
+        Ingredient nonSimple = DataComponentIngredient.of(true, exactStone);
+        RecipeHolder<ShapelessRecipe> componentExact = new RecipeHolder<>(
+                testRecipeId("non_exhaustive_candidates"),
+                new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.EMERALD),
+                        NonNullList.of(Ingredient.EMPTY, nonSimple)));
+
+        RecipeCandidateIndex simpleIndex = BuiltInRecipeAdapters.registry()
+                .classify(simple).orElseThrow().candidateIndex();
+        RecipeCandidateIndex componentIndex = BuiltInRecipeAdapters.registry()
+                .classify(componentExact).orElseThrow().candidateIndex();
+
+        assertTrue("simple ingredient representatives are explicitly exhaustive",
+                simpleIndex.coverage() == RecipeCandidateIndex.Coverage.EXHAUSTIVE
+                        && simpleIndex.representatives().stream().anyMatch(stack -> stack.is(Items.DIRT)));
+        assertTrue("non-simple ingredient representatives are explicitly non-exhaustive",
+                componentIndex.coverage() == RecipeCandidateIndex.Coverage.NON_EXHAUSTIVE
+                        && componentIndex.representatives().stream()
+                        .anyMatch(stack -> ItemStack.isSameItemSameComponents(stack, exactStone)));
+    }
+
+    private static void testRecipeAdapterReloadIdentity() {
+        ResourceLocation recipeId = testRecipeId("reload_identity");
+        RecipeHolder<ShapelessRecipe> original = new RecipeHolder<>(
+                recipeId,
+                new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                        NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.DIRT))));
+        RecipeAdapterMatch originalMatch = BuiltInRecipeAdapters.registry()
+                .classify(original).orElseThrow();
+        RecipeHolder<ShapelessRecipe> replacement = new RecipeHolder<>(
+                recipeId,
+                new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                        NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.STONE))));
+        RecipeAdapterMatch replacementMatch = BuiltInRecipeAdapters.registry()
+                .classify(replacement).orElseThrow();
+
+        assertTrue("adapter matches are bound to the exact holder identity",
+                originalMatch.isCurrentHolder(original)
+                        && !originalMatch.isCurrentHolder(replacement)
+                        && replacementMatch.isCurrentHolder(replacement));
+        assertTrue("same-ID reloads are classified from the replacement recipe instance",
+                replacementMatch.candidateIndex().representatives().stream()
+                        .anyMatch(stack -> stack.is(Items.STONE))
+                        && replacementMatch.candidateIndex().representatives().stream()
+                        .noneMatch(stack -> stack.is(Items.DIRT)));
+
+        ShapelessRecipe replacementCustomFamily = new ShapelessRecipe(
+                "", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+                NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.STONE))) {
+        };
+        assertTrue("same-ID reloads do not inherit stale adapter support",
+                BuiltInRecipeAdapters.registry().classify(
+                        new RecipeHolder<>(recipeId, replacementCustomFamily)).isEmpty());
     }
 
     private static void testEnergyType() {

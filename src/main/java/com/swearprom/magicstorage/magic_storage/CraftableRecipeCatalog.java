@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 
 final class CraftableRecipeCatalog {
+    private final RecipeAdapterRegistry adapterRegistry = BuiltInRecipeAdapters.registry();
     private Collection<RecipeHolder<?>> recipeSnapshot;
     private Map<Item, List<ResourceLocation>> recipeIdsByIngredient = Map.of();
     private Map<ResourceLocation, Integer> recipeOrder = Map.of();
@@ -39,13 +40,14 @@ final class CraftableRecipeCatalog {
         Collection<RecipeHolder<?>> currentSnapshot = manager.getRecipes();
         if (currentSnapshot == recipeSnapshot) return;
 
-        List<RecipeHolder<?>> supported = new ArrayList<>();
-        for (RecipeType<?> type : CraftingTerminalMenu.supportedRecipeTypes()) {
+        List<RecipeAdapterMatch> supported = new ArrayList<>();
+        for (RecipeType<?> type : BuiltInRecipeAdapters.discoveryTypes()) {
             @SuppressWarnings({"unchecked", "rawtypes"})
             List<RecipeHolder<?>> holders = (List) manager.getAllRecipesFor((RecipeType) type);
             holders.stream()
-                    .filter(holder -> CraftingTerminalMenu.supportsRecipeContract(holder.value()))
                     .sorted(Comparator.comparing(holder -> holder.id().toString()))
+                    .map(adapterRegistry::classify)
+                    .flatMap(java.util.Optional::stream)
                     .forEach(supported::add);
         }
 
@@ -53,18 +55,14 @@ final class CraftableRecipeCatalog {
         Map<ResourceLocation, Integer> order = new HashMap<>();
         List<ResourceLocation> unindexed = new ArrayList<>();
         for (int index = 0; index < supported.size(); index++) {
-            RecipeHolder<?> holder = supported.get(index);
+            RecipeAdapterMatch match = supported.get(index);
+            RecipeHolder<?> holder = match.holder();
             order.put(holder.id(), index);
             Set<Item> indexedItems = new LinkedHashSet<>();
-            boolean fullyIndexed = true;
-            for (CraftingTerminalMenu.RecipeIngredient ingredient
-                    : CraftingTerminalMenu.recipeIngredients(holder.value())) {
-                if (!ingredient.isEmpty() && ingredient.items().isEmpty()) fullyIndexed = false;
-                for (ItemStack candidate : ingredient.items()) {
-                    if (!candidate.isEmpty()) indexedItems.add(candidate.getItem());
-                }
+            if (!match.candidateIndex().isExhaustive()) unindexed.add(holder.id());
+            for (ItemStack candidate : match.candidateIndex().representatives()) {
+                if (!candidate.isEmpty()) indexedItems.add(candidate.getItem());
             }
-            if (!fullyIndexed) unindexed.add(holder.id());
             for (Item item : indexedItems) {
                 byIngredient.computeIfAbsent(item, ignored -> new ArrayList<>()).add(holder.id());
             }

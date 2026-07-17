@@ -1,6 +1,6 @@
 # Modded Recipe Compatibility and Multi-Step Magic Crafting Plan
 
-> Status: the keyed machine-descriptor prerequisite was implemented on 2026-07-15; normalized recipe adapters and multi-step execution are not yet implemented. The current release contract remains exact one-level server-authoritative crafting, and further work starts only after the current Fuel/recipe GUI correction passes its fullscreen gate.
+> Status: the keyed machine-descriptor prerequisite was implemented on 2026-07-15. The first Phase 1 slice now provides an internal stable-ID adapter classification registry and explicit exhaustive/non-exhaustive candidate discovery for the exact built-in families. Full input/output/station/energy/presentation/simulation/commit ownership and multi-step execution are not yet implemented; the current exact one-level server-authoritative menu remains the execution path.
 
 ## Goals
 
@@ -13,7 +13,7 @@
 
 - A mod recipe that uses vanilla shaped, shapeless, cooking, stonecutting, or Smithing Transform serializers already produces the exact vanilla recipe classes accepted by Magic Storage; a non-`minecraft` recipe namespace alone does not make it unsupported.
 - Custom recipe classes/types, dynamic outputs, world/player/event-dependent transforms, fluids, chance outputs, and custom side effects remain fail-closed.
-- The current Craftable candidate index uses `Ingredient#getItems()` representatives. NeoForge permits a non-simple custom ingredient's displayed items to be non-exhaustive, so future adapters must explicitly declare whether their candidate index is exhaustive; otherwise a valid custom recipe could be omitted before its real `Ingredient#test` predicate is reached.
+- `CraftableRecipeCatalog` now consumes exact built-in adapter classifications and an explicit candidate coverage result. Simple ingredient representatives are exhaustive; non-simple/custom representatives and Smithing predicate scans are conservatively non-exhaustive and therefore remain in the unindexed candidate set so a valid recipe is not omitted before its real predicate is reached.
 - `MachineEnergyTable`, `CraftingStationTable`, presentation construction, ingredient extraction, output assembly, and recipe ordering currently encode the supported vanilla families directly. Adding custom recipe types one `if` branch at a time would duplicate policy and make multi-step planning unsafe.
 - The Fuel layout and public `magic_storage:machine_descriptor` registry are descriptor-count-driven and paged. Core state persists by stable descriptor ID, menu opening uses a cached server snapshot plus a fixed 256-slot parity bank, and unavailable addon-item NBT is retained for later reload. Recipe-family registration remains separate and is not implied by a machine descriptor.
 
@@ -51,6 +51,8 @@ Introduce an internal adapter registry keyed by stable adapter ID. Each adapter 
 - simulation and commit validation.
 
 The existing vanilla families move behind adapters without changing behavior first. There is no generic `Recipe#getIngredients()` fallback: an unknown recipe is unsupported until an adapter proves its complete contract.
+
+The implemented first slice is intentionally classification-only. `RecipeAdapterRegistry` is keyed by stable `ResourceLocation`, rejects duplicate IDs, orders by priority then ID, binds each match to the exact holder instance, and recognizes only the exact shaped, shapeless, four cooking, stonecutting, Smithing Transform, and internal axe-transformation classes. A match authorizes catalog candidate indexing only; it exposes no execution operation and must not be treated as proof that the future complete execution contract exists. `CraftingTerminalMenu`, station, energy, presentation, simulation, and commit logic remain unchanged until later RED-first migration work supplies all of those obligations together.
 
 ### 2. Keyed station and energy descriptors (completed prerequisite)
 
@@ -97,10 +99,10 @@ Keep EMI required on clients, absent from dedicated-server requirements, and lim
 
 ### Phase 1 — Adapter foundation, no behavior expansion
 
-1. Add failing dist-neutral tests for exact adapter selection, unsupported custom classes, deterministic adapter order, reload identity, and no generic fallback.
-2. Add GameTests proving mod-namespace recipes using each currently supported vanilla serializer continue to work.
-3. Move current recipe-kind, ingredient, station, energy, presentation, and output logic behind internal adapters.
-4. Keep every current one-level crafting and rollback test green.
+1. **Foundation complete:** RED-first dist-neutral tests cover stable keyed IDs, duplicate rejection, priority/ID order, exact family selection, unsupported custom classes, candidate coverage, and reload holder identity without a generic recipe fallback.
+2. **Partially covered:** exact built-in family fixtures use non-`minecraft` holder IDs; full per-family one-level GameTest execution coverage remains pending with the execution migration.
+3. **In progress:** recipe-family classification and Craftable candidate indexing are behind internal adapters. Exact inputs/output/station/energy/presentation/simulation/commit remain in the existing menu/tables and must migrate as one fail-closed contract.
+4. **Maintained:** current one-level crafting and rollback GameTests remain green; adapter classification itself is not execution authorization.
 
 ### Phase 2 — First third-party compatibility module
 
