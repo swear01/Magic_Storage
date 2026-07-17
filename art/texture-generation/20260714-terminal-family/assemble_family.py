@@ -119,6 +119,22 @@ TIER_ORNAMENTS = [
         ],
     },
 ]
+CREATIVE_ORNAMENT = {
+    "role": "creative_infinity_cell",
+    "accents": ["#3FDCE5", "#C083FF"],
+    "points": [
+        *[(x, y, CYAN) for x, y in (
+            (4, 5), (5, 5), (10, 5), (11, 5),
+            (3, 6), (6, 6), (9, 6), (12, 6),
+            (3, 9), (6, 9), (9, 9), (12, 9),
+            (4, 10), (5, 10), (10, 10), (11, 10),
+        )],
+        *[(x, y, LIGHT_PURPLE) for x, y in (
+            (4, 7), (7, 7), (8, 7), (11, 7),
+            (4, 8), (7, 8), (8, 8), (11, 8),
+        )],
+    ],
+}
 SELECTED = ROOT / "selected"
 METADATA = ROOT / "metadata"
 
@@ -192,6 +208,15 @@ def storage_unit(image, tier):
     draw.rectangle((6, 6, 9, 9), fill=SHADOW)
     draw.rectangle((7, 7, 8, 8), fill=CASING)
     for x, y, color in TIER_ORNAMENTS[tier - 1]["points"]:
+        image.putpixel((x, y), color)
+
+
+def creative_storage_unit(image):
+    draw = ImageDraw.Draw(image)
+    panel(draw)
+    draw.rectangle((3, 3, 12, 12), fill=EDGE)
+    draw.rectangle((4, 4, 11, 11), fill=DARK)
+    for x, y, color in CREATIVE_ORNAMENT["points"]:
         image.putpixel((x, y), color)
 
 
@@ -418,7 +443,7 @@ def save_member(name, source, transform):
     return path
 
 
-def contact_sheet(paths):
+def contact_sheet(paths, output="selected-contact-sheet.png"):
     scale = 12
     cell = 16 * scale
     label_height = 28
@@ -433,7 +458,7 @@ def contact_sheet(paths):
         sheet.alpha_composite(image, (left, top))
         draw.rectangle((left, top, left + cell - 1, top + cell - 1), outline=(55, 55, 55, 255))
         draw.text((left + 2, top + cell + 4), path.stem, fill=(25, 25, 25, 255))
-    sheet.save(ROOT / "selected-contact-sheet.png")
+    sheet.save(ROOT / output)
 
 
 def connected_contact_sheet(paths):
@@ -482,6 +507,11 @@ def main():
             "candidates/storage_unit_base/storage_unit_base_03.png",
             lambda image, tier=tier: storage_unit(image, tier),
         )
+    member_paths["creative_storage_unit"] = save_member(
+        "creative_storage_unit",
+        "candidates/creative_storage_unit/creative_storage_unit_01.png",
+        creative_storage_unit,
+    )
     member_paths["import_bus_top"] = save_member(
         "import_bus_top", "candidates/bus_top/import_bus_allside_01.png",
         lambda image: bus_top(image, True))
@@ -512,6 +542,8 @@ def main():
         "storage_terminal": normalize_metadata("storage_terminal", "storage_terminal_02"),
         "crafting_terminal": normalize_metadata("crafting_terminal", "crafting_terminal_01"),
         "storage_unit": normalize_metadata("storage_unit_base", "storage_unit_base_03"),
+        "creative_storage_unit": normalize_metadata(
+            "creative_storage_unit", "creative_storage_unit_01"),
         "import_bus_allside": normalize_metadata(
             "bus_top", "import_bus_allside_01", "import_bus_allside"),
         "export_bus_conduit": normalize_metadata(
@@ -526,6 +558,7 @@ def main():
         "storage_terminal": "storage_item_grid",
         "crafting_terminal": "crafting_grid_mark",
         **{f"storage_unit_t{tier}": f"storage_cell_tier_{tier}" for tier in range(1, 7)},
+        "creative_storage_unit": CREATIVE_ORNAMENT["role"],
         "import_bus_top": "import_casing_top",
         "import_bus_side": "import_casing_side",
         "import_bus_front": "import_inward_arrow",
@@ -539,6 +572,7 @@ def main():
         "storage_terminal": metadata["storage_terminal"],
         "crafting_terminal": metadata["crafting_terminal"],
         **{f"storage_unit_t{tier}": metadata["storage_unit"] for tier in range(1, 7)},
+        "creative_storage_unit": metadata["creative_storage_unit"],
         "import_bus_top": metadata["import_bus_allside"],
         "export_bus_top": metadata["export_bus_conduit"],
         "import_bus_side": metadata["import_bus_allside"],
@@ -570,6 +604,7 @@ def main():
     connected_names = [
         "storage_core",
         *[f"storage_unit_t{tier}" for tier in range(1, 7)],
+        "creative_storage_unit",
         "storage_terminal",
         "crafting_terminal",
         "import_bus_top",
@@ -584,7 +619,10 @@ def main():
         selected_connected = SELECTED / f"{name}_connected.png"
         connected_sheet(Image.open(source).convert("RGBA")).save(selected_connected)
         connected_paths.append(selected_connected)
-        runtime = f"src/main/resources/assets/magic_storage/textures/block/{name}_connected.png"
+        runtime = (
+            "src/main/resources/resourcepacks/fusion_connected_casing/"
+            f"assets/magic_storage/textures/block/{name}_connected.png"
+        )
         runtime_path = PROJECT / runtime
         runtime_path.write_bytes(selected_connected.read_bytes())
         metadata_path = runtime_path.with_suffix(".png.mcmeta")
@@ -614,7 +652,7 @@ def main():
         "runtime_size": [16, 16],
         "settings": {
             "seed": 71421,
-            "revision_seeds": [71422, 71423, 71424],
+            "revision_seeds": [71422, 71423, 71424, 71425],
             "block_img2img_strength": 0.38,
             "item_img2img_strength": 0.68,
             "style": "mc_texture/mc_item",
@@ -635,6 +673,11 @@ def main():
             }
             for tier, ornament in enumerate(TIER_ORNAMENTS, 1)
         ],
+        "creative_ornament": {
+            "role": CREATIVE_ORNAMENT["role"],
+            "accents": CREATIVE_ORNAMENT["accents"],
+            "detail_points": [[x, y] for x, y, _ in CREATIVE_ORNAMENT["points"]],
+        },
         "members": members,
         "connected_textures": connected_members,
         "control_atlas": {
@@ -652,10 +695,18 @@ def main():
             "candidate-contact-sheet.png",
             "selected-contact-sheet.png",
             "selected-connected-contact-sheet.png",
+            "creative-storage-unit-candidates.png",
         ],
     }
     (ROOT / "selection.json").write_text(json.dumps(manifest, indent=2) + "\n")
     contact_sheet([member_paths[name] for name in roles])
+    contact_sheet(
+        [
+            ROOT / f"candidates/creative_storage_unit/creative_storage_unit_{index:02d}.png"
+            for index in range(1, 4)
+        ],
+        "creative-storage-unit-candidates.png",
+    )
     connected_contact_sheet(connected_paths)
 
 

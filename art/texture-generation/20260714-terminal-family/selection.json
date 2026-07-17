@@ -10,7 +10,8 @@
     "revision_seeds": [
       71422,
       71423,
-      71424
+      71424,
+      71425
     ],
     "block_img2img_strength": 0.38,
     "item_img2img_strength": 0.68,
@@ -999,6 +1000,111 @@
       ]
     }
   ],
+  "creative_ornament": {
+    "role": "creative_infinity_cell",
+    "accents": [
+      "#3FDCE5",
+      "#C083FF"
+    ],
+    "detail_points": [
+      [
+        4,
+        5
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        10,
+        5
+      ],
+      [
+        11,
+        5
+      ],
+      [
+        3,
+        6
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        9,
+        6
+      ],
+      [
+        12,
+        6
+      ],
+      [
+        3,
+        9
+      ],
+      [
+        6,
+        9
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        12,
+        9
+      ],
+      [
+        4,
+        10
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        7
+      ],
+      [
+        11,
+        7
+      ],
+      [
+        4,
+        8
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        11,
+        8
+      ]
+    ]
+  },
   "members": {
     "magic_storage:block/storage_core": {
       "role": "core_rune_crystal",
@@ -1086,6 +1192,16 @@
       "source": "selected/storage_unit_t6.png",
       "metadata": "metadata/storage_unit_base.json",
       "sha256": "503d3344022976f863718cfa1dcaf1e18dc6d60cb7e45a82cfb1ce1645f83604",
+      "symmetry_axes": [
+        "x"
+      ]
+    },
+    "magic_storage:block/creative_storage_unit": {
+      "role": "creative_infinity_cell",
+      "runtime": "src/main/resources/assets/magic_storage/textures/block/creative_storage_unit.png",
+      "source": "selected/creative_storage_unit.png",
+      "metadata": "metadata/creative_storage_unit.json",
+      "sha256": "ec62cdce135b7d5da4fe6dfb826deae7a519573cb4d4a1801467204673f5c05c",
       "symmetry_axes": [
         "x"
       ]
@@ -1222,6 +1338,15 @@
       "tiles": 5,
       "sha256": "c30c97e1070279d128bafbf01cd7092ecb51247d56091eb4b46594b9174ff782"
     },
+    "magic_storage:block/creative_storage_unit_connected": {
+      "base": "magic_storage:block/creative_storage_unit",
+      "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/creative_storage_unit_connected.png",
+      "source": "selected/creative_storage_unit_connected.png",
+      "metadata": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/creative_storage_unit_connected.png.mcmeta",
+      "layout": "pieced",
+      "tiles": 5,
+      "sha256": "2c6b352482392be7481dfa703ec9b27060ef4a693959d6c39d1332a1b38b82a0"
+    },
     "magic_storage:block/storage_terminal_connected": {
       "base": "magic_storage:block/storage_terminal",
       "runtime": "src/main/resources/resourcepacks/fusion_connected_casing/assets/magic_storage/textures/block/storage_terminal_connected.png",
@@ -1333,6 +1458,7 @@
     "chassis-contact-sheet.png",
     "candidate-contact-sheet.png",
     "selected-contact-sheet.png",
-    "selected-connected-contact-sheet.png"
+    "selected-connected-contact-sheet.png",
+    "creative-storage-unit-candidates.png"
   ]
 }

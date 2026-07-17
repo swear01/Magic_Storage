@@ -13,6 +13,7 @@ FUSION_RESOURCES = FUSION_PACK / "assets/magic_storage"
 NETWORK_BLOCKS = [
     "magic_storage:storage_core",
     *[f"magic_storage:storage_unit_t{tier}" for tier in range(1, 7)],
+    "magic_storage:creative_storage_unit",
     "magic_storage:storage_terminal",
     "magic_storage:crafting_terminal",
     "magic_storage:import_bus",
@@ -21,6 +22,7 @@ NETWORK_BLOCKS = [
 CUBE_BLOCKS = [
     "storage_core",
     *[f"storage_unit_t{tier}" for tier in range(1, 7)],
+    "creative_storage_unit",
     "storage_terminal",
     "crafting_terminal",
 ]

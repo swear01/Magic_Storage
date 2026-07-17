@@ -21,10 +21,10 @@ class FusionFallbackTests(unittest.TestCase):
         metadata = json.loads((PACK / "pack.mcmeta").read_text())
         self.assertIn("pack", metadata)
         models = list((PACK / "assets/magic_storage/models/block").glob("*.json"))
-        self.assertEqual(11, len(models))
+        self.assertEqual(12, len(models))
         self.assertTrue(all(json.loads(path.read_text()).get("loader") == "fusion:model" for path in models))
         textures = list((PACK / "assets/magic_storage/textures/block").glob("*_connected.png"))
-        self.assertEqual(13, len(textures))
+        self.assertEqual(14, len(textures))
 
 
 if __name__ == "__main__":

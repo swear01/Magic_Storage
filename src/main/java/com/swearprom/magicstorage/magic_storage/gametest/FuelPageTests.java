@@ -584,8 +584,8 @@ public class FuelPageTests {
 
             var serverData = dataSlots(serverMenu);
             var clientData = dataSlots(clientMenu);
-            if (serverData.size() != 100 || clientData.size() != 100) {
-                helper.fail("Crafting fuel/resource/output/Axe Energy sync requires exact 100-slot compatibility parity, server="
+            if (serverData.size() != 101 || clientData.size() != 101) {
+                helper.fail("Crafting fuel/resource/output/Axe Energy/unlimited-capacity sync requires exact 101-slot compatibility parity, server="
                         + serverData.size() + " client=" + clientData.size());
                 return;
             }

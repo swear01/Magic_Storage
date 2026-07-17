@@ -36,6 +36,10 @@
     },
     {
       "type": "match_block",
+      "block": "magic_storage:creative_storage_unit"
+    },
+    {
+      "type": "match_block",
       "block": "magic_storage:storage_terminal"
     },
     {

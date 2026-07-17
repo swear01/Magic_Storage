@@ -90,6 +90,7 @@ class StaticRegressionTests(unittest.TestCase):
                 f"magic_storage:block/storage_unit_t{tier}": f"storage_cell_tier_{tier}"
                 for tier in range(1, 7)
             },
+            "magic_storage:block/creative_storage_unit": "creative_infinity_cell",
             "magic_storage:block/import_bus_top": "import_casing_top",
             "magic_storage:block/import_bus_side": "import_casing_side",
             "magic_storage:block/import_bus_front": "import_inward_arrow",
@@ -106,6 +107,7 @@ class StaticRegressionTests(unittest.TestCase):
                 f"magic_storage:block/storage_unit_t{tier}_connected"
                 for tier in range(1, 7)
             },
+            "magic_storage:block/creative_storage_unit_connected",
             "magic_storage:block/storage_terminal_connected",
             "magic_storage:block/crafting_terminal_connected",
             "magic_storage:block/import_bus_top_connected",
@@ -898,7 +900,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertEqual("retro-diffusion/rd-fast", manifest.get("model"))
         self.assertEqual([16, 16], manifest.get("runtime_size"))
         self.assertEqual(71421, manifest.get("settings", {}).get("seed"))
-        self.assertEqual([71422, 71423, 71424], manifest.get("settings", {}).get("revision_seeds"))
+        self.assertEqual([71422, 71423, 71424, 71425], manifest.get("settings", {}).get("revision_seeds"))
         self.assertEqual(0.38, manifest.get("settings", {}).get("block_img2img_strength"))
         self.assertEqual(0.68, manifest.get("settings", {}).get("item_img2img_strength"))
 
@@ -917,6 +919,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertEqual(set(expected_family), set(members))
         revised_seeds = {
             **{f"magic_storage:block/storage_unit_t{tier}": 71422 for tier in range(1, 7)},
+            "magic_storage:block/creative_storage_unit": 71425,
             "magic_storage:block/import_bus_top": 71423,
             "magic_storage:block/import_bus_side": 71423,
             "magic_storage:block/export_bus_top": 71424,
@@ -983,6 +986,7 @@ class StaticRegressionTests(unittest.TestCase):
             "magic_storage:block/storage_core": {"#3FDCE5", "#9A5CE8"},
             "magic_storage:block/storage_terminal": {"#3FDCE5"},
             "magic_storage:block/crafting_terminal": {"#3FDCE5", "#9A5CE8"},
+            "magic_storage:block/creative_storage_unit": {"#3FDCE5", "#C083FF"},
             "magic_storage:block/import_bus_front": {"#2EA8FF"},
             "magic_storage:block/export_bus_front": {"#FF8A24"},
             "magic_storage:item/remote_terminal": {"#3FDCE5", "#9A5CE8"},
@@ -2326,6 +2330,7 @@ class StaticRegressionTests(unittest.TestCase):
             "magic_storage:block/storage_terminal",
             "magic_storage:block/crafting_terminal",
             *[f"magic_storage:block/storage_unit_t{tier}" for tier in range(1, 7)],
+            "magic_storage:block/creative_storage_unit",
             "magic_storage:block/import_bus_top",
             "magic_storage:block/import_bus_side",
             "magic_storage:block/import_bus_front",

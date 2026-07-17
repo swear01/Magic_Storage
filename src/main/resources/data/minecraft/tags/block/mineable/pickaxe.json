@@ -8,6 +8,7 @@
     "magic_storage:storage_unit_t4",
     "magic_storage:storage_unit_t5",
     "magic_storage:storage_unit_t6",
+    "magic_storage:creative_storage_unit",
     "magic_storage:storage_terminal",
     "magic_storage:crafting_terminal",
     "magic_storage:import_bus",

@@ -98,7 +98,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
 
             pack_meta = json.loads((world_dir / "datapacks/magic_storage_gui_test/pack.mcmeta").read_text())
             self.assertEqual(48, pack_meta["pack"]["pack_format"])
-            self.assertEqual(3, manifest["schema_version"])
+            self.assertEqual(4, manifest["schema_version"])
             self.assertEqual([-18, 79, -12, 18, 90, 12], manifest["lab"]["reset_bounds"])
             self.assertEqual([0, 80, 0], manifest["targets"]["storage_core"]["block"])
             self.assertEqual([-1, 80, 0], manifest["targets"]["storage_terminal"]["block"])
@@ -114,7 +114,10 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertEqual("reset_from_hotbar", manifest["hotbar_views"]["9"]["function"])
             self.assertEqual({}, manifest["baseline"]["stored_items"])
             self.assertEqual({}, manifest["baseline"]["installed_stations"])
-            self.assertEqual(785, manifest["baseline"]["total_type_capacity"])
+            self.assertEqual(
+                {"finite_type_slots": 785, "unlimited": True},
+                manifest["baseline"]["type_capacity"],
+            )
             self.assertTrue(all(value == 0 for value in manifest["baseline"]["energy"].values()))
             self.assertEqual("magic_storage:storage_terminal", manifest["player_kit"]["hotbar"]["1"]["item"])
             self.assertEqual("magic_storage:wrench", manifest["player_kit"]["hotbar"]["7"]["item"])
@@ -133,6 +136,10 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 "minecraft:stonecutter": 2,
                 "minecraft:smithing_table": 2,
             }, station_counts)
+            self.assertIn(
+                {"slot": "inventory.20", "item": "magic_storage:creative_storage_unit", "count": 1},
+                manifest["player_kit"]["inventory"],
+            )
             self.assertTrue(manifest["fullscreen_gate"]["required"])
             self.assertEqual("after_world_ready_before_first_gui_action", manifest["fullscreen_gate"]["when"])
             self.assertEqual("minecraft_macos_borderless_fullscreen", manifest["fullscreen_gate"]["launch_mode"])
@@ -159,6 +166,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertIn("setblock 1 80 -1 magic_storage:export_bus[facing=east]", setup)
             for z, tier in zip(range(-1, -7, -1), range(6, 0, -1)):
                 self.assertIn(f"setblock 0 80 {z} magic_storage:storage_unit_t{tier}", setup)
+            self.assertIn("setblock 0 80 -7 magic_storage:creative_storage_unit", setup)
             for x, block in [
                 (-10, "storage_core"),
                 (-8, "storage_unit_t1"),
@@ -167,10 +175,11 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 (-2, "storage_unit_t4"),
                 (0, "storage_unit_t5"),
                 (2, "storage_unit_t6"),
-                (4, "storage_terminal"),
-                (6, "crafting_terminal"),
-                (8, "import_bus[facing=south]"),
-                (10, "export_bus[facing=south]"),
+                (4, "creative_storage_unit"),
+                (6, "storage_terminal"),
+                (8, "crafting_terminal"),
+                (10, "import_bus[facing=south]"),
+                (12, "export_bus[facing=south]"),
             ]:
                 self.assertIn(f"setblock {x} 80 -9 magic_storage:{block}", setup)
             for x, block in [
@@ -180,10 +189,11 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                 (-2, "storage_unit_t4"),
                 (-1, "storage_unit_t5"),
                 (0, "storage_unit_t6"),
-                (1, "storage_terminal"),
-                (2, "crafting_terminal"),
-                (3, "import_bus[facing=south]"),
-                (4, "export_bus[facing=south]"),
+                (1, "creative_storage_unit"),
+                (2, "storage_terminal"),
+                (3, "crafting_terminal"),
+                (4, "import_bus[facing=south]"),
+                (5, "export_bus[facing=south]"),
             ]:
                 self.assertIn(f"setblock {x} 80 -11 magic_storage:{block}", setup)
             self.assertIn("setblock 0 80 0 magic_storage:storage_core", setup)
@@ -205,6 +215,10 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             )
             self.assertIn(
                 "item replace entity @s inventory.19 with minecraft:iron_axe[minecraft:unbreakable={}] 1",
+                player_ready,
+            )
+            self.assertIn(
+                "item replace entity @s inventory.20 with magic_storage:creative_storage_unit 1",
                 player_ready,
             )
             self.assertFalse(any(line.startswith("give @s") for line in player_ready.splitlines()))
@@ -232,7 +246,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             manifest = mod.install_datapack(world_dir)
 
             gallery = manifest["connected_gallery"]
-            self.assertEqual(list(range(-5, 5)), [entry["x"] for entry in gallery])
+            self.assertEqual(list(range(-5, 6)), [entry["x"] for entry in gallery])
             self.assertEqual({80}, {entry["y"] for entry in gallery})
             self.assertEqual({-11}, {entry["z"] for entry in gallery})
             self.assertNotIn("magic_storage:storage_core", {entry["block"] for entry in gallery})
@@ -244,6 +258,7 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
                     "magic_storage:storage_unit_t4",
                     "magic_storage:storage_unit_t5",
                     "magic_storage:storage_unit_t6",
+                    "magic_storage:creative_storage_unit",
                     "magic_storage:storage_terminal",
                     "magic_storage:crafting_terminal",
                     "magic_storage:import_bus[facing=south]",

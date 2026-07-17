@@ -1,0 +1,30 @@
+{
+  "created_at_utc": "20260717T032228Z",
+  "type": "block",
+  "subject": "creative storage unit infinity cell",
+  "model": "retro-diffusion/rd-fast",
+  "style": "mc_texture",
+  "tileable": false,
+  "prompt": "Front-on flat Minecraft 16x16 creative storage machine face using the existing dark graphite modular chassis, a bold centered cyan and amethyst infinity loop with an arcane crystal core, perfectly mirrored around the vertical half-pixel axis, even-grid centered, readable at native resolution, no capacity bar, no text, no numbers, no perspective, no scenery.",
+  "size": 16,
+  "seed": 71425,
+  "reference_image": "selected/chassis.png",
+  "img2img": true,
+  "input": {
+    "prompt": "Front-on flat Minecraft 16x16 creative storage machine face using the existing dark graphite modular chassis, a bold centered cyan and amethyst infinity loop with an arcane crystal core, perfectly mirrored around the vertical half-pixel axis, even-grid centered, readable at native resolution, no capacity bar, no text, no numbers, no perspective, no scenery.",
+    "style": "mc_texture",
+    "width": 16,
+    "height": 16,
+    "num_images": 3,
+    "tile_x": false,
+    "tile_y": false,
+    "remove_bg": false,
+    "bypass_prompt_expansion": false,
+    "seed": 71425,
+    "input_image": "[data:uri omitted]",
+    "strength": 0.62
+  },
+  "final_png": "candidates/creative_storage_unit/creative_storage_unit_01.png",
+  "preview_png": "candidates/creative_storage_unit/creative_storage_unit_01.preview.png",
+  "raw_png": "candidates/creative_storage_unit/creative_storage_unit_01.raw.png"
+}

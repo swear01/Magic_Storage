@@ -111,6 +111,12 @@ public class MagicStorage {
     public static final DeferredItem<BlockItem> STORAGE_UNIT_T6_ITEM =
             ITEMS.registerSimpleBlockItem("storage_unit_t6", STORAGE_UNIT_T6);
 
+    public static final DeferredBlock<Block> CREATIVE_STORAGE_UNIT = BLOCKS.register("creative_storage_unit",
+            () -> new CreativeStorageUnitBlock(BlockBehaviour.Properties.of().strength(2.0F, 4.0F)));
+    public static final DeferredItem<CreativeStorageUnitBlockItem> CREATIVE_STORAGE_UNIT_ITEM =
+            ITEMS.register("creative_storage_unit", () -> new CreativeStorageUnitBlockItem(
+                    CREATIVE_STORAGE_UNIT.get(), new Item.Properties()));
+
     // === Import Bus ===
     public static final DeferredBlock<Block> IMPORT_BUS = BLOCKS.register("import_bus",
             () -> new ImportBusBlock(BlockBehaviour.Properties.of().strength(2.0F, 4.0F)));
@@ -177,6 +183,7 @@ public class MagicStorage {
                                 output.accept(STORAGE_UNIT_T4_ITEM.get());
                                 output.accept(STORAGE_UNIT_T5_ITEM.get());
                                 output.accept(STORAGE_UNIT_T6_ITEM.get());
+                                output.accept(CREATIVE_STORAGE_UNIT_ITEM.get());
                                 output.accept(STORAGE_TERMINAL_ITEM.get());
                                 output.accept(CRAFTING_TERMINAL_ITEM.get());
                                 output.accept(REMOTE_TERMINAL.get());

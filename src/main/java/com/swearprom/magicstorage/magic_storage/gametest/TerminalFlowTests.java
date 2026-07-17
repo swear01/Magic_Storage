@@ -592,8 +592,8 @@ public class TerminalFlowTests {
             int bufCount = dataSlotCount(bufMenu);
             if (serverCount != bufCount)
                 helper.fail("data-slot count mismatch: server=" + serverCount + " buf=" + bufCount);
-            if (serverCount != 11)
-                helper.fail("expected exactly 11 synced data slots (wide counts + view settings + wide scroll metadata), got " + serverCount);
+            if (serverCount != 12)
+                helper.fail("expected exactly 12 synced data slots (wide counts + view settings + wide scroll metadata + unlimited capacity), got " + serverCount);
             helper.succeed();
         });
     }
@@ -652,8 +652,8 @@ public class TerminalFlowTests {
                 helper.fail("data-slot count mismatch: server=" + serverData.size() + " client=" + clientData.size());
                 return;
             }
-            if (serverData.size() != 11) {
-                helper.fail("storage menu should sync exactly 11 data slots, got " + serverData.size());
+            if (serverData.size() != 12) {
+                helper.fail("storage menu should sync exactly 12 data slots, got " + serverData.size());
                 return;
             }
             for (int i = 0; i < serverData.size(); i++) {
@@ -716,8 +716,8 @@ public class TerminalFlowTests {
 
             var serverData = dataSlots(serverMenu);
             var clientData = dataSlots(clientMenu);
-            if (serverData.size() != 11 || clientData.size() != 11) {
-                helper.fail("Wide storage metadata requires exact 11-slot parity, server="
+            if (serverData.size() != 12 || clientData.size() != 12) {
+                helper.fail("Wide storage metadata plus unlimited capacity requires exact 12-slot parity, server="
                         + serverData.size() + " client=" + clientData.size());
                 return;
             }
@@ -2553,7 +2553,7 @@ public class TerminalFlowTests {
             int serverCount = serverData.size();
             int bufCount = clientData.size();
             if (serverCount != bufCount) { helper.fail("crafting data-slot count mismatch: server=" + serverCount + " buf=" + bufCount); return; }
-            if (serverCount != 100) { helper.fail("crafting menu should sync base 11 + crafting/fuel/resource/output/Axe Energy 89 data slots, got " + serverCount); return; }
+            if (serverCount != 101) { helper.fail("crafting menu should sync base 12 + crafting/fuel/resource/output/Axe Energy 89 data slots, got " + serverCount); return; }
             for (int i = 0; i < serverData.size(); i++) {
                 var wire = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
                 var packet = new net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket(

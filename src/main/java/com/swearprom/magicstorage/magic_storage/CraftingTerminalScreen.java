@@ -667,10 +667,14 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     private void renderFuelTypeCapacity(GuiGraphics graphics) {
         TerminalLayout.Rect status = geometry.fuelStatus();
         drawRaisedPanel(graphics, leftPos, topPos, status);
-        Component label = Component.translatable(
-                "gui.magic_storage.type_capacity",
-                formatAmount(menu.getTypeCount()),
-                formatAmount(menu.getMaxTypes()));
+        Component label = menu.hasUnlimitedTypeCapacity()
+                ? Component.translatable(
+                        "gui.magic_storage.type_capacity_unlimited",
+                        formatAmount(menu.getTypeCount()))
+                : Component.translatable(
+                        "gui.magic_storage.type_capacity",
+                        formatAmount(menu.getTypeCount()),
+                        formatAmount(menu.getMaxTypes()));
         int textWidth = font.width(label);
         int iconSpace = status.width() >= 48 ? 20 : 0;
         int availableTextWidth = Math.max(1, status.width() - iconSpace - 8);
@@ -679,8 +683,11 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         int contentX = status.x() + Math.max(2, (status.width() - contentWidth) / 2);
         int contentY = status.y() + (status.height() - Math.round(font.lineHeight * scale)) / 2;
         if (iconSpace > 0) {
+            ItemStack capacityIcon = menu.hasUnlimitedTypeCapacity()
+                    ? MagicStorage.CREATIVE_STORAGE_UNIT_ITEM.get().getDefaultInstance()
+                    : MagicStorage.STORAGE_UNIT_T1_ITEM.get().getDefaultInstance();
             graphics.renderItem(
-                    MagicStorage.STORAGE_UNIT_T1_ITEM.get().getDefaultInstance(),
+                    capacityIcon,
                     leftPos + contentX,
                     topPos + status.y() + (status.height() - 16) / 2);
         }
@@ -876,14 +883,14 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
         TerminalLayout.Rect fuelStatus = geometry.fuelStatus();
         if (fuelStatus.contains(mouseX - leftPos, mouseY - topPos)) {
-            graphics.renderTooltip(
-                    font,
-                    Component.translatable(
+            Component capacity = menu.hasUnlimitedTypeCapacity()
+                    ? Component.translatable(
+                            "gui.magic_storage.type_capacity_unlimited", menu.getTypeCount())
+                    : Component.translatable(
                             "gui.magic_storage.type_capacity",
                             menu.getTypeCount(),
-                            menu.getMaxTypes()),
-                    mouseX,
-                    mouseY);
+                            menu.getMaxTypes());
+            graphics.renderTooltip(font, capacity, mouseX, mouseY);
             return;
         }
 

@@ -33,7 +33,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private UUID networkId;
     private boolean conflicted = false;
     private long topologyRevision;
-    private int totalTypeSlots = 0;
+    private StorageTypeCapacity typeCapacity = StorageTypeCapacity.zero();
     private int typeCount = 0;
     private long machineRevision;
     private Map<ResourceLocation, Long> descriptorAmounts = new HashMap<>();
@@ -475,7 +475,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         Item primary = key.item();
         var variants = inventory.get(primary);
         long existing = variants != null ? variants.getLong(key) : 0;
-        if (existing == 0 && typeCount >= totalTypeSlots) return 0;
+        if (existing == 0 && !typeCapacity.canAcceptNewType(typeCount)) return 0;
         long inserted = Math.min(amount, Long.MAX_VALUE - existing);
         if (inserted <= 0) return 0;
         if (action == Action.EXECUTE) {
@@ -678,10 +678,10 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     public void rebuildNetwork(Level level) {
         Set<BlockPos> previousConnectedBlocks = Set.copyOf(connectedBlocks);
-        int previousTotalTypeSlots = totalTypeSlots;
+        StorageTypeCapacity previousTypeCapacity = typeCapacity;
         boolean wasConflicted = conflicted;
         connectedBlocks.clear();
-        totalTypeSlots = 0;
+        typeCapacity = StorageTypeCapacity.zero();
         conflicted = false;
 
         Queue<BlockPos> queue = new ArrayDeque<>();
@@ -702,7 +702,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
                         continue;
                     }
                     connectedBlocks.add(current);
-                    totalTypeSlots += capacityOf(state);
+                    typeCapacity = typeCapacity.plus(capacityOf(state));
                 }
 
                 for (Direction dir : Direction.values()) {
@@ -720,7 +720,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         if (conflicted && !wasConflicted) {
             MagicStorage.LOGGER.warn("Storage network at {} has multiple cores; multi-core is unsupported, network disabled until extra cores removed.", getBlockPos());
         }
-        if (wasConflicted != conflicted || previousTotalTypeSlots != totalTypeSlots
+        if (wasConflicted != conflicted || !previousTypeCapacity.equals(typeCapacity)
                 || !previousConnectedBlocks.equals(connectedBlocks)) {
             topologyRevision++;
         }
@@ -738,7 +738,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         if (!isWithinIncrementalBounds(placedPos)) return false;
 
         connectedBlocks.add(placedPos);
-        totalTypeSlots += capacityOf(state);
+        typeCapacity = typeCapacity.plus(capacityOf(state));
         topologyRevision++;
         return true;
     }
@@ -768,11 +768,11 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return false;
     }
 
-    private int capacityOf(BlockState state) {
+    private StorageTypeCapacity capacityOf(BlockState state) {
         if (state.getBlock() instanceof StorageUnitBlock unitBlock) {
-            return unitBlock.getTypeContribution();
+            return unitBlock.getTypeCapacityContribution();
         }
-        return 0;
+        return StorageTypeCapacity.zero();
     }
 
     @Override
@@ -798,13 +798,14 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public void onBreak() {
-        if (!connectedBlocks.isEmpty() || totalTypeSlots != 0) topologyRevision++;
+        if (!connectedBlocks.isEmpty() || !typeCapacity.equals(StorageTypeCapacity.zero())) topologyRevision++;
         connectedBlocks.clear();
-        totalTypeSlots = 0;
+        typeCapacity = StorageTypeCapacity.zero();
     }
 
     public Set<BlockPos> getConnectedBlocks() { return connectedBlocks; }
-    public int getTotalTypeSlots() { return totalTypeSlots; }
+    public int getTotalTypeSlots() { return typeCapacity.finiteTypeSlots(); }
+    public StorageTypeCapacity getTypeCapacity() { return typeCapacity; }
     public long getTopologyRevision() { return topologyRevision; }
 
     private enum StorageAvailability {

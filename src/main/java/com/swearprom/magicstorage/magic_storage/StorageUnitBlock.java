@@ -7,15 +7,23 @@ import net.minecraft.world.level.block.state.BlockState;
 
 public class StorageUnitBlock extends Block implements IStorageNetworkBlock {
 
-    private final int typeContribution;
+    private final StorageTypeCapacity typeCapacityContribution;
 
     public StorageUnitBlock(Properties properties, int typeContribution) {
+        this(properties, StorageTypeCapacity.finite(typeContribution));
+    }
+
+    protected StorageUnitBlock(Properties properties, StorageTypeCapacity typeCapacityContribution) {
         super(properties);
-        this.typeContribution = typeContribution;
+        this.typeCapacityContribution = typeCapacityContribution;
     }
 
     public int getTypeContribution() {
-        return typeContribution;
+        return typeCapacityContribution.finiteTypeSlots();
+    }
+
+    public StorageTypeCapacity getTypeCapacityContribution() {
+        return typeCapacityContribution;
     }
 
     @Override

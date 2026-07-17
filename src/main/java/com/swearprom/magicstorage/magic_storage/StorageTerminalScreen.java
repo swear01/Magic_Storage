@@ -491,8 +491,11 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     protected void drawTypeCapacity(GuiGraphics graphics) {
-        Component text = Component.translatable(
-                "gui.magic_storage.type_capacity", menu.getTypeCount(), menu.getMaxTypes());
+        Component text = menu.hasUnlimitedTypeCapacity()
+                ? Component.translatable(
+                        "gui.magic_storage.type_capacity_unlimited", menu.getTypeCount())
+                : Component.translatable(
+                        "gui.magic_storage.type_capacity", menu.getTypeCount(), menu.getMaxTypes());
         int textWidth = font.width(text);
         int right = imageWidth - 8;
         int left = inventoryLabelX + font.width(playerInventoryTitle) + 8;

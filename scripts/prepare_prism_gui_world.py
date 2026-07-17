@@ -152,10 +152,11 @@ GALLERY = [
     {"x": -2, "y": 80, "z": -9, "block": "magic_storage:storage_unit_t4"},
     {"x": 0, "y": 80, "z": -9, "block": "magic_storage:storage_unit_t5"},
     {"x": 2, "y": 80, "z": -9, "block": "magic_storage:storage_unit_t6"},
-    {"x": 4, "y": 80, "z": -9, "block": "magic_storage:storage_terminal"},
-    {"x": 6, "y": 80, "z": -9, "block": "magic_storage:crafting_terminal"},
-    {"x": 8, "y": 80, "z": -9, "block": "magic_storage:import_bus[facing=south]"},
-    {"x": 10, "y": 80, "z": -9, "block": "magic_storage:export_bus[facing=south]"},
+    {"x": 4, "y": 80, "z": -9, "block": "magic_storage:creative_storage_unit"},
+    {"x": 6, "y": 80, "z": -9, "block": "magic_storage:storage_terminal"},
+    {"x": 8, "y": 80, "z": -9, "block": "magic_storage:crafting_terminal"},
+    {"x": 10, "y": 80, "z": -9, "block": "magic_storage:import_bus[facing=south]"},
+    {"x": 12, "y": 80, "z": -9, "block": "magic_storage:export_bus[facing=south]"},
 ]
 
 CONNECTED_GALLERY = [
@@ -165,10 +166,11 @@ CONNECTED_GALLERY = [
     {"x": -2, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t4"},
     {"x": -1, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t5"},
     {"x": 0, "y": 80, "z": -11, "block": "magic_storage:storage_unit_t6"},
-    {"x": 1, "y": 80, "z": -11, "block": "magic_storage:storage_terminal"},
-    {"x": 2, "y": 80, "z": -11, "block": "magic_storage:crafting_terminal"},
-    {"x": 3, "y": 80, "z": -11, "block": "magic_storage:import_bus[facing=south]"},
-    {"x": 4, "y": 80, "z": -11, "block": "magic_storage:export_bus[facing=south]"},
+    {"x": 1, "y": 80, "z": -11, "block": "magic_storage:creative_storage_unit"},
+    {"x": 2, "y": 80, "z": -11, "block": "magic_storage:storage_terminal"},
+    {"x": 3, "y": 80, "z": -11, "block": "magic_storage:crafting_terminal"},
+    {"x": 4, "y": 80, "z": -11, "block": "magic_storage:import_bus[facing=south]"},
+    {"x": 5, "y": 80, "z": -11, "block": "magic_storage:export_bus[facing=south]"},
 ]
 
 BASELINE = {
@@ -183,7 +185,10 @@ BASELINE = {
         "furnace_fuel": 0,
         "blaze_fuel": 0,
     },
-    "total_type_capacity": 785,
+    "type_capacity": {
+        "finite_type_slots": 785,
+        "unlimited": True,
+    },
 }
 
 PLAYER_KIT = {
@@ -227,6 +232,7 @@ PLAYER_KIT = {
             "item": "minecraft:iron_axe[minecraft:unbreakable={}]",
             "count": 1,
         },
+        {"slot": "inventory.20", "item": "magic_storage:creative_storage_unit", "count": 1},
     ],
 }
 
@@ -589,6 +595,7 @@ def build_setup_function() -> str:
     ]
     for z, tier in zip(range(-1, -7, -1), range(6, 0, -1)):
         lines.append(f"setblock 0 80 {z} magic_storage:storage_unit_t{tier}")
+    lines.append("setblock 0 80 -7 magic_storage:creative_storage_unit")
     lines.extend([
         "setblock -1 80 -1 magic_storage:import_bus[facing=west]",
         "setblock -2 80 -1 minecraft:barrel",
@@ -686,7 +693,7 @@ def build_function_bodies() -> dict[str, str]:
 def build_manifest(world_dir: Path) -> dict:
     commands = {name: f"/function {DATAPACK_NAME}:{name}" for name in build_function_bodies()}
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "world_name": world_dir.name,
         "world_dir": str(world_dir),
         "datapack": DATAPACK_NAME,

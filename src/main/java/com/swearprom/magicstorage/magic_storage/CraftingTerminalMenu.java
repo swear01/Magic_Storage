@@ -1968,7 +1968,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             long existing = remainingByKey.getOrDefault(entry.getKey(), 0L);
             if (entry.getValue() <= 0 || existing > Long.MAX_VALUE - entry.getValue()) return false;
             if (existing == 0) {
-                if (typeCount >= core.getTotalTypeSlots()) return false;
+                if (!core.getTypeCapacity().canAcceptNewType(typeCount)) return false;
                 typeCount++;
             }
             remainingByKey.put(entry.getKey(), existing + entry.getValue());
@@ -2471,6 +2471,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         totalItemTypes = displayStacks.size();
         displayTypeCount = core.getTypeCount();
         displayMaxTypes = core.getTotalTypeSlots();
+        displayUnlimitedTypeCapacity = core.getTypeCapacity().unlimited();
         int vRows = getVisibleRows();
         int maxOffset = Math.max(0, totalItemTypes - vRows * DISPLAY_COLS);
         scrollOffset = Math.min(scrollOffset, maxOffset);

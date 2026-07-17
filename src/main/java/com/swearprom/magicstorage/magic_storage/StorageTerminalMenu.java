@@ -42,11 +42,13 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     protected String currentFilter = "";
     protected int displayTypeCount = 0;
     protected int displayMaxTypes = 0;
+    protected boolean displayUnlimitedTypeCapacity;
     private int visibleRows = 6;
     private SortMode sortMode = SortMode.NAME;
     private SortOrder sortOrder = SortOrder.ASCENDING;
     private SearchMode searchMode = SearchMode.NORMAL;
     private StorageCoreBlockEntity observedCore;
+    private long observedTopologyRevision;
     private boolean storageDirty;
     private boolean energyDirty;
     private final StorageListener storageListener = new StorageListener() {
@@ -70,7 +72,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     }
 
     private void addTypeDataSlots() {
-        addDataSlots(new net.minecraft.world.inventory.SimpleContainerData(11) {
+        addDataSlots(new net.minecraft.world.inventory.SimpleContainerData(12) {
             @Override public int get(int i) {
                 return switch (i) {
                     case 0 -> getIntWord(displayTypeCount, 0);
@@ -83,7 +85,8 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case 7 -> getIntWord(totalItemTypes, 0);
                     case 8 -> getIntWord(totalItemTypes, 1);
                     case 9 -> getIntWord(scrollOffset, 0);
-                    default -> getIntWord(scrollOffset, 1);
+                    case 10 -> getIntWord(scrollOffset, 1);
+                    default -> displayUnlimitedTypeCapacity ? 1 : 0;
                 };
             }
             @Override public void set(int i, int v) {
@@ -98,10 +101,11 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case 7 -> totalItemTypes = setIntWord(totalItemTypes, 0, v);
                     case 8 -> totalItemTypes = setIntWord(totalItemTypes, 1, v);
                     case 9 -> scrollOffset = setIntWord(scrollOffset, 0, v);
-                    default -> scrollOffset = setIntWord(scrollOffset, 1, v);
+                    case 10 -> scrollOffset = setIntWord(scrollOffset, 1, v);
+                    default -> displayUnlimitedTypeCapacity = v != 0;
                 }
             }
-            @Override public int getCount() { return 11; }
+            @Override public int getCount() { return 12; }
         });
     }
 
@@ -117,6 +121,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
 
     public int getTypeCount() { return displayTypeCount; }
     public int getMaxTypes() { return displayMaxTypes; }
+    public boolean hasUnlimitedTypeCapacity() { return displayUnlimitedTypeCapacity; }
     public SortMode getSortMode() { return sortMode; }
     public SortOrder getSortOrder() { return sortOrder; }
     public SearchMode getSearchMode() { return searchMode; }
@@ -180,6 +185,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         addTypeDataSlots();
         if (core != null) {
             observedCore = core;
+            observedTopologyRevision = core.getTopologyRevision();
             observedCore.addListener(storageListener);
         }
     }
@@ -242,6 +248,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         totalItemTypes = stacks.size();
         displayTypeCount = core.getTypeCount();
         displayMaxTypes = core.getTotalTypeSlots();
+        displayUnlimitedTypeCapacity = core.getTypeCapacity().unlimited();
         int maxOffset = Math.max(0, totalItemTypes - visibleRows * DISPLAY_COLS);
         scrollOffset = Math.min(scrollOffset, maxOffset);
         for (int i = 0; i < DISPLAY_SLOTS; i++) {
@@ -441,12 +448,16 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
 
     @Override
     public void broadcastChanges() {
-        if (storageDirty && observedCore != null && getCore(observedCore.getLevel()) == observedCore) {
+        boolean observedCoreValid = observedCore != null && getCore(observedCore.getLevel()) == observedCore;
+        boolean topologyDirty = observedCoreValid
+                && observedCore.getTopologyRevision() != observedTopologyRevision;
+        if ((storageDirty || topologyDirty) && observedCoreValid) {
             storageDirty = false;
+            observedTopologyRevision = observedCore.getTopologyRevision();
             refreshDisplayItems(observedCore);
             onObservedStorageChanged(observedCore);
         }
-        if (energyDirty && observedCore != null && getCore(observedCore.getLevel()) == observedCore) {
+        if (energyDirty && observedCoreValid) {
             energyDirty = false;
             onObservedEnergyChanged(observedCore);
         }
