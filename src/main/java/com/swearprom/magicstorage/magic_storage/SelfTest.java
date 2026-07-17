@@ -222,6 +222,21 @@ class SelfTest {
 
         assertTrue("exact shapeless holders select the stable built-in adapter ID",
                 match != null && match.adapterId().equals(BuiltInRecipeAdapters.SHAPELESS_ID));
+        assertTrue("adapter matches require ordered inputs and explicit multiplicity",
+                match != null && match.orderedInputs().size() == 1
+                        && match.orderedInputs().getFirst().multiplicity() == 1);
+        assertTrue("adapter matches require a stable station descriptor ID",
+                match != null
+                        && match.stationDescriptorId().equals(MachineEnergyTable.CRAFTING_TABLE_ID));
+        assertTrue("free adapters still provide explicit process Fuel and tool cost semantics",
+                match != null && match.cost().energyCost().isEmpty()
+                        && match.cost().toolCost().isEmpty());
+        assertTrue("adapter matches require presentation semantics",
+                match != null && match.presentation().kind() == RecipePresentationKind.CRAFTING
+                        && match.presentation().shapeless());
+        assertTrue("adapter matches require simulation and commit validation",
+                match != null && match.validatesSimulation(holder)
+                        && match.validatesCommit(holder));
     }
 
     private static void testRecipeAdapterRegistryContract() {
@@ -243,8 +258,19 @@ class SelfTest {
         assertTrue("adapters are keyed by stable ResourceLocation ID",
                 registry.get(samePriorityA.id()).orElse(null) == samePriorityA
                         && registry.get(testRecipeId("missing_adapter")).isEmpty());
+        RecipeAdapterMatch selectedMatch = registry.classify(holder).orElseThrow();
         assertTrue("classification uses deterministic first-match priority",
-                registry.classify(holder).orElseThrow().adapterId().equals(samePriorityA.id()));
+                selectedMatch.adapterId().equals(samePriorityA.id()));
+        var checkedOutput = selectedMatch.checkedOutput(
+                List.of(java.util.Map.of(ItemKey.of(new ItemStack(Items.DIRT)), 1L)),
+                1,
+                null
+        ).orElse(null);
+        assertTrue("adapter matches require checked output and remainder assembly",
+                checkedOutput != null
+                        && checkedOutput.primaryOutputs().getOrDefault(
+                        ItemKey.of(new ItemStack(Items.DIAMOND)), 0L) == 1
+                        && checkedOutput.remainders().isEmpty());
 
         boolean duplicateRejected = false;
         try {
@@ -280,6 +306,37 @@ class SelfTest {
                     net.minecraft.world.item.crafting.RecipeHolder<?> holder
             ) {
                 return RecipeCandidateIndex.exhaustive(List.of(new ItemStack(Items.DIRT)));
+            }
+
+            @Override
+            public RecipeAdapterMatch.Contract contract(RecipeHolder<?> holder) {
+                Ingredient ingredient = Ingredient.of(Items.DIRT);
+                RecipeAdapterMatch.Input input = RecipeAdapterMatch.Input.of(
+                        ingredient,
+                        ingredient,
+                        List.of(new ItemStack(Items.DIRT)),
+                        1
+                );
+                return new RecipeAdapterMatch.Contract(
+                        List.of(input),
+                        MachineEnergyTable.CRAFTING_TABLE_ID,
+                        RecipeAdapterMatch.Cost.free(),
+                        (allocations, crafts, level) -> java.util.Optional.of(
+                                new RecipeAdapterMatch.CheckedOutput(
+                                        java.util.Map.of(
+                                                ItemKey.of(new ItemStack(Items.DIAMOND)), crafts),
+                                        java.util.Map.of()
+                                )),
+                        new RecipeAdapterMatch.Presentation(
+                                RecipePresentationKind.CRAFTING,
+                                3,
+                                3,
+                                true,
+                                (inputs, level) -> new ItemStack(Items.DIAMOND)
+                        ),
+                        current -> true,
+                        current -> true
+                );
             }
         };
     }

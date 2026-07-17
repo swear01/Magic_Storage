@@ -1,6 +1,6 @@
 # Modded Recipe Compatibility and Multi-Step Magic Crafting Plan
 
-> Status: the keyed machine-descriptor prerequisite was implemented on 2026-07-15. The first Phase 1 slice now provides an internal stable-ID adapter classification registry and explicit exhaustive/non-exhaustive candidate discovery for the exact built-in families. Full input/output/station/energy/presentation/simulation/commit ownership and multi-step execution are not yet implemented; the current exact one-level server-authoritative menu remains the execution path.
+> Status: the keyed machine-descriptor prerequisite and the built-in Phase 1 adapter authority are implemented. The nine exact built-in families now provide complete one-level input/output/remainder/station/energy/tool/presentation/simulation/commit contracts plus exhaustive/non-exhaustive candidate discovery. `CraftingTerminalMenu` remains the server-authoritative generic transaction engine. Third-party families, a public addon API, and multi-step planning/execution are not implemented.
 
 ## Goals
 
@@ -14,7 +14,7 @@
 - A mod recipe that uses vanilla shaped, shapeless, cooking, stonecutting, or Smithing Transform serializers already produces the exact vanilla recipe classes accepted by Magic Storage; a non-`minecraft` recipe namespace alone does not make it unsupported.
 - Custom recipe classes/types, dynamic outputs, world/player/event-dependent transforms, fluids, chance outputs, and custom side effects remain fail-closed.
 - `CraftableRecipeCatalog` now consumes exact built-in adapter classifications and an explicit candidate coverage result. Simple ingredient representatives are exhaustive; non-simple/custom representatives and Smithing predicate scans are conservatively non-exhaustive and therefore remain in the unindexed candidate set so a valid recipe is not omitted before its real predicate is reached.
-- `MachineEnergyTable`, `CraftingStationTable`, presentation construction, ingredient extraction, output assembly, and recipe ordering currently encode the supported vanilla families directly. Adding custom recipe types one `if` branch at a time would duplicate policy and make multi-step planning unsafe.
+- `BuiltInRecipeAdapters` is the sole policy authority for the supported one-level families. `CraftingTerminalMenu` consumes normalized matches and owns only joint reservation, destination delivery, capacity checks, mutation, and rollback; the replaced station/energy family-table source files are gone.
 - The Fuel layout and public `magic_storage:machine_descriptor` registry are descriptor-count-driven and paged. Core state persists by stable descriptor ID, menu opening uses a cached server snapshot plus a fixed 256-slot parity bank, and unavailable addon-item NBT is retained for later reload. Recipe-family registration remains separate and is not implied by a machine descriptor.
 
 ## EMI source audit
@@ -52,7 +52,7 @@ Introduce an internal adapter registry keyed by stable adapter ID. Each adapter 
 
 The existing vanilla families move behind adapters without changing behavior first. There is no generic `Recipe#getIngredients()` fallback: an unknown recipe is unsupported until an adapter proves its complete contract.
 
-The implemented first slice is intentionally classification-only. `RecipeAdapterRegistry` is keyed by stable `ResourceLocation`, rejects duplicate IDs, orders by priority then ID, binds each match to the exact holder instance, and recognizes only the exact shaped, shapeless, four cooking, stonecutting, Smithing Transform, and internal axe-transformation classes. A match authorizes catalog candidate indexing only; it exposes no execution operation and must not be treated as proof that the future complete execution contract exists. `CraftingTerminalMenu`, station, energy, presentation, simulation, and commit logic remain unchanged until later RED-first migration work supplies all of those obligations together.
+The completed built-in slice keeps `RecipeAdapterRegistry` keyed by stable `ResourceLocation`, rejects duplicate IDs, orders by priority then ID, binds each match to the exact holder instance, and recognizes only the exact shaped, shapeless, four cooking, stonecutting, Smithing Transform, and internal axe-transformation classes. Every successful match also carries ordered predicates and multiplicity, a stable station descriptor ID, process/Fuel/tool costs, checked component-sensitive output and remainders, presentation semantics, and simulation/commit validators. Every select, preview, Max, execute, and EMI request resolves the current holder by recipe ID and classifies it again; a replaced same-ID holder fails the in-flight identity check. There is no generic family fallback. Adapters are pure policy/validation and never mutate Core; the existing menu reservation/delivery/capacity/atomic rollback engine remains the only mutation owner.
 
 ### 2. Keyed station and energy descriptors (completed prerequisite)
 
@@ -97,12 +97,12 @@ Keep EMI required on clients, absent from dedicated-server requirements, and lim
 
 ## TDD implementation phases
 
-### Phase 1 — Adapter foundation, no behavior expansion
+### Phase 1 — Built-in adapter authority, no family expansion
 
-1. **Foundation complete:** RED-first dist-neutral tests cover stable keyed IDs, duplicate rejection, priority/ID order, exact family selection, unsupported custom classes, candidate coverage, and reload holder identity without a generic recipe fallback.
-2. **Partially covered:** exact built-in family fixtures use non-`minecraft` holder IDs; full per-family one-level GameTest execution coverage remains pending with the execution migration.
-3. **In progress:** recipe-family classification and Craftable candidate indexing are behind internal adapters. Exact inputs/output/station/energy/presentation/simulation/commit remain in the existing menu/tables and must migrate as one fail-closed contract.
-4. **Maintained:** current one-level crafting and rollback GameTests remain green; adapter classification itself is not execution authorization.
+1. **Complete:** RED-first dist-neutral tests cover stable keyed IDs, duplicate rejection, priority/ID order, exact family selection, unsupported custom classes, candidate coverage, holder identity, and all mandatory match obligations.
+2. **Complete:** nine table-driven GameTests use non-`minecraft` recipe IDs and prove exact adapter selection, preview, execute, components/output count/remainder, station, concrete cooking energy, and finite/infinite axe deltas.
+3. **Complete:** built-in input/output/station/energy/tool/presentation/simulation/commit family policy is behind adapters; the menu retains only the generic transaction engine and reclassifies fresh holders at each operation.
+4. **Out of scope:** third-party compatibility, public adapter registration, multi-step planning/execution, GUI/resources/lang changes, and EMI tree integration remain later phases.
 
 ### Phase 2 — First third-party compatibility module
 

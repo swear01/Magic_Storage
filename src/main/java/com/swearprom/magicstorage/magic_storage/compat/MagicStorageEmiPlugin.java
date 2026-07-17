@@ -78,7 +78,13 @@ public class MagicStorageEmiPlugin implements EmiPlugin {
         @Override
         public boolean supportsRecipe(EmiRecipe recipe) {
             RecipeHolder<?> backingRecipe = recipe.getBackingRecipe();
-            return backingRecipe != null && CraftingTerminalMenu.supportsRecipeContract(backingRecipe.value());
+            RecipeHolder<?> currentHolder = backingRecipe == null || Minecraft.getInstance().level == null
+                    ? null
+                    : Minecraft.getInstance().level.getRecipeManager()
+                    .byKey(backingRecipe.id()).orElse(null);
+            return backingRecipe != null
+                    && currentHolder == backingRecipe
+                    && CraftingTerminalMenu.supportsRecipeHolder(currentHolder);
         }
 
         @Override

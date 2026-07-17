@@ -496,11 +496,62 @@ class StaticRegressionTests(unittest.TestCase):
 
         self.assertIn("RecipeHolder<?> backingRecipe = recipe.getBackingRecipe();", supports_recipe)
         self.assertIn("backingRecipe != null", supports_recipe)
-        self.assertIn("CraftingTerminalMenu.supportsRecipeContract(backingRecipe.value())", supports_recipe)
+        self.assertIn("RecipeHolder<?> currentHolder", supports_recipe)
+        self.assertIn("byKey(backingRecipe.id())", supports_recipe)
+        self.assertIn("currentHolder == backingRecipe", supports_recipe)
+        self.assertIn("CraftingTerminalMenu.supportsRecipeHolder(currentHolder)", supports_recipe)
+        self.assertNotIn("supportsRecipeContract", supports_recipe)
         self.assertIn("getPage().isItemPage()", can_craft)
         self.assertIn("supportsRecipe(recipe)", can_craft)
         self.assertIn("!menu.getPage().isItemPage()", craft)
         self.assertIn("supportsRecipe(recipe)", craft)
+
+    def test_recipe_family_policy_is_owned_only_by_complete_built_in_adapter_matches(self):
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        adapters = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/BuiltInRecipeAdapters.java"
+        )
+        match = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/RecipeAdapterMatch.java"
+        )
+
+        self.assertNotIn("SUPPORTED_RECIPE_TYPES", menu)
+        self.assertNotIn("CraftingStationTable.", menu)
+        self.assertNotIn("RecipeEnergyTable.", menu)
+        compatibility_start = menu.index("public static boolean supportsRecipeContract")
+        compatibility_end = menu.index("\n    }", compatibility_start) + len("\n    }")
+        operational_menu = menu[:compatibility_start] + menu[compatibility_end:]
+        self.assertNotIn("supportsRecipeContract(", operational_menu)
+        self.assertIn("BuiltInRecipeAdapters.registry().classify", menu[compatibility_start:compatibility_end])
+        for family_policy in (
+            "AbstractCookingRecipe",
+            "ShapedRecipe",
+            "ShapelessRecipe",
+            "SmithingRecipeInput",
+            "SmithingTransformRecipe",
+            "AxeTransformationRecipe",
+        ):
+            self.assertNotIn(family_policy, menu)
+            self.assertIn(family_policy, adapters)
+        for obligation in (
+            "orderedInputs",
+            "stationDescriptorId",
+            "energyCost",
+            "toolCost",
+            "checkedOutput",
+            "remainders",
+            "presentation",
+            "validatesSimulation",
+            "validatesCommit",
+        ):
+            self.assertIn(obligation, match)
+        self.assertIn("getCookingTime()", adapters)
+        self.assertIn("SmithingRecipeInput", adapters)
+        self.assertIn("MachineEnergyTable.AXE_ID", adapters)
+        self.assertFalse((ROOT / "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingStationTable.java").exists())
+        self.assertFalse((ROOT / "src/main/java/com/swearprom/magicstorage/magic_storage/RecipeEnergyTable.java").exists())
 
     def test_emi_sends_context_amount_and_destination_for_exact_backing_recipe(self):
         text = self.read_required("src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java")
@@ -1491,9 +1542,13 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("getEnergyPreview()", presentation_getter)
         self.assertIn("metadata.toolRequired() > 0", presentation_getter)
         self.assertIn("return new RecipePresentation(", presentation_getter)
-        self.assertIn("RecipeHolder<?> holder", menu)
-        self.assertIn("Recipe<?> recipe = holder.value()", presentation_sync)
-        self.assertIn("holder.id()", presentation_sync)
+        self.assertRegex(
+            menu,
+            r"private\s+void\s+syncRecipePresentation\s*\(\s*RecipeAdapterMatch\s+match",
+        )
+        self.assertIn("RecipeAdapterMatch.Presentation semantics = match.presentation()", presentation_sync)
+        self.assertIn("match.presentationOutput(inputs, core.getLevel())", presentation_sync)
+        self.assertIn("match.holder().id()", presentation_sync)
         self.assertIn("output.copy()", presentation_sync)
         self.assertIn("RecipePresentation.metadataCarrier(metadata)", presentation_sync)
         self.assertIn("SELECTION_SLOTS = PRESENTATION_METADATA_SLOT + 1", menu)

@@ -12,22 +12,10 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.AbstractCookingRecipe;
-import net.minecraft.world.item.crafting.BlastingRecipe;
-import net.minecraft.world.item.crafting.CampfireCookingRecipe;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeType;
-import net.minecraft.world.item.crafting.ShapedRecipe;
-import net.minecraft.world.item.crafting.ShapelessRecipe;
-import net.minecraft.world.item.crafting.SmeltingRecipe;
-import net.minecraft.world.item.crafting.SmithingRecipe;
-import net.minecraft.world.item.crafting.SmithingRecipeInput;
-import net.minecraft.world.item.crafting.SmithingTransformRecipe;
-import net.minecraft.world.item.crafting.SmokingRecipe;
-import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.level.Level;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -43,8 +31,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.WeakHashMap;
-import java.util.function.Predicate;
 
 public class CraftingTerminalMenu extends StorageTerminalMenu {
 
@@ -56,16 +42,15 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             List<IngredientPreview> ingredients,
             List<EnergyPreview> energies
     ) {}
-    private record IngredientNeed(RecipeIngredient ingredient, long count) {}
+    private record IngredientNeed(RecipeAdapterMatch.Input ingredient, long count) {}
     private record IngredientSource(ItemKey key, int playerSlot, ItemStack stack, long amount) {}
     private record PlayerReservation(ItemKey key, int count) {}
     private record IngredientPlan(
             Map<ItemKey, Long> coreReservations,
             Map<Integer, PlayerReservation> playerReservations,
-            Map<ItemKey, Long> consumedItems,
             List<Map<ItemKey, Long>> allocations
     ) {}
-    private record ToolUsePlan(long amount) {}
+    private record ToolUsePlan(ResourceLocation descriptorId, long amount) {}
     private record DeliveryPlan(
             List<ItemStack> playerInventory,
             ItemStack carried,
@@ -93,67 +78,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             };
         }
     }
-
-    static final class RecipeIngredient {
-        private final Object identity;
-        private final Predicate<ItemStack> matcher;
-        private final List<ItemStack> items;
-        private final boolean empty;
-
-        private RecipeIngredient(
-                Object identity,
-                Predicate<ItemStack> matcher,
-                List<ItemStack> items,
-                boolean empty
-        ) {
-            this.identity = identity;
-            this.matcher = matcher;
-            this.items = items.stream().map(stack -> stack.copyWithCount(1)).toList();
-            this.empty = empty;
-        }
-
-        static RecipeIngredient of(Ingredient ingredient) {
-            return new RecipeIngredient(
-                    ingredient,
-                    ingredient,
-                    Arrays.asList(ingredient.getItems()),
-                    ingredient.isEmpty()
-            );
-        }
-
-        static RecipeIngredient smithing(
-                SmithingIngredientIdentity identity,
-                Predicate<ItemStack> matcher,
-                List<ItemStack> items
-        ) {
-            return new RecipeIngredient(identity, matcher, items, false);
-        }
-
-        boolean test(ItemStack stack) {
-            return matcher.test(stack);
-        }
-
-        List<ItemStack> items() {
-            return items;
-        }
-
-        boolean isEmpty() {
-            return empty;
-        }
-
-        @Override
-        public boolean equals(Object other) {
-            return other instanceof RecipeIngredient ingredient
-                    && identity.equals(ingredient.identity);
-        }
-
-        @Override
-        public int hashCode() {
-            return identity.hashCode();
-        }
-    }
-
-    private record SmithingIngredientIdentity(Recipe<?> recipe, int role) {}
 
     private static final class FlowEdge {
         private final int to;
@@ -212,17 +136,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private static final int AXE_ENERGY_DATA_START = FUEL_REQUIRED_DATA_START + 4;
     private static final int AXE_INFINITE_DATA_SLOT = AXE_ENERGY_DATA_START + 4;
     private static final int CRAFTING_DATA_SLOTS = AXE_INFINITE_DATA_SLOT + 1;
-    private static final List<RecipeType<?>> SUPPORTED_RECIPE_TYPES = List.of(
-            RecipeType.CRAFTING,
-            RecipeType.SMELTING,
-            RecipeType.BLASTING,
-            RecipeType.SMOKING,
-            RecipeType.CAMPFIRE_COOKING,
-            RecipeType.STONECUTTING,
-            RecipeType.SMITHING
-    );
-    private static final Map<Recipe<?>, List<RecipeIngredient>> SMITHING_INGREDIENT_CACHE =
-            Collections.synchronizedMap(new WeakHashMap<>());
     private static final EnergyType[] ENERGY_SYNC_ORDER = EnergyType.values();
 
     private ItemKey selectedKey = null;
@@ -949,10 +862,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return false;
         }
 
-        RecipeHolder<?> holder = resolveRecipeById(level, core, recipeId);
-        if (holder == null || !supportsRecipeContract(holder.value())
-                || !CraftingStationTable.isAvailable(core, holder.value())) return false;
-        ItemStack result = holder.value().getResultItem(level.registryAccess());
+        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, recipeId);
+        if (match == null) return false;
+        ItemStack result = match.presentationOutput(List.of(), level);
         if (!ItemStack.isSameItemSameComponents(result, TerminalDisplayStack.strip(displayStack))) return false;
         return selectRecipeById(level, recipeId, player, core);
     }
@@ -968,16 +880,15 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 || destination == null || amount <= 0 || amount > MAX_RECIPE_REQUEST) return false;
         StorageCoreBlockEntity core = getCore(level);
         if (core == null || core.isConflicted()) return false;
-        RecipeHolder<?> holder = resolveRecipeById(level, core, recipeId);
-        if (holder == null || !supportsRecipeContract(holder.value())
-                || !CraftingStationTable.isAvailable(core, holder.value())) return false;
-        ItemStack result = holder.value().getResultItem(level.registryAccess());
+        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, recipeId);
+        if (match == null) return false;
+        ItemStack result = match.presentationOutput(List.of(), level);
         if (result.isEmpty()) return false;
         if (destination == CraftingDestination.NONE) {
             return selectRecipeById(level, recipeId, player, core);
         }
 
-        CraftPreview preview = computeCraftPreviewFor(holder.value(), core, player);
+        CraftPreview preview = computeCraftPreviewFor(match, core, player);
         int maximumCrafts = Math.min(amount, preview.craftable());
         DeliveryTarget deliveryTarget = DeliveryTarget.from(destination);
         int crafts = 0;
@@ -985,9 +896,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         DeliveryPlan deliveryPlan = null;
         for (int candidate = maximumCrafts; candidate > 0; candidate--) {
             IngredientPlan candidatePlan = planIngredients(
-                    core, recipeIngredients(holder.value()), candidate, player);
+                    core, match.orderedInputs(), candidate, player);
             DeliveryPlan candidateDelivery = candidatePlan == null ? null : planDelivery(
-                    core, candidatePlan, holder.value(), candidate, deliveryTarget, player);
+                    core, candidatePlan, match, candidate, deliveryTarget, player);
             if (candidateDelivery != null) {
                 crafts = candidate;
                 ingredientPlan = candidatePlan;
@@ -996,8 +907,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             }
         }
         if (crafts <= 0 || ingredientPlan == null || deliveryPlan == null) return false;
-        EnergyCost energyCost = RecipeEnergyTable.getCost(holder.value());
-        if (!commitCraft(core, ingredientPlan, deliveryPlan, player, energyCost, crafts)) return false;
+        EnergyCost energyCost = match.cost().energyCost().orElse(null);
+        if (!commitCraft(
+                core, ingredientPlan, deliveryPlan, player, match, energyCost, crafts)) return false;
         selectRecipeById(level, recipeId, player, core);
         refreshDisplayItems(core);
         updatePreview(core, player);
@@ -1011,10 +923,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             Player player,
             StorageCoreBlockEntity core
     ) {
-        RecipeHolder<?> holder = resolveRecipeById(level, core, recipeId);
-        if (holder == null || !supportsRecipeContract(holder.value())
-                || !CraftingStationTable.isAvailable(core, holder.value())) return false;
-        ItemStack result = holder.value().getResultItem(level.registryAccess());
+        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, recipeId);
+        if (match == null) return false;
+        ItemStack result = match.presentationOutput(List.of(), level);
         if (result.isEmpty()) return false;
 
         selectItem(level, result);
@@ -1059,48 +970,38 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return;
         }
 
-        for (RecipeType<?> type : SUPPORTED_RECIPE_TYPES) {
+        for (RecipeType<?> type : BuiltInRecipeAdapters.discoveryTypes()) {
             @SuppressWarnings({"unchecked", "rawtypes"})
             Collection<RecipeHolder<?>> holders = (Collection) manager.getAllRecipesFor((RecipeType) type);
             for (RecipeHolder<?> holder : holders) {
-                Recipe<?> recipe = holder.value();
-                ItemStack result = recipe.getResultItem(level.registryAccess());
-                if (supportsRecipeContract(recipe)
-                        && CraftingStationTable.isAvailable(core, recipe)
+                RecipeAdapterMatch match = classifyAvailable(holder, core);
+                if (match == null) continue;
+                ItemStack result = match.presentationOutput(List.of(), level);
+                if (!result.isEmpty()
                         && ItemStack.isSameItemSameComponents(result, output)) {
                     currentRecipes.add(holder);
                 }
             }
         }
         for (RecipeHolder<?> holder : axeTransformationCatalog.recipes(level, core)) {
-            ItemStack result = holder.value().getResultItem(level.registryAccess());
-            if (ItemStack.isSameItemSameComponents(result, output)) currentRecipes.add(holder);
+            RecipeAdapterMatch match = classifyAvailable(holder, core);
+            if (match == null) continue;
+            ItemStack result = match.presentationOutput(List.of(), level);
+            if (!result.isEmpty() && ItemStack.isSameItemSameComponents(result, output)) {
+                currentRecipes.add(holder);
+            }
         }
 
         currentRecipes.sort(Comparator
-                .comparingInt((RecipeHolder<?> holder) -> getRecipeSortOrder(holder.value()))
+                .comparingInt(CraftingTerminalMenu::getRecipeSortOrder)
                 .thenComparing(holder -> holder.id().toString()));
         syncRecipeMetadata();
     }
 
-    private static int getRecipeSortOrder(RecipeType<?> type) {
-        if (type == RecipeType.CRAFTING) return 0;
-        if (type == RecipeType.SMELTING) return 1;
-        if (type == RecipeType.BLASTING) return 2;
-        if (type == RecipeType.SMOKING) return 3;
-        if (type == RecipeType.CAMPFIRE_COOKING) return 4;
-        if (type == RecipeType.STONECUTTING) return 5;
-        if (type == RecipeType.SMITHING) return 6;
-        return 99;
-    }
-
-    private static int getRecipeSortOrder(Recipe<?> recipe) {
-        if (recipe instanceof AxeTransformationRecipe) return 7;
-        return getRecipeSortOrder(recipe.getType());
-    }
-
-    static List<RecipeType<?>> supportedRecipeTypes() {
-        return SUPPORTED_RECIPE_TYPES;
+    private static int getRecipeSortOrder(RecipeHolder<?> holder) {
+        return BuiltInRecipeAdapters.registry().classify(holder)
+                .map(match -> match.adapter().priority())
+                .orElse(99);
     }
 
     public List<RecipeHolder<?>> getCurrentRecipes() {
@@ -1125,17 +1026,20 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             currentRecipeTypeOrder = -1;
             clearRecipePresentation();
         } else {
-            RecipeHolder<?> holder = currentRecipes.get(currentRecipeIndex);
-            if (selectedRecipeId != null) selectedRecipeId = holder.id();
-            currentRecipeTypeOrder = getRecipeSortOrder(holder.value());
+            RecipeHolder<?> cachedHolder = currentRecipes.get(currentRecipeIndex);
+            if (selectedRecipeId != null) selectedRecipeId = cachedHolder.id();
             if (!playerInventory.player.level().isClientSide()) {
                 StorageCoreBlockEntity core = getCore(playerInventory.player.level());
-                if (core == null) {
+                RecipeAdapterMatch match = core == null ? null : resolveAvailableRecipeMatchById(
+                        playerInventory.player.level(), core, cachedHolder.id());
+                if (match == null) {
                     clearRecipePresentation();
                 } else {
+                    currentRecipes.set(currentRecipeIndex, match.holder());
+                    currentRecipeTypeOrder = match.adapter().priority();
                     applyPreviewData(emptyCraftPreview());
                     syncRecipePresentation(
-                            holder,
+                            match,
                             emptyCraftPreview(),
                             snapshotIngredientSources(core, playerInventory.player),
                             core,
@@ -1160,16 +1064,21 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         StorageCoreBlockEntity core = getCore(player.level());
         if (core == null || core.isConflicted()) return false;
 
-        RecipeHolder<?> holder = resolveCurrentRecipe(player.level());
-        if (holder == null) return false;
-        Recipe<?> recipe = holder.value();
-        EnergyCost energyCost = RecipeEnergyTable.getCost(recipe);
+        RecipeAdapterMatch match = resolveCurrentRecipeMatch(player.level());
+        if (match == null) return false;
+        EnergyCost energyCost = match.cost().energyCost().orElse(null);
         if (!hasEnergyForCrafts(core, energyCost, count)) return false;
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
         CraftPlan plan = planCraft(
-                core, recipe, count, DeliveryTarget.from(outputDestination), player, sources);
+                core, match, count, DeliveryTarget.from(outputDestination), player, sources);
         if (plan == null || !commitCraft(
-                core, plan.ingredients(), plan.delivery(), player, energyCost, plan.crafts())) return false;
+                core,
+                plan.ingredients(),
+                plan.delivery(),
+                player,
+                match,
+                energyCost,
+                plan.crafts())) return false;
 
         refreshDisplayItems(core);
         updatePreview(core, player);
@@ -1181,16 +1090,21 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (!page.isItemPage() || player.level().isClientSide()) return;
         StorageCoreBlockEntity core = getCore(player.level());
         if (core == null || core.isConflicted()) return;
-        RecipeHolder<?> holder = resolveCurrentRecipe(player.level());
-        if (holder == null) return;
-        Recipe<?> recipe = holder.value();
+        RecipeAdapterMatch match = resolveCurrentRecipeMatch(player.level());
+        if (match == null) return;
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
-        long resourceMaximum = maximumResourceCrafts(recipe, core, sources);
+        long resourceMaximum = maximumResourceCrafts(match, core, sources);
         CraftPlan plan = largestDeliverablePlan(
-                core, recipe, resourceMaximum, DeliveryTarget.from(outputDestination), player, sources);
-        EnergyCost energyCost = RecipeEnergyTable.getCost(recipe);
+                core, match, resourceMaximum, DeliveryTarget.from(outputDestination), player, sources);
+        EnergyCost energyCost = match.cost().energyCost().orElse(null);
         if (plan == null || !commitCraft(
-                core, plan.ingredients(), plan.delivery(), player, energyCost, plan.crafts())) return;
+                core,
+                plan.ingredients(),
+                plan.delivery(),
+                player,
+                match,
+                energyCost,
+                plan.crafts())) return;
         refreshDisplayItems(core);
         updatePreview(core, player);
         broadcastChanges();
@@ -1198,14 +1112,14 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     private CraftPlan largestDeliverablePlan(
             StorageCoreBlockEntity core,
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             long maximum,
             DeliveryTarget destination,
             Player player,
             List<IngredientSource> sources
     ) {
         if (maximum <= 0) return null;
-        CraftPlan maximumPlan = planCraft(core, recipe, maximum, destination, player, sources);
+        CraftPlan maximumPlan = planCraft(core, match, maximum, destination, player, sources);
         if (maximumPlan != null) return maximumPlan;
 
         long low = 0;
@@ -1214,7 +1128,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         while (low < high) {
             long distance = high - low;
             long candidate = low + distance / 2 + distance % 2;
-            CraftPlan candidatePlan = planCraft(core, recipe, candidate, destination, player, sources);
+            CraftPlan candidatePlan = planCraft(core, match, candidate, destination, player, sources);
             if (candidatePlan != null) {
                 low = candidate;
                 best = candidatePlan;
@@ -1225,35 +1139,40 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (low <= 0) return null;
         return best != null && best.crafts() == low
                 ? best
-                : planCraft(core, recipe, low, destination, player, sources);
+                : planCraft(core, match, low, destination, player, sources);
     }
 
     private CraftPlan planCraft(
             StorageCoreBlockEntity core,
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             long crafts,
             DeliveryTarget destination,
             Player player,
             List<IngredientSource> sources
     ) {
-        if (crafts <= 0 || !hasEnergyForCrafts(core, RecipeEnergyTable.getCost(recipe), crafts)) return null;
-        IngredientPlan ingredients = planIngredients(recipeIngredients(recipe), crafts, sources);
+        EnergyCost energyCost = match.cost().energyCost().orElse(null);
+        if (crafts <= 0 || !hasEnergyForCrafts(core, energyCost, crafts)
+                || !hasToolForCrafts(core, match.cost().toolCost().orElse(null), crafts)) return null;
+        IngredientPlan ingredients = planIngredients(match.orderedInputs(), crafts, sources);
         if (ingredients == null) return null;
-        DeliveryPlan delivery = planDelivery(core, ingredients, recipe, crafts, destination, player);
+        DeliveryPlan delivery = planDelivery(core, ingredients, match, crafts, destination, player);
         return delivery == null ? null : new CraftPlan(crafts, ingredients, delivery);
     }
 
     private long maximumResourceCrafts(
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             StorageCoreBlockEntity core,
             List<IngredientSource> sources
     ) {
-        List<RecipeIngredient> ingredients = recipeIngredients(recipe);
+        List<RecipeAdapterMatch.Input> ingredients = match.orderedInputs();
         long totalAvailable = 0;
         for (IngredientSource source : sources) {
             totalAvailable = saturatingAdd(totalAvailable, source.amount());
         }
-        long ingredientsPerCraft = ingredients.stream().filter(ingredient -> !ingredient.isEmpty()).count();
+        long ingredientsPerCraft = ingredients.stream()
+                .filter(ingredient -> !ingredient.isEmpty())
+                .mapToLong(RecipeAdapterMatch.Input::multiplicity)
+                .sum();
         if (ingredientsPerCraft <= 0) return 0;
         long high = totalAvailable / ingredientsPerCraft;
         for (IngredientNeed need : summarizeIngredients(ingredients)) {
@@ -1265,11 +1184,14 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             }
             high = Math.min(high, available / need.count());
         }
-        if (recipe instanceof AxeTransformationRecipe) {
-            long available = core.hasInfiniteAxeEnergy() ? Long.MAX_VALUE : core.getAxeEnergy();
-            high = Math.min(high, available);
+        RecipeAdapterMatch.ToolCost toolCost = match.cost().toolCost().orElse(null);
+        if (toolCost != null) {
+            long available = core.hasInfiniteDescriptor(toolCost.descriptorId())
+                    ? Long.MAX_VALUE
+                    : core.getDescriptorAmount(toolCost.descriptorId());
+            high = Math.min(high, available / toolCost.amountPerCraft());
         }
-        EnergyCost cost = RecipeEnergyTable.getCost(recipe);
+        EnergyCost cost = match.cost().energyCost().orElse(null);
         if (cost != null) {
             if (cost.processAmount() > 0) {
                 high = Math.min(high, core.getEnergy(cost.processType()) / cost.processAmount());
@@ -1314,23 +1236,22 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
     }
 
-    private RecipeHolder<?> resolveCurrentRecipe(Level level) {
+    private RecipeAdapterMatch resolveCurrentRecipeMatch(Level level) {
         if (currentRecipes.isEmpty() || currentRecipeIndex >= currentRecipes.size()) return null;
         RecipeHolder<?> cachedHolder = currentRecipes.get(currentRecipeIndex);
         StorageCoreBlockEntity core = getCore(level);
-        RecipeHolder<?> currentHolder = resolveRecipeById(level, core, cachedHolder.id());
-        if (currentHolder == null || !supportsRecipeContract(currentHolder.value())
-                || !CraftingStationTable.isAvailable(core, currentHolder.value())) return null;
+        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, cachedHolder.id());
+        if (match == null) return null;
 
-        ItemStack result = currentHolder.value().getResultItem(level.registryAccess());
+        ItemStack result = match.presentationOutput(List.of(), level);
         if (result.isEmpty()) return null;
         ItemStack selectedOutput = selectedKey != null
                 ? selectedKey.toStack(1)
-                : cachedHolder.value().getResultItem(level.registryAccess());
+                : result;
         if (!ItemStack.isSameItemSameComponents(result, selectedOutput)) return null;
 
-        currentRecipes.set(currentRecipeIndex, currentHolder);
-        return currentHolder;
+        currentRecipes.set(currentRecipeIndex, match.holder());
+        return match;
     }
 
     private RecipeHolder<?> resolveRecipeById(
@@ -1348,41 +1269,45 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return emptyCraftPreview();
         Level level = core.getLevel();
         if (level == null) return emptyCraftPreview();
-        RecipeHolder<?> holder = resolveCurrentRecipe(level);
-        if (holder == null) return emptyCraftPreview();
-        return computeCraftPreviewFor(holder.value(), core, player);
+        RecipeAdapterMatch match = resolveCurrentRecipeMatch(level);
+        if (match == null) return emptyCraftPreview();
+        return computeCraftPreviewFor(match, core, player);
     }
 
     private static CraftPreview emptyCraftPreview() {
         return new CraftPreview(0, List.of(), List.of(), List.of());
     }
 
-    private CraftPreview computeCraftPreviewFor(Recipe<?> recipe, StorageCoreBlockEntity core, Player player) {
-        return computeCraftPreviewFor(recipe, core, snapshotIngredientSources(core, player));
+    private CraftPreview computeCraftPreviewFor(
+            RecipeAdapterMatch match,
+            StorageCoreBlockEntity core,
+            Player player
+    ) {
+        return computeCraftPreviewFor(match, core, snapshotIngredientSources(core, player));
     }
 
     private CraftPreview computeCraftPreviewFor(
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             StorageCoreBlockEntity core,
             List<IngredientSource> sources
     ) {
-        return computeCraftPreviewFor(recipe, core, sources, PREVIEW_CAP);
+        return computeCraftPreviewFor(match, core, sources, PREVIEW_CAP);
     }
 
     private CraftPreview computeCraftPreviewFor(
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             StorageCoreBlockEntity core,
             List<IngredientSource> sources,
             int craftLimit
     ) {
-        if (core.isConflicted() || !supportsRecipeContract(recipe)
-                || !CraftingStationTable.isAvailable(core, recipe)) {
+        if (core.isConflicted() || !match.validatesSimulation(match.holder())
+                || !isStationAvailable(core, match)) {
             return emptyCraftPreview();
         }
         long max = craftLimit;
         List<ItemStack> missing = new ArrayList<>();
         List<IngredientPreview> ingredientPreviews = new ArrayList<>();
-        List<RecipeIngredient> ingredients = recipeIngredients(recipe);
+        List<RecipeAdapterMatch.Input> ingredients = match.orderedInputs();
         for (IngredientNeed need : summarizeIngredients(ingredients)) {
             long avail = 0;
             for (IngredientSource source : sources) {
@@ -1399,16 +1324,19 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                         representative.copyWithCount(1), avail, Math.toIntExact(need.count())));
             }
             if (avail < need.count()) {
-                List<ItemStack> items = need.ingredient().items();
+                List<ItemStack> items = need.ingredient().representatives();
                 if (!items.isEmpty() && missing.size() < MAX_INGREDIENTS) missing.add(items.getFirst().copy());
             }
         }
-        if (recipe instanceof AxeTransformationRecipe) {
-            long available = core.hasInfiniteAxeEnergy() ? Long.MAX_VALUE : core.getAxeEnergy();
-            max = Math.min(max, available);
+        RecipeAdapterMatch.ToolCost toolCost = match.cost().toolCost().orElse(null);
+        if (toolCost != null) {
+            long available = core.hasInfiniteDescriptor(toolCost.descriptorId())
+                    ? Long.MAX_VALUE
+                    : core.getDescriptorAmount(toolCost.descriptorId());
+            max = Math.min(max, available / toolCost.amountPerCraft());
         }
 
-        EnergyCost cost = RecipeEnergyTable.getCost(recipe);
+        EnergyCost cost = match.cost().energyCost().orElse(null);
         List<EnergyPreview> energyPreviews = new ArrayList<>(2);
         if (cost != null) {
             energyPreviews.add(new EnergyPreview(
@@ -1434,9 +1362,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
         int craftable = low;
         if (craftable == 0 && upperBound > 0 && missing.isEmpty()) {
-            for (RecipeIngredient ingredient : ingredients) {
-                if (!ingredient.isEmpty() && !ingredient.items().isEmpty()) {
-                    missing.add(ingredient.items().getFirst().copy());
+            for (RecipeAdapterMatch.Input ingredient : ingredients) {
+                if (!ingredient.isEmpty() && !ingredient.representatives().isEmpty()) {
+                    missing.add(ingredient.representatives().getFirst().copy());
                     break;
                 }
             }
@@ -1446,31 +1374,28 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     private static ItemStack ingredientRepresentative(
-            RecipeIngredient ingredient,
+            RecipeAdapterMatch.Input ingredient,
             List<IngredientSource> sources
     ) {
         for (IngredientSource source : sources) {
             if (ingredient.test(source.stack())) return source.stack().copyWithCount(1);
         }
-        List<ItemStack> displayItems = ingredient.items();
+        List<ItemStack> displayItems = ingredient.representatives();
         if (!displayItems.isEmpty()) return displayItems.getFirst().copyWithCount(1);
         return ItemStack.EMPTY;
     }
 
     private void syncRecipePresentation(
-            RecipeHolder<?> holder,
+            RecipeAdapterMatch match,
             CraftPreview preview,
             List<IngredientSource> sources,
             StorageCoreBlockEntity core,
             boolean includeResources
     ) {
-        Recipe<?> recipe = holder.value();
-        RecipePresentationKind kind = presentationKind(recipe);
-        int width = presentationWidth(recipe);
-        int height = presentationHeight(recipe);
-        List<ItemStack> inputs = presentationInputs(recipe, sources);
-        ItemStack output = presentationOutput(holder, sources, core.getLevel());
-        ItemStack station = presentationStation(recipe, core);
+        RecipeAdapterMatch.Presentation semantics = match.presentation();
+        List<ItemStack> inputs = presentationInputs(match, sources);
+        ItemStack output = match.presentationOutput(inputs, core.getLevel());
+        ItemStack station = presentationStation(match, core);
         if (output.isEmpty()) throw new IllegalStateException("Selected recipe has no presentation output");
 
         selectionContainer.clearContent();
@@ -1483,7 +1408,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
         int itemResourceCount = 0;
         if (includeResources) {
-            List<IngredientNeed> needs = summarizeIngredients(recipeIngredients(recipe));
+            List<IngredientNeed> needs = summarizeIngredients(match.orderedInputs());
             itemResourceCount = needs.size();
             for (int item = 0; item < itemResourceCount; item++) {
                 IngredientPreview resource;
@@ -1515,20 +1440,26 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         long toolAvailable = 0;
         long toolRequired = 0;
         boolean toolInfinite = false;
-        if (recipe instanceof AxeTransformationRecipe) {
-            toolInfinite = core.hasInfiniteAxeEnergy();
-            toolAvailable = toolInfinite ? Long.MAX_VALUE : core.getAxeEnergy();
-            if (toolAvailable <= 0) throw new IllegalStateException("Selected axe recipe has no Axe Energy");
-            toolRequired = 1;
-            selectionContainer.setItem(PRESENTATION_TOOL_SLOT, AxeEnergy.representativeStack());
+        RecipeAdapterMatch.ToolCost toolCost = match.cost().toolCost().orElse(null);
+        if (toolCost != null) {
+            toolInfinite = core.hasInfiniteDescriptor(toolCost.descriptorId());
+            toolAvailable = toolInfinite
+                    ? Long.MAX_VALUE
+                    : core.getDescriptorAmount(toolCost.descriptorId());
+            if (toolAvailable <= 0) throw new IllegalStateException("Selected recipe has no tool resource");
+            toolRequired = toolCost.amountPerCraft();
+            MachineDescriptor toolDescriptor = MachineEnergyTable.get(toolCost.descriptorId());
+            if (toolDescriptor == null) throw new IllegalStateException("Selected recipe tool is unavailable");
+            selectionContainer.setItem(
+                    PRESENTATION_TOOL_SLOT, toolDescriptor.representativeStack());
         }
 
         RecipePresentation.Metadata metadata = new RecipePresentation.Metadata(
-                holder.id(),
-                kind,
-                width,
-                height,
-                recipe instanceof ShapelessRecipe,
+                match.holder().id(),
+                semantics.kind(),
+                semantics.width(),
+                semantics.height(),
+                semantics.shapeless(),
                 itemResourceCount,
                 toolAvailable,
                 toolRequired,
@@ -1548,44 +1479,18 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         craftableCount = 0;
     }
 
-    private static RecipePresentationKind presentationKind(Recipe<?> recipe) {
-        if (recipe instanceof ShapedRecipe || recipe instanceof ShapelessRecipe) {
-            return RecipePresentationKind.CRAFTING;
-        }
-        if (recipe instanceof AbstractCookingRecipe) return RecipePresentationKind.COOKING;
-        if (recipe instanceof StonecutterRecipe) return RecipePresentationKind.STONECUTTING;
-        if (recipe instanceof SmithingTransformRecipe) return RecipePresentationKind.SMITHING;
-        if (recipe instanceof AxeTransformationRecipe) return RecipePresentationKind.AXE;
-        throw new IllegalArgumentException("Unsupported recipe presentation: " + recipe.getClass().getName());
-    }
-
-    private static int presentationWidth(Recipe<?> recipe) {
-        if (recipe instanceof ShapedRecipe shaped) return shaped.getWidth();
-        if (recipe instanceof ShapelessRecipe) return 3;
-        if (recipe instanceof SmithingTransformRecipe) return 3;
-        return 1;
-    }
-
-    private static int presentationHeight(Recipe<?> recipe) {
-        if (recipe instanceof ShapedRecipe shaped) return shaped.getHeight();
-        if (recipe instanceof ShapelessRecipe) return 3;
-        return 1;
-    }
-
     private static List<ItemStack> presentationInputs(
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             List<IngredientSource> sources
     ) {
-        List<RecipeIngredient> ingredients = recipe instanceof SmithingTransformRecipe
-                ? recipeIngredients(recipe)
-                : recipe.getIngredients().stream().map(RecipeIngredient::of).toList();
+        List<RecipeAdapterMatch.Input> ingredients = match.orderedInputs();
         if (ingredients.size() > RecipePresentation.MAX_INPUTS) {
             throw new IllegalArgumentException("Recipe presentation has more than nine inputs");
         }
         List<ItemStack> inputs = new ArrayList<>(
                 Collections.nCopies(RecipePresentation.MAX_INPUTS, ItemStack.EMPTY));
         for (int input = 0; input < ingredients.size(); input++) {
-            RecipeIngredient ingredient = ingredients.get(input);
+            RecipeAdapterMatch.Input ingredient = ingredients.get(input);
             if (!ingredient.isEmpty()) {
                 inputs.set(input, ingredientRepresentative(ingredient, sources));
             }
@@ -1593,49 +1498,20 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return List.copyOf(inputs);
     }
 
-    private ItemStack presentationOutput(
-            RecipeHolder<?> holder,
-            List<IngredientSource> sources,
-            Level level
-    ) {
-        if (level == null) throw new IllegalStateException("Selected recipe has no level");
-        Recipe<?> recipe = holder.value();
-        if (recipe instanceof SmithingTransformRecipe smithing) {
-            List<RecipeIngredient> roles = recipeIngredients(recipe);
-            if (roles.size() != 3) {
-                throw new IllegalStateException("Smithing presentation requires three input roles");
-            }
-            List<ItemStack> inputs = roles.stream()
-                    .map(role -> ingredientRepresentative(role, sources))
-                    .toList();
-            if (inputs.stream().anyMatch(ItemStack::isEmpty)) {
-                RecipePresentation.Metadata previous = RecipePresentation.metadataFromCarrier(
-                        selectionContainer.getItem(PRESENTATION_METADATA_SLOT));
-                ItemStack previousOutput = selectionContainer.getItem(PRESENTATION_OUTPUT_SLOT);
-                if (previous != null
-                        && previous.recipeId().equals(holder.id())
-                        && !previousOutput.isEmpty()) {
-                    return previousOutput.copy();
-                }
-                return smithing.getResultItem(level.registryAccess()).copy();
-            }
-            return smithing.assemble(new SmithingRecipeInput(
-                    inputs.get(0), inputs.get(1), inputs.get(2)), level.registryAccess());
-        }
-        return recipe.getResultItem(level.registryAccess()).copy();
-    }
-
     private static ItemStack presentationStation(
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             StorageCoreBlockEntity core
     ) {
-        if (recipe instanceof AxeTransformationRecipe) {
-            if (!core.hasAxeEnergy(1)) throw new IllegalStateException("Axe presentation has no Axe Energy");
-            return AxeEnergy.representativeStack();
-        }
-        int stationSlot = CraftingStationTable.requiredSlot(recipe.getType());
-        MachineDescriptor station = MachineEnergyTable.get(stationSlot);
+        MachineDescriptor station = MachineEnergyTable.get(match.stationDescriptorId());
         if (station == null) throw new IllegalStateException("Recipe presentation has no station descriptor");
+        if (station.category() == MachineEnergyTable.Category.CONSUMABLE) {
+            if (!isStationAvailable(core, match)) {
+                throw new IllegalStateException("Recipe presentation tool station is unavailable");
+            }
+            return station.representativeStack();
+        }
+        int stationSlot = MachineEnergyTable.findSlot(match.stationDescriptorId());
+        if (stationSlot < 0) throw new IllegalStateException("Recipe presentation station has no slot");
         ItemStack installed = core.getMachineContainer().getItem(stationSlot);
         if (!station.accepts(installed)) {
             throw new IllegalStateException("Recipe presentation station is not installed");
@@ -1645,7 +1521,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
     private IngredientPlan planIngredients(
             StorageCoreBlockEntity core,
-            List<RecipeIngredient> ingredients,
+            List<RecipeAdapterMatch.Input> ingredients,
             long crafts,
             Player player
     ) {
@@ -1678,13 +1554,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     private IngredientPlan planIngredients(
-            List<RecipeIngredient> ingredients,
+            List<RecipeAdapterMatch.Input> ingredients,
             long crafts,
             List<IngredientSource> sources
     ) {
         if (crafts <= 0) return null;
         List<IngredientNeed> needs = aggregateIngredients(ingredients, crafts);
-        if (needs.isEmpty()) return null;
+        if (needs == null || needs.isEmpty()) return null;
 
         int sourceNode = 0;
         int sourceStart = 1;
@@ -1716,7 +1592,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
         Map<ItemKey, Long> coreReservations = new HashMap<>();
         Map<Integer, PlayerReservation> playerReservations = new HashMap<>();
-        Map<ItemKey, Long> consumedItems = new HashMap<>();
         List<Map<ItemKey, Long>> allocations = new ArrayList<>(needs.size());
         for (int i = 0; i < needs.size(); i++) allocations.add(new LinkedHashMap<>());
         for (int sourceIndex = 0; sourceIndex < sources.size(); sourceIndex++) {
@@ -1732,7 +1607,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 }
             }
             if (used <= 0) continue;
-            consumedItems.merge(source.key(), used, Long::sum);
             if (source.playerSlot() < 0) {
                 coreReservations.merge(source.key(), used, Long::sum);
             } else {
@@ -1747,7 +1621,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return new IngredientPlan(
                 coreReservations,
                 playerReservations,
-                consumedItems,
                 allocations.stream().map(Map::copyOf).toList()
         );
     }
@@ -1755,16 +1628,15 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private DeliveryPlan planDelivery(
             StorageCoreBlockEntity core,
             IngredientPlan ingredientPlan,
-            Recipe<?> recipe,
+            RecipeAdapterMatch match,
             long crafts,
             DeliveryTarget destination,
             Player player
     ) {
         if (crafts <= 0) return null;
-        ToolUsePlan toolUse = recipe instanceof AxeTransformationRecipe
-                ? planAxeUse(core, crafts)
-                : null;
-        if (recipe instanceof AxeTransformationRecipe && toolUse == null) return null;
+        RecipeAdapterMatch.ToolCost toolCost = match.cost().toolCost().orElse(null);
+        ToolUsePlan toolUse = toolCost == null ? null : planToolUse(core, toolCost, crafts);
+        if (toolCost != null && toolUse == null) return null;
         List<ItemStack> inventory = new ArrayList<>(PLAYER_INVENTORY_SLOTS);
         for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
             inventory.add(player.getInventory().getItem(slot).copy());
@@ -1778,8 +1650,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         }
 
         ItemStack carried = getCarried().copy();
-        Map<ItemKey, Long> primaryOutputs = planPrimaryOutputs(core, ingredientPlan, recipe, crafts);
-        if (primaryOutputs == null || primaryOutputs.isEmpty()) return null;
+        Level level = core.getLevel();
+        if (level == null) return null;
+        RecipeAdapterMatch.CheckedOutput checkedOutput = match.checkedOutput(
+                ingredientPlan.allocations(), crafts, level).orElse(null);
+        if (checkedOutput == null) return null;
+        Map<ItemKey, Long> primaryOutputs = checkedOutput.primaryOutputs();
         Map<ItemKey, Long> coreOutputs = new LinkedHashMap<>();
         if (destination == DeliveryTarget.CURSOR) {
             if (primaryOutputs.size() != 1) return null;
@@ -1810,21 +1686,11 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return null;
         }
 
-        for (Map.Entry<ItemKey, Long> entry : ingredientPlan.consumedItems().entrySet()) {
-            ItemStack consumed = entry.getKey().toStack(1);
-            if (!consumed.hasCraftingRemainingItem()) continue;
-            ItemStack remainder = consumed.getCraftingRemainingItem();
-            if (remainder.isEmpty()) continue;
-            long remainderCount;
-            try {
-                remainderCount = Math.multiplyExact(entry.getValue(), (long) remainder.getCount());
-            } catch (ArithmeticException e) {
-                return null;
-            }
+        for (Map.Entry<ItemKey, Long> entry : checkedOutput.remainders().entrySet()) {
             if (destination == DeliveryTarget.STORAGE) {
-                if (!addCoreOutput(coreOutputs, ItemKey.of(remainder), remainderCount)) return null;
+                if (!addCoreOutput(coreOutputs, entry.getKey(), entry.getValue())) return null;
             } else if (!addOutputToInventoryThenCore(
-                    inventory, remainder, remainderCount, coreOutputs)) {
+                    inventory, entry.getKey().toStack(1), entry.getValue(), coreOutputs)) {
                 return null;
             }
         }
@@ -1832,75 +1698,20 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return new DeliveryPlan(List.copyOf(inventory), carried, Map.copyOf(coreOutputs), toolUse);
     }
 
-    private static ToolUsePlan planAxeUse(
+    private static ToolUsePlan planToolUse(
             StorageCoreBlockEntity core,
+            RecipeAdapterMatch.ToolCost toolCost,
             long crafts
     ) {
-        return core.hasAxeEnergy(crafts) ? new ToolUsePlan(crafts) : null;
-    }
-
-    private static Map<ItemKey, Long> planPrimaryOutputs(
-            StorageCoreBlockEntity core,
-            IngredientPlan ingredientPlan,
-            Recipe<?> recipe,
-            long crafts
-    ) {
-        Level level = core.getLevel();
-        if (level == null) return null;
-        if (recipe instanceof SmithingTransformRecipe smithing) {
-            List<Map<ItemKey, Long>> allocations = ingredientPlan.allocations();
-            if (allocations.size() != 3
-                    || allocationAmount(allocations.get(0)) != crafts
-                    || allocationAmount(allocations.get(1)) != crafts
-                    || allocationAmount(allocations.get(2)) != crafts) {
-                return null;
-            }
-            ItemStack template = firstAllocatedStack(allocations.get(0));
-            ItemStack addition = firstAllocatedStack(allocations.get(2));
-            if (template.isEmpty() || addition.isEmpty()) return null;
-
-            Map<ItemKey, Long> outputs = new LinkedHashMap<>();
-            try {
-                for (Map.Entry<ItemKey, Long> base : allocations.get(1).entrySet()) {
-                    SmithingRecipeInput input = new SmithingRecipeInput(
-                            template, base.getKey().toStack(1), addition);
-                    if (!smithing.matches(input, level)) return null;
-                    ItemStack result = smithing.assemble(input, level.registryAccess());
-                    if (result.isEmpty()) return null;
-                    long amount = Math.multiplyExact(base.getValue(), (long) result.getCount());
-                    outputs.merge(ItemKey.of(result), amount, Math::addExact);
-                }
-            } catch (ArithmeticException e) {
-                return null;
-            }
-            return outputs;
-        }
-
-        ItemStack result = recipe.getResultItem(level.registryAccess());
-        if (result.isEmpty()) return null;
+        long amount;
         try {
-            long amount = Math.multiplyExact((long) result.getCount(), crafts);
-            return Map.of(ItemKey.of(result), amount);
-        } catch (ArithmeticException e) {
+            amount = Math.multiplyExact(toolCost.amountPerCraft(), crafts);
+        } catch (ArithmeticException exception) {
             return null;
         }
-    }
-
-    private static long allocationAmount(Map<ItemKey, Long> allocation) {
-        long total = 0;
-        try {
-            for (long amount : allocation.values()) total = Math.addExact(total, amount);
-        } catch (ArithmeticException e) {
-            return -1;
-        }
-        return total;
-    }
-
-    private static ItemStack firstAllocatedStack(Map<ItemKey, Long> allocation) {
-        for (Map.Entry<ItemKey, Long> entry : allocation.entrySet()) {
-            if (entry.getValue() > 0) return entry.getKey().toStack(1);
-        }
-        return ItemStack.EMPTY;
+        return core.hasDescriptorAmount(toolCost.descriptorId(), amount)
+                ? new ToolUsePlan(toolCost.descriptorId(), amount)
+                : null;
     }
 
     private static boolean addOutputToInventoryThenCore(
@@ -1981,13 +1792,25 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             IngredientPlan plan,
             DeliveryPlan delivery,
             Player player,
+            RecipeAdapterMatch plannedMatch,
             EnergyCost energyCost,
             long crafts
     ) {
+        Level level = core.getLevel();
+        if (level == null) return false;
+        RecipeAdapterMatch currentMatch = resolveAvailableRecipeMatchById(
+                level, core, plannedMatch.holder().id());
+        if (currentMatch == null
+                || !plannedMatch.validatesCommit(currentMatch.holder())
+                || !currentMatch.validatesCommit(currentMatch.holder())
+                || !hasEnergyForCrafts(core, energyCost, crafts)
+                || !hasToolForCrafts(
+                core, currentMatch.cost().toolCost().orElse(null), crafts)) return false;
         core.beginMutationBatch();
         try {
             ToolUsePlan toolUse = delivery.toolUse();
-            if (toolUse != null && !core.hasAxeEnergy(toolUse.amount())) return false;
+            if (toolUse != null
+                    && !core.hasDescriptorAmount(toolUse.descriptorId(), toolUse.amount())) return false;
             for (Map.Entry<Integer, PlayerReservation> entry : plan.playerReservations().entrySet()) {
                 ItemStack stack = player.getInventory().getItem(entry.getKey());
                 PlayerReservation reservation = entry.getValue();
@@ -2028,7 +1851,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 rollbackCoreExtractions(core, extractedFromCore);
                 return false;
             }
-            if (toolUse != null && !core.consumeAxeEnergy(toolUse.amount())) {
+            if (toolUse != null
+                    && !core.consumeDescriptor(toolUse.descriptorId(), toolUse.amount())) {
                 rollbackCoreOutputs(core, insertedOutputs);
                 rollbackCoreExtractions(core, extractedFromCore);
                 return false;
@@ -2140,86 +1964,101 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     }
 
     public static boolean supportsRecipeContract(Recipe<?> recipe) {
-        if (recipe instanceof AbstractCookingRecipe cookingRecipe && cookingRecipe.getCookingTime() <= 0) {
+        RecipeHolder<?> holder = new RecipeHolder<>(
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "compatibility_probe"),
+                recipe);
+        return BuiltInRecipeAdapters.registry().classify(holder).isPresent();
+    }
+
+    public static boolean supportsRecipeHolder(RecipeHolder<?> holder) {
+        if (holder == null) return false;
+        RecipeAdapterMatch match = BuiltInRecipeAdapters.registry().classify(holder).orElse(null);
+        return match != null && match.validatesSimulation(holder);
+    }
+
+    private RecipeAdapterMatch resolveAvailableRecipeMatchById(
+            Level level,
+            StorageCoreBlockEntity core,
+            ResourceLocation recipeId
+    ) {
+        RecipeHolder<?> holder = resolveRecipeById(level, core, recipeId);
+        return holder == null ? null : classifyAvailable(holder, core);
+    }
+
+    private static RecipeAdapterMatch classifyAvailable(
+            RecipeHolder<?> holder,
+            StorageCoreBlockEntity core
+    ) {
+        RecipeAdapterMatch match = BuiltInRecipeAdapters.registry().classify(holder).orElse(null);
+        return match != null
+                && match.validatesSimulation(holder)
+                && isStationAvailable(core, match)
+                ? match
+                : null;
+    }
+
+    private static boolean isStationAvailable(
+            StorageCoreBlockEntity core,
+            RecipeAdapterMatch match
+    ) {
+        if (core == null) return false;
+        MachineDescriptor station = MachineEnergyTable.get(match.stationDescriptorId());
+        if (station == null) return false;
+        RecipeAdapterMatch.ToolCost toolCost = match.cost().toolCost().orElse(null);
+        if (station.category() == MachineEnergyTable.Category.CONSUMABLE) {
+            return toolCost != null
+                    && toolCost.descriptorId().equals(station.id())
+                    && core.hasDescriptorAmount(toolCost.descriptorId(), toolCost.amountPerCraft());
+        }
+        int stationSlot = MachineEnergyTable.findSlot(station.id());
+        return stationSlot >= 0
+                && MachineEnergyTable.isInstalled(core, stationSlot)
+                && hasToolForCrafts(core, toolCost, 1);
+    }
+
+    private static boolean hasToolForCrafts(
+            StorageCoreBlockEntity core,
+            RecipeAdapterMatch.ToolCost toolCost,
+            long crafts
+    ) {
+        if (crafts <= 0) return false;
+        if (toolCost == null) return true;
+        try {
+            return core.hasDescriptorAmount(
+                    toolCost.descriptorId(),
+                    Math.multiplyExact(toolCost.amountPerCraft(), crafts));
+        } catch (ArithmeticException exception) {
             return false;
         }
-        if (recipe instanceof ShapedRecipe shapedRecipe
-                && (shapedRecipe.getWidth() > 3 || shapedRecipe.getHeight() > 3)) {
-            return false;
-        }
-        RecipeType<?> type = recipe.getType();
-        Class<?> recipeClass = recipe.getClass();
-        boolean staticContract = recipeClass == AxeTransformationRecipe.class
-                || (type == RecipeType.CRAFTING
-                ? recipeClass == ShapedRecipe.class || recipeClass == ShapelessRecipe.class
-                : type == RecipeType.SMELTING
-                        ? recipeClass == SmeltingRecipe.class
-                        : type == RecipeType.BLASTING
-                                ? recipeClass == BlastingRecipe.class
-                                : type == RecipeType.SMOKING
-                                        ? recipeClass == SmokingRecipe.class
-                                        : type == RecipeType.CAMPFIRE_COOKING
-                                                ? recipeClass == CampfireCookingRecipe.class
-                                                : type == RecipeType.STONECUTTING
-                                                        ? recipeClass == StonecutterRecipe.class
-                                                        : type == RecipeType.SMITHING
-                                                                && recipeClass == SmithingTransformRecipe.class);
-        if (!staticContract) return false;
-        if (recipe.isSpecial() || recipe.isIncomplete()) return false;
-        for (RecipeIngredient ingredient : recipeIngredients(recipe)) {
-            if (!ingredient.isEmpty()) return true;
-        }
-        return false;
     }
 
-    static List<RecipeIngredient> recipeIngredients(Recipe<?> recipe) {
-        if (!(recipe instanceof SmithingTransformRecipe smithing)) {
-            return recipe.getIngredients().stream().map(RecipeIngredient::of).toList();
-        }
-        synchronized (SMITHING_INGREDIENT_CACHE) {
-            return SMITHING_INGREDIENT_CACHE.computeIfAbsent(
-                    recipe, ignored -> resolveSmithingIngredients(smithing));
-        }
-    }
-
-    private static List<RecipeIngredient> resolveSmithingIngredients(SmithingRecipe smithing) {
-        List<ItemStack> templates = new ArrayList<>();
-        List<ItemStack> bases = new ArrayList<>();
-        List<ItemStack> additions = new ArrayList<>();
-        for (var item : BuiltInRegistries.ITEM) {
-            ItemStack stack = item.getDefaultInstance();
-            if (stack.isEmpty()) continue;
-            if (smithing.isTemplateIngredient(stack)) templates.add(stack.copyWithCount(1));
-            if (smithing.isBaseIngredient(stack)) bases.add(stack.copyWithCount(1));
-            if (smithing.isAdditionIngredient(stack)) additions.add(stack.copyWithCount(1));
-        }
-        Recipe<?> recipe = (Recipe<?>) smithing;
-        return List.of(
-                RecipeIngredient.smithing(
-                        new SmithingIngredientIdentity(recipe, 0), smithing::isTemplateIngredient, templates),
-                RecipeIngredient.smithing(
-                        new SmithingIngredientIdentity(recipe, 1), smithing::isBaseIngredient, bases),
-                RecipeIngredient.smithing(
-                        new SmithingIngredientIdentity(recipe, 2), smithing::isAdditionIngredient, additions)
-        );
-    }
-
-    private List<IngredientNeed> aggregateIngredients(List<RecipeIngredient> ingredients, long crafts) {
+    private List<IngredientNeed> aggregateIngredients(
+            List<RecipeAdapterMatch.Input> ingredients,
+            long crafts
+    ) {
         List<IngredientNeed> needs = new ArrayList<>();
-        for (RecipeIngredient ingredient : ingredients) {
+        for (RecipeAdapterMatch.Input ingredient : ingredients) {
             if (ingredient.isEmpty()) continue;
-            needs.add(new IngredientNeed(ingredient, crafts));
+            try {
+                needs.add(new IngredientNeed(
+                        ingredient,
+                        Math.multiplyExact(crafts, ingredient.multiplicity())));
+            } catch (ArithmeticException exception) {
+                return null;
+            }
         }
         return needs;
     }
 
-    private List<IngredientNeed> summarizeIngredients(List<RecipeIngredient> ingredients) {
-        Map<RecipeIngredient, Integer> counts = new LinkedHashMap<>();
-        for (RecipeIngredient ingredient : ingredients) {
-            if (!ingredient.isEmpty()) counts.merge(ingredient, 1, Integer::sum);
+    private List<IngredientNeed> summarizeIngredients(List<RecipeAdapterMatch.Input> ingredients) {
+        Map<RecipeAdapterMatch.Input, Integer> counts = new LinkedHashMap<>();
+        for (RecipeAdapterMatch.Input ingredient : ingredients) {
+            if (!ingredient.isEmpty()) {
+                counts.merge(ingredient, ingredient.multiplicity(), Math::addExact);
+            }
         }
         List<IngredientNeed> needs = new ArrayList<>(counts.size());
-        for (Map.Entry<RecipeIngredient, Integer> entry : counts.entrySet()) {
+        for (Map.Entry<RecipeAdapterMatch.Input, Integer> entry : counts.entrySet()) {
             needs.add(new IngredientNeed(entry.getKey(), entry.getValue()));
         }
         return needs;
@@ -2230,15 +2069,15 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             clearRecipePresentation();
             return;
         }
-        RecipeHolder<?> holder = resolveCurrentRecipe(core.getLevel());
-        if (holder == null) {
+        RecipeAdapterMatch match = resolveCurrentRecipeMatch(core.getLevel());
+        if (match == null) {
             clearRecipePresentation();
             return;
         }
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
-        CraftPreview preview = computeCraftPreviewFor(holder.value(), core, sources);
+        CraftPreview preview = computeCraftPreviewFor(match, core, sources);
         applyPreviewData(preview);
-        syncRecipePresentation(holder, preview, sources, core, true);
+        syncRecipePresentation(match, preview, sources, core, true);
         refreshEnergyAmounts(core);
     }
 
@@ -2498,10 +2337,9 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (selectedRecipeId == null || selectedKey == null) return false;
         Level level = core.getLevel();
         if (level == null) return false;
-        RecipeHolder<?> holder = resolveRecipeById(level, core, selectedRecipeId);
-        if (holder == null || !supportsRecipeContract(holder.value())
-                || !CraftingStationTable.isAvailable(core, holder.value())) return false;
-        ItemStack result = holder.value().getResultItem(level.registryAccess());
+        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, selectedRecipeId);
+        if (match == null) return false;
+        ItemStack result = match.presentationOutput(List.of(), level);
         return !result.isEmpty()
                 && ItemStack.isSameItemSameComponents(result, selectedKey.toStack(1));
     }
@@ -2515,20 +2353,22 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         for (ResourceLocation recipeId : craftableRecipeCatalog.getCandidateRecipeIds(
                 level.getRecipeManager(), availableStacks)) {
             RecipeHolder<?> holder = level.getRecipeManager().byKey(recipeId).orElse(null);
-            if (holder == null || !supportsRecipeContract(holder.value())
-                    || !CraftingStationTable.isAvailable(core, holder.value())) continue;
-            CraftPreview preview = computeCraftPreviewFor(holder.value(), core, sources);
+            RecipeAdapterMatch match = holder == null ? null : classifyAvailable(holder, core);
+            if (match == null) continue;
+            CraftPreview preview = computeCraftPreviewFor(match, core, sources);
             if (preview.craftable() <= 0) continue;
-            ItemStack output = holder.value().getResultItem(level.registryAccess());
+            ItemStack output = match.presentationOutput(List.of(), level);
             if (output.isEmpty()) continue;
             ItemKey key = ItemKey.of(output);
             if (!StorageCoreBlockEntity.matchesFilter(key, currentFilter, level)) continue;
             craftableAmounts.put(key, core.getItemCount(key));
         }
         for (RecipeHolder<?> holder : axeTransformationCatalog.recipes(level, core)) {
-            CraftPreview preview = computeCraftPreviewFor(holder.value(), core, sources);
+            RecipeAdapterMatch match = classifyAvailable(holder, core);
+            if (match == null) continue;
+            CraftPreview preview = computeCraftPreviewFor(match, core, sources);
             if (preview.craftable() <= 0) continue;
-            ItemStack output = holder.value().getResultItem(level.registryAccess());
+            ItemStack output = match.presentationOutput(List.of(), level);
             if (output.isEmpty()) continue;
             ItemKey key = ItemKey.of(output);
             if (!StorageCoreBlockEntity.matchesFilter(key, currentFilter, level)) continue;
@@ -2551,7 +2391,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (level == null) return false;
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
         for (RecipeHolder<?> holder : findRecipes(level, output)) {
-            if (computeCraftPreviewFor(holder.value(), core, sources).craftable() > 0) return true;
+            RecipeAdapterMatch match = classifyAvailable(holder, core);
+            if (match != null && computeCraftPreviewFor(match, core, sources).craftable() > 0) {
+                return true;
+            }
         }
         return false;
     }
@@ -2562,25 +2405,29 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         RecipeManager manager = level.getRecipeManager();
         StorageCoreBlockEntity core = getCore(level);
         if (core == null) return recipes;
-        for (RecipeType<?> type : SUPPORTED_RECIPE_TYPES) {
+        for (RecipeType<?> type : BuiltInRecipeAdapters.discoveryTypes()) {
             @SuppressWarnings({"unchecked", "rawtypes"})
             Collection<RecipeHolder<?>> holders = (Collection) manager.getAllRecipesFor((RecipeType) type);
             for (RecipeHolder<?> holder : holders) {
-                Recipe<?> recipe = holder.value();
-                ItemStack result = recipe.getResultItem(level.registryAccess());
-                if (supportsRecipeContract(recipe)
-                        && CraftingStationTable.isAvailable(core, recipe)
+                RecipeAdapterMatch match = classifyAvailable(holder, core);
+                if (match == null) continue;
+                ItemStack result = match.presentationOutput(List.of(), level);
+                if (!result.isEmpty()
                         && ItemStack.isSameItemSameComponents(result, output)) {
                     recipes.add(holder);
                 }
             }
         }
         for (RecipeHolder<?> holder : axeTransformationCatalog.recipes(level, core)) {
-            ItemStack result = holder.value().getResultItem(level.registryAccess());
-            if (ItemStack.isSameItemSameComponents(result, output)) recipes.add(holder);
+            RecipeAdapterMatch match = classifyAvailable(holder, core);
+            if (match == null) continue;
+            ItemStack result = match.presentationOutput(List.of(), level);
+            if (!result.isEmpty() && ItemStack.isSameItemSameComponents(result, output)) {
+                recipes.add(holder);
+            }
         }
 
-        recipes.sort(Comparator.comparingInt(h -> getRecipeSortOrder(h.value())));
+        recipes.sort(Comparator.comparingInt(CraftingTerminalMenu::getRecipeSortOrder));
         return recipes;
     }
 }

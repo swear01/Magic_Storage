@@ -11,4 +11,6 @@ interface RecipeAdapter {
     boolean supports(RecipeHolder<?> holder);
 
     RecipeCandidateIndex candidateIndex(RecipeHolder<?> holder);
+
+    RecipeAdapterMatch.Contract contract(RecipeHolder<?> holder);
 }
