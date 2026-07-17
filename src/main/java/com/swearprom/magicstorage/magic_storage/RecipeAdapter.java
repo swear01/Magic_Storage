@@ -1,7 +1,11 @@
 package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.level.Level;
+
+import java.util.List;
 
 interface RecipeAdapter {
     ResourceLocation id();
@@ -13,4 +17,17 @@ interface RecipeAdapter {
     RecipeCandidateIndex candidateIndex(RecipeHolder<?> holder);
 
     RecipeAdapterMatch.Contract contract(RecipeHolder<?> holder);
+
+    List<RecipeAdapterMatch.Contract> resolveVariants(
+            RecipeHolder<?> holder,
+            List<ItemStack> availableStacks,
+            Level level
+    );
+
+    boolean matchesLookupOutput(
+            RecipeHolder<?> holder,
+            RecipeAdapterMatch.Contract variantContract,
+            ItemStack requestedOutput,
+            Level level
+    );
 }

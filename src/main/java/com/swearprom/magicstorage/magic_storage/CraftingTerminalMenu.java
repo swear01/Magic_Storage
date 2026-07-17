@@ -862,11 +862,14 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return false;
         }
 
-        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, recipeId);
+        List<IngredientSource> sources = snapshotIngredientSources(core, player);
+        ItemStack requestedOutput = TerminalDisplayStack.strip(displayStack);
+        RecipeAdapterMatch match = resolveAvailableRecipeVariantById(
+                level, core, recipeId, requestedOutput, sources);
         if (match == null) return false;
         ItemStack result = match.presentationOutput(List.of(), level);
-        if (!ItemStack.isSameItemSameComponents(result, TerminalDisplayStack.strip(displayStack))) return false;
-        return selectRecipeById(level, recipeId, player, core);
+        if (!ItemStack.isSameItemSameComponents(result, requestedOutput)) return false;
+        return selectRecipeById(level, recipeId, requestedOutput, player, core);
     }
 
     public boolean handleRecipeRequest(
@@ -880,12 +883,19 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 || destination == null || amount <= 0 || amount > MAX_RECIPE_REQUEST) return false;
         StorageCoreBlockEntity core = getCore(level);
         if (core == null || core.isConflicted()) return false;
-        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, recipeId);
+        List<IngredientSource> sources = snapshotIngredientSources(core, player);
+        ItemStack requestedOutput = selectedRecipeId != null
+                && selectedRecipeId.equals(recipeId)
+                && selectedKey != null
+                ? selectedKey.toStack(1)
+                : ItemStack.EMPTY;
+        RecipeAdapterMatch match = resolveAvailableRecipeVariantById(
+                level, core, recipeId, requestedOutput, sources);
         if (match == null) return false;
         ItemStack result = match.presentationOutput(List.of(), level);
         if (result.isEmpty()) return false;
         if (destination == CraftingDestination.NONE) {
-            return selectRecipeById(level, recipeId, player, core);
+            return selectRecipeById(level, recipeId, result, player, core);
         }
 
         CraftPreview preview = computeCraftPreviewFor(match, core, player);
@@ -910,7 +920,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         EnergyCost energyCost = match.cost().energyCost().orElse(null);
         if (!commitCraft(
                 core, ingredientPlan, deliveryPlan, player, match, energyCost, crafts)) return false;
-        selectRecipeById(level, recipeId, player, core);
+        selectRecipeById(level, recipeId, result, player, core);
         refreshDisplayItems(core);
         updatePreview(core, player);
         broadcastChanges();
@@ -920,10 +930,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     private boolean selectRecipeById(
             Level level,
             ResourceLocation recipeId,
+            ItemStack requestedOutput,
             Player player,
             StorageCoreBlockEntity core
     ) {
-        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, recipeId);
+        List<IngredientSource> sources = snapshotIngredientSources(core, player);
+        RecipeAdapterMatch match = resolveAvailableRecipeVariantById(
+                level, core, recipeId, requestedOutput, sources);
         if (match == null) return false;
         ItemStack result = match.presentationOutput(List.of(), level);
         if (result.isEmpty()) return false;
@@ -969,16 +982,16 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             syncRecipeMetadata();
             return;
         }
+        List<IngredientSource> sources = snapshotIngredientSources(
+                core, playerInventory == null ? null : playerInventory.player);
 
         for (RecipeType<?> type : BuiltInRecipeAdapters.discoveryTypes()) {
             @SuppressWarnings({"unchecked", "rawtypes"})
             Collection<RecipeHolder<?>> holders = (Collection) manager.getAllRecipesFor((RecipeType) type);
             for (RecipeHolder<?> holder : holders) {
-                RecipeAdapterMatch match = classifyAvailable(holder, core);
-                if (match == null) continue;
-                ItemStack result = match.presentationOutput(List.of(), level);
-                if (!result.isEmpty()
-                        && ItemStack.isSameItemSameComponents(result, output)) {
+                RecipeAdapterMatch match = resolveAvailableRecipeLookupVariant(
+                        holder, core, output, sources, level);
+                if (match != null) {
                     currentRecipes.add(holder);
                 }
             }
@@ -1030,8 +1043,14 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (selectedRecipeId != null) selectedRecipeId = cachedHolder.id();
             if (!playerInventory.player.level().isClientSide()) {
                 StorageCoreBlockEntity core = getCore(playerInventory.player.level());
-                RecipeAdapterMatch match = core == null ? null : resolveAvailableRecipeMatchById(
-                        playerInventory.player.level(), core, cachedHolder.id());
+                List<IngredientSource> sources = core == null
+                        ? List.of()
+                        : snapshotIngredientSources(core, playerInventory.player);
+                ItemStack requestedOutput = selectedKey == null
+                        ? ItemStack.EMPTY : selectedKey.toStack(1);
+                RecipeAdapterMatch match = core == null ? null : resolveAvailableRecipeVariantById(
+                        playerInventory.player.level(), core, cachedHolder.id(),
+                        requestedOutput, sources);
                 if (match == null) {
                     clearRecipePresentation();
                 } else {
@@ -1240,7 +1259,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (currentRecipes.isEmpty() || currentRecipeIndex >= currentRecipes.size()) return null;
         RecipeHolder<?> cachedHolder = currentRecipes.get(currentRecipeIndex);
         StorageCoreBlockEntity core = getCore(level);
-        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, cachedHolder.id());
+        if (core == null) return null;
+        List<IngredientSource> sources = snapshotIngredientSources(
+                core, playerInventory == null ? null : playerInventory.player);
+        ItemStack requestedOutput = selectedKey == null
+                ? ItemStack.EMPTY : selectedKey.toStack(1);
+        RecipeAdapterMatch match = resolveAvailableRecipeVariantById(
+                level, core, cachedHolder.id(), requestedOutput, sources);
         if (match == null) return null;
 
         ItemStack result = match.presentationOutput(List.of(), level);
@@ -1798,8 +1823,11 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     ) {
         Level level = core.getLevel();
         if (level == null) return false;
-        RecipeAdapterMatch currentMatch = resolveAvailableRecipeMatchById(
-                level, core, plannedMatch.holder().id());
+        ItemStack plannedOutput = plannedMatch.presentationOutput(List.of(), level);
+        if (plannedOutput.isEmpty()) return false;
+        List<IngredientSource> currentSources = snapshotIngredientSources(core, player);
+        RecipeAdapterMatch currentMatch = resolveAvailableRecipeVariantById(
+                level, core, plannedMatch.holder().id(), plannedOutput, currentSources);
         if (currentMatch == null
                 || !plannedMatch.validatesCommit(currentMatch.holder())
                 || !currentMatch.validatesCommit(currentMatch.holder())
@@ -1976,13 +2004,58 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return match != null && match.validatesSimulation(holder);
     }
 
-    private RecipeAdapterMatch resolveAvailableRecipeMatchById(
+    private RecipeAdapterMatch resolveAvailableRecipeVariantById(
             Level level,
             StorageCoreBlockEntity core,
-            ResourceLocation recipeId
+            ResourceLocation recipeId,
+            ItemStack requestedOutput,
+            List<IngredientSource> sources
     ) {
         RecipeHolder<?> holder = resolveRecipeById(level, core, recipeId);
-        return holder == null ? null : classifyAvailable(holder, core);
+        return holder == null ? null : resolveAvailableRecipeVariant(
+                holder, core, requestedOutput, sources, level);
+    }
+
+    private static RecipeAdapterMatch resolveAvailableRecipeVariant(
+            RecipeHolder<?> holder,
+            StorageCoreBlockEntity core,
+            ItemStack requestedOutput,
+            List<IngredientSource> sources,
+            Level level
+    ) {
+        RecipeAdapterMatch baseMatch = classifyAvailable(holder, core);
+        if (baseMatch == null) return null;
+        List<ItemStack> availableStacks = sources.stream()
+                .map(IngredientSource::stack)
+                .toList();
+        List<RecipeAdapterMatch> variants = baseMatch.resolveVariants(availableStacks, level);
+        if (requestedOutput == null || requestedOutput.isEmpty()) {
+            return variants.size() == 1 ? variants.getFirst() : null;
+        }
+        ItemStack exactOutput = TerminalDisplayStack.strip(requestedOutput);
+        for (RecipeAdapterMatch variant : variants) {
+            ItemStack output = variant.presentationOutput(List.of(), level);
+            if (ItemStack.isSameItemSameComponents(output, exactOutput)) return variant;
+        }
+        return null;
+    }
+
+    private static RecipeAdapterMatch resolveAvailableRecipeLookupVariant(
+            RecipeHolder<?> holder,
+            StorageCoreBlockEntity core,
+            ItemStack requestedOutput,
+            List<IngredientSource> sources,
+            Level level
+    ) {
+        RecipeAdapterMatch baseMatch = classifyAvailable(holder, core);
+        if (baseMatch == null || requestedOutput == null || requestedOutput.isEmpty()) return null;
+        ItemStack requested = TerminalDisplayStack.strip(requestedOutput);
+        List<ItemStack> availableStacks = sources.stream().map(IngredientSource::stack).toList();
+        List<RecipeAdapterMatch> variants = baseMatch.resolveVariants(availableStacks, level);
+        for (RecipeAdapterMatch variant : variants) {
+            if (variant.matchesLookupOutput(requested, level)) return variant;
+        }
+        return null;
     }
 
     private static RecipeAdapterMatch classifyAvailable(
@@ -2337,7 +2410,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (selectedRecipeId == null || selectedKey == null) return false;
         Level level = core.getLevel();
         if (level == null) return false;
-        RecipeAdapterMatch match = resolveAvailableRecipeMatchById(level, core, selectedRecipeId);
+        List<IngredientSource> sources = snapshotIngredientSources(
+                core, playerInventory == null ? null : playerInventory.player);
+        RecipeAdapterMatch match = resolveAvailableRecipeVariantById(
+                level, core, selectedRecipeId, selectedKey.toStack(1), sources);
         if (match == null) return false;
         ItemStack result = match.presentationOutput(List.of(), level);
         return !result.isEmpty()
@@ -2353,15 +2429,17 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         for (ResourceLocation recipeId : craftableRecipeCatalog.getCandidateRecipeIds(
                 level.getRecipeManager(), availableStacks)) {
             RecipeHolder<?> holder = level.getRecipeManager().byKey(recipeId).orElse(null);
-            RecipeAdapterMatch match = holder == null ? null : classifyAvailable(holder, core);
-            if (match == null) continue;
-            CraftPreview preview = computeCraftPreviewFor(match, core, sources);
-            if (preview.craftable() <= 0) continue;
-            ItemStack output = match.presentationOutput(List.of(), level);
-            if (output.isEmpty()) continue;
-            ItemKey key = ItemKey.of(output);
-            if (!StorageCoreBlockEntity.matchesFilter(key, currentFilter, level)) continue;
-            craftableAmounts.put(key, core.getItemCount(key));
+            RecipeAdapterMatch baseMatch = holder == null ? null : classifyAvailable(holder, core);
+            if (baseMatch == null) continue;
+            for (RecipeAdapterMatch match : baseMatch.resolveVariants(availableStacks, level)) {
+                CraftPreview preview = computeCraftPreviewFor(match, core, sources);
+                if (preview.craftable() <= 0) continue;
+                ItemStack output = match.presentationOutput(List.of(), level);
+                if (output.isEmpty()) continue;
+                ItemKey key = ItemKey.of(output);
+                if (!StorageCoreBlockEntity.matchesFilter(key, currentFilter, level)) continue;
+                craftableAmounts.put(key, core.getItemCount(key));
+            }
         }
         for (RecipeHolder<?> holder : axeTransformationCatalog.recipes(level, core)) {
             RecipeAdapterMatch match = classifyAvailable(holder, core);
@@ -2391,7 +2469,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (level == null) return false;
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
         for (RecipeHolder<?> holder : findRecipes(level, output)) {
-            RecipeAdapterMatch match = classifyAvailable(holder, core);
+            RecipeAdapterMatch match = resolveAvailableRecipeVariant(
+                    holder, core, output, sources, level);
             if (match != null && computeCraftPreviewFor(match, core, sources).craftable() > 0) {
                 return true;
             }
@@ -2405,15 +2484,15 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         RecipeManager manager = level.getRecipeManager();
         StorageCoreBlockEntity core = getCore(level);
         if (core == null) return recipes;
+        List<IngredientSource> sources = snapshotIngredientSources(
+                core, playerInventory == null ? null : playerInventory.player);
         for (RecipeType<?> type : BuiltInRecipeAdapters.discoveryTypes()) {
             @SuppressWarnings({"unchecked", "rawtypes"})
             Collection<RecipeHolder<?>> holders = (Collection) manager.getAllRecipesFor((RecipeType) type);
             for (RecipeHolder<?> holder : holders) {
-                RecipeAdapterMatch match = classifyAvailable(holder, core);
-                if (match == null) continue;
-                ItemStack result = match.presentationOutput(List.of(), level);
-                if (!result.isEmpty()
-                        && ItemStack.isSameItemSameComponents(result, output)) {
+                RecipeAdapterMatch match = resolveAvailableRecipeVariant(
+                        holder, core, output, sources, level);
+                if (match != null) {
                     recipes.add(holder);
                 }
             }

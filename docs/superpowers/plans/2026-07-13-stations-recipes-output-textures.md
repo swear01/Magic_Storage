@@ -3,6 +3,8 @@
 > Status: production implementation, focused RED → GREEN tests, and final automated gates are complete. 0.1.15 Prism deployment and the user-owned fullscreen visual verdict are explicitly deferred.
 >
 > Extends `2026-07-12-fuel-craftable-emi-adaptive-ui.md`; it does not replace that document's Fuel, Craftable, EMI packet, or adaptive-layout contracts.
+>
+> Historical scope note: Smithing Trim was intentionally unsupported in this 0.1.15 slice; GitHub #2's 2026-07-17 exact component-preserving slice supersedes that boundary. Current recipe truth lives in `docs/notes.md` and `docs/superpowers/plans/2026-07-14-modded-recipes-multistep-crafting.md`.
 
 ## User-visible goals
 
@@ -48,7 +50,7 @@ Patterns are references only; no source is copied verbatim.
 - Crafting and stonecutting require their station and cost no energy. Cooking requires its matching installed machine and consumes the concrete recipe's cooking time from both process energy and Fuel.
 - Exact smithing transforms require a Smithing Table. Template/base/addition matchers delegate to the concrete recipe against actual source stacks, including component-sensitive custom Ingredients; they are jointly reserved, and execution calls `SmithingTransformRecipe.assemble` for every exact allocated base identity so damage, name, enchantments, and other base components survive.
 - Axe transformations require a currently installed compatible tool. Each craft consumes exactly one raw durability point; Unbreaking randomness is intentionally not simulated. Material and tool mutation are one atomic transaction.
-- Smithing trim, special/incomplete/dynamic subclasses, brewing execution, loom/cartography/grindstone/anvil/enchanting, arbitrary block-state recipes, and event/player-context-only transformations remain unsupported and fail closed.
+- In this historical 0.1.15 slice, Smithing Trim shared the unsupported boundary with special/incomplete/dynamic subclasses, brewing execution, loom/cartography/grindstone/anvil/enchanting, arbitrary block-state recipes, and event/player-context-only transformations. Current exact concrete Smithing Trim support is documented in the replacement plan above; the other boundaries remain fail closed.
 - Synthetic axe recipe holders are internal catalog entries. They are never registered as datapack serializers or sent through `RecipeManager` serialization.
 
 ### Recipe workspace
@@ -79,7 +81,7 @@ Patterns are references only; no source is copied verbatim.
 
 - Output safety was driven by full-inventory, partial-inventory, Core-overflow, blocked-output, direct craft, EMI destination, Max, largest-deliverable fallback, and cross-`Integer.MAX_VALUE` craft/Core reservation/output regressions.
 - Station gating was driven by missing/installed station tests, machine persistence/menu parity, and non-energy station assertions.
-- Smithing began with unsupported/execution failures, then added exact transform, component preservation, distinct component output routing, and unsupported trim/dynamic boundaries.
+- Smithing began with unsupported/execution failures, then added exact transform, component preservation, distinct component output routing, and the then-current unsupported Trim/dynamic boundaries; later GitHub #2 coverage supersedes only the Trim boundary.
 - Axe support began with strip/scrape/wax-off and blocked-output failures, then added raw durability, installed-tool identity, and atomic rollback coverage.
 - Fuel layout began with missing geometry/static-contract failures, then added two-row descriptor flow, full-width wide panels, control-panel occupancy, and one-source hitbox/render checks.
 - Texture tests first caught three referenced 32×32 assets, then passed after all model-referenced assets became 16×16.

@@ -61,7 +61,7 @@ Patterns are references only; no source is copied verbatim.
   - smoking → `SMOKING_ENERGY + FURNACE_FUEL`
   - campfire cooking → `CAMPFIRE_ENERGY + FURNACE_FUEL`
 - A non-positive cooking time is unsupported and fails closed; no default timing is substituted.
-- Crafting and stonecutting remain instant/no-energy. The 0.1.15 extension adds exact component-matched/preserving `SmithingTransformRecipe` plus deterministic vanilla default-state axe strip/scrape/wax-off; mod block hooks, Smithing Trim, dynamic/special subclasses, context-dependent transformations, and Brewing remain outside the executable contract.
+- Crafting and stonecutting remain instant/no-energy. The 0.1.15 extension added exact component-matched/preserving `SmithingTransformRecipe` plus deterministic vanilla default-state axe strip/scrape/wax-off; at that revision mod block hooks, Smithing Trim, dynamic/special subclasses, context-dependent transformations, and Brewing remained outside the executable contract. GitHub #2's 2026-07-17 slice later added exact concrete Smithing Trim only; the other exclusions remain current.
 - Preview and execution both resolve the recipe ID again from the current server `RecipeManager` and call the same cost resolver. Cached `RecipeHolder` instances are never trusted after reload.
 - Machine production remains installed machine count per server tick. A recipe therefore spends the exact processing time accumulated by its matching machines.
 
@@ -258,7 +258,7 @@ The runner opens the offline native client and hands control to the user. It doe
 
 - Recursive RS2-style autocrafting or queued jobs.
 - Full client-side mirror of the network inventory for EMI synthetic favorites.
-- Smithing Trim, dynamic/context-dependent transformations, or production brewing support. Exact component-preserving Smithing Transform is covered by the 0.1.15 extension.
+- For this historical revision: Smithing Trim, dynamic/context-dependent transformations, and production brewing support were non-goals. Exact component-preserving Smithing Transform was covered by 0.1.15; exact concrete Smithing Trim was added later by GitHub #2, while the dynamic/context/brewing exclusions remain.
 - Saved-data ID migration or removal of Brew/Bottle reserved pools.
 - Runtime third-party machine/energy descriptor registration in 0.1.15. This was intentionally outside this revision; the later server-owned registry, client synchronization, fixed 256-slot parity, and stable-ID migration contract is now implemented and documented in `docs/machine-descriptor-api.md`.
 - A new GUI library or copied third-party assets/source.

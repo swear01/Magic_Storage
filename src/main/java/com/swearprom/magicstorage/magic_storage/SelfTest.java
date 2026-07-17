@@ -20,6 +20,7 @@ import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapedRecipePattern;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.item.crafting.SmeltingRecipe;
+import net.minecraft.world.item.crafting.SmithingTrimRecipe;
 import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.minecraft.world.item.crafting.SmokingRecipe;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
@@ -45,6 +46,7 @@ class SelfTest {
         testRecipeAdapterFoundation();
         testRecipeAdapterRegistryContract();
         testBuiltInRecipeAdapterFamilies();
+        testSmithingTrimAdapterFoundation();
         testRecipeAdapterCandidateCoverage();
         testRecipeAdapterReloadIdentity();
         testEnergyType();
@@ -338,6 +340,25 @@ class SelfTest {
                         current -> true
                 );
             }
+
+            @Override
+            public List<RecipeAdapterMatch.Contract> resolveVariants(
+                    RecipeHolder<?> holder,
+                    List<ItemStack> availableStacks,
+                    net.minecraft.world.level.Level level
+            ) {
+                return List.of(contract(holder));
+            }
+
+            @Override
+            public boolean matchesLookupOutput(
+                    RecipeHolder<?> holder,
+                    RecipeAdapterMatch.Contract variantContract,
+                    ItemStack requestedOutput,
+                    net.minecraft.world.level.Level level
+            ) {
+                return false;
+            }
         };
     }
 
@@ -371,6 +392,10 @@ class SelfTest {
                         Ingredient.of(Items.DIAMOND_SWORD),
                         Ingredient.of(Items.NETHERITE_INGOT),
                         new ItemStack(Items.NETHERITE_SWORD))),
+                new RecipeHolder<>(testRecipeId("smithing_trim"), new SmithingTrimRecipe(
+                        Ingredient.of(Items.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE),
+                        Ingredient.of(Items.IRON_CHESTPLATE),
+                        Ingredient.of(Items.REDSTONE))),
                 new RecipeHolder<>(testRecipeId("axe"), new AxeTransformationRecipe(
                         Ingredient.of(Items.OAK_LOG), new ItemStack(Items.STRIPPED_OAK_LOG),
                         ItemAbilities.AXE_STRIP))
@@ -384,6 +409,7 @@ class SelfTest {
                 ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "campfire_cooking"),
                 ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "stonecutting"),
                 ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "smithing_transform"),
+                ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "smithing_trim"),
                 ResourceLocation.fromNamespaceAndPath(MagicStorage.MODID, "axe_transformation")
         );
 
@@ -408,6 +434,57 @@ class SelfTest {
 
     private static ResourceLocation testRecipeId(String path) {
         return ResourceLocation.fromNamespaceAndPath("test_mod", path);
+    }
+
+    private static void testSmithingTrimAdapterFoundation() {
+        ResourceLocation recipeId = testRecipeId("smithing_trim");
+        SmithingTrimRecipe recipe = new SmithingTrimRecipe(
+                Ingredient.of(Items.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE),
+                Ingredient.of(Items.IRON_CHESTPLATE),
+                Ingredient.of(Items.REDSTONE));
+        RecipeHolder<SmithingTrimRecipe> holder = new RecipeHolder<>(recipeId, recipe);
+        RecipeAdapterMatch match = BuiltInRecipeAdapters.registry().classify(holder).orElse(null);
+
+        assertTrue("exact Smithing Trim recipes select a dedicated stable adapter",
+                match != null && match.adapterId().equals(ResourceLocation.fromNamespaceAndPath(
+                        MagicStorage.MODID, "smithing_trim")));
+        assertTrue("Smithing Trim delegates exact template base and addition predicates",
+                match != null && match.orderedInputs().size() == 3
+                        && match.orderedInputs().get(0).test(
+                        new ItemStack(Items.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE))
+                        && !match.orderedInputs().get(0).test(new ItemStack(Items.DUNE_ARMOR_TRIM_SMITHING_TEMPLATE))
+                        && match.orderedInputs().get(1).test(new ItemStack(Items.IRON_CHESTPLATE))
+                        && !match.orderedInputs().get(1).test(new ItemStack(Items.IRON_SWORD))
+                        && match.orderedInputs().get(2).test(new ItemStack(Items.REDSTONE))
+                        && !match.orderedInputs().get(2).test(new ItemStack(Items.GOLD_INGOT)));
+        assertTrue("Smithing Trim requires the Smithing Table station",
+                match != null
+                        && match.stationDescriptorId().equals(MachineEnergyTable.SMITHING_TABLE_ID));
+
+        RecipeHolder<SmithingTrimRecipe> replacement = new RecipeHolder<>(recipeId,
+                new SmithingTrimRecipe(
+                        Ingredient.of(Items.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE),
+                        Ingredient.of(Items.IRON_CHESTPLATE),
+                        Ingredient.of(Items.REDSTONE)));
+        assertTrue("Smithing Trim matches reject a stale same-ID holder",
+                match != null && !match.validatesSimulation(replacement)
+                        && !match.validatesCommit(replacement));
+
+        SmithingTrimRecipe dynamicSubclass = new SmithingTrimRecipe(
+                Ingredient.of(Items.SENTRY_ARMOR_TRIM_SMITHING_TEMPLATE),
+                Ingredient.of(Items.IRON_CHESTPLATE),
+                Ingredient.of(Items.REDSTONE)) {
+        };
+        assertTrue("dynamic Smithing Trim subclasses remain unsupported",
+                BuiltInRecipeAdapters.registry().classify(
+                        new RecipeHolder<>(testRecipeId("dynamic_smithing_trim"), dynamicSubclass)).isEmpty());
+        assertTrue("incomplete Smithing Trim recipes remain unsupported",
+                BuiltInRecipeAdapters.registry().classify(new RecipeHolder<>(
+                        testRecipeId("incomplete_smithing_trim"),
+                        new SmithingTrimRecipe(
+                                Ingredient.of(),
+                                Ingredient.of(Items.IRON_CHESTPLATE),
+                                Ingredient.of(Items.REDSTONE)))).isEmpty());
     }
 
     private static void testRecipeAdapterCandidateCoverage() {

@@ -101,6 +101,25 @@ record RecipeAdapterMatch(
         return presentation().outputResolver().resolve(orderedInputs, level);
     }
 
+    List<RecipeAdapterMatch> resolveVariants(List<ItemStack> availableStacks, Level level) {
+        Objects.requireNonNull(availableStacks, "availableStacks");
+        List<ItemStack> snapshot = availableStacks.stream()
+                .filter(stack -> !stack.isEmpty())
+                .map(stack -> stack.copyWithCount(1))
+                .toList();
+        return adapter.resolveVariants(holder, snapshot, level).stream()
+                .map(variantContract -> {
+                    Objects.requireNonNull(variantContract, "variantContract");
+                    return new RecipeAdapterMatch(adapter, holder, candidateIndex, variantContract);
+                })
+                .toList();
+    }
+
+    boolean matchesLookupOutput(ItemStack requestedOutput, Level level) {
+        Objects.requireNonNull(requestedOutput, "requestedOutput");
+        return adapter.matchesLookupOutput(holder, contract, requestedOutput, level);
+    }
+
     record Contract(
             List<Input> orderedInputs,
             ResourceLocation stationDescriptorId,

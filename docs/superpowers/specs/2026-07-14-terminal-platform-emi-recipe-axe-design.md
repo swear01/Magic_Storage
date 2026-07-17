@@ -64,7 +64,7 @@ The workspace is split vertically:
 2. a compact resource ledger below it;
 3. recipe navigation, output destination, and craft-amount actions in the footer.
 
-Crafting uses a positioned 3x3 grid, a processing arrow, a large output slot, and a shapeless marker where applicable. Cooking, stonecutting, smithing transform, and synthetic axe transformations have dedicated presentations matching their real input roles. The output slot displays the exact result count. Empty space is not divided into nine fixed resource cells.
+Crafting uses a positioned 3x3 grid, a processing arrow, a large output slot, and a shapeless marker where applicable. Cooking, stonecutting, smithing transform/trim, and synthetic axe transformations have dedicated presentations matching their real input roles. Smithing Trim reuses the three-role Smithing presentation but carries the selected source-backed exact output identity. The output slot displays the exact result count. Empty space is not divided into nine fixed resource cells.
 
 The selected station is shown once as a subdued lower-right badge so it supplies context without reading as another ingredient. Selecting an item with no supported recipe keeps that item selected and shows a neutral localized no-recipe message instead of an error state.
 

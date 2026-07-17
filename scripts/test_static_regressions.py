@@ -531,6 +531,7 @@ class StaticRegressionTests(unittest.TestCase):
             "ShapelessRecipe",
             "SmithingRecipeInput",
             "SmithingTransformRecipe",
+            "SmithingTrimRecipe",
             "AxeTransformationRecipe",
         ):
             self.assertNotIn(family_policy, menu)
@@ -543,6 +544,7 @@ class StaticRegressionTests(unittest.TestCase):
             "checkedOutput",
             "remainders",
             "presentation",
+            "resolveVariants",
             "validatesSimulation",
             "validatesCommit",
         ):
@@ -1623,6 +1625,48 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("extractItemCount(", precheck)
         self.assertNotIn("while (remaining > 0)", commit)
         self.assertNotIn("while (remaining > 0)", precheck)
+
+    def test_smithing_variant_paths_bind_same_id_to_exact_selected_output(self):
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java"
+        )
+        adapters = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/BuiltInRecipeAdapters.java"
+        )
+        match_contract = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/RecipeAdapterMatch.java"
+        )
+        commit = self.java_block(
+            menu,
+            r"\bprivate\s+boolean\s+commitCraft\s*\(",
+            "CraftingTerminalMenu.commitCraft",
+        )
+        variant_lookup = self.java_block(
+            menu,
+            r"\bprivate\s+static\s+RecipeAdapterMatch\s+resolveAvailableRecipeVariant\s*\(",
+            "CraftingTerminalMenu.resolveAvailableRecipeVariant",
+        )
+        variant_resolution = self.java_block(
+            match_contract,
+            r"\bList<RecipeAdapterMatch>\s+resolveVariants\s*\(",
+            "RecipeAdapterMatch.resolveVariants",
+        )
+        self.assertIn("resolveAvailableRecipeVariantById(", commit)
+        self.assertNotIn("resolveAvailableRecipeMatchById(", menu)
+        self.assertIn("plannedMatch.presentationOutput(List.of(), level)", commit)
+        self.assertIn("ItemStack.isSameItemSameComponents", variant_lookup)
+        self.assertNotIn("presentationOutput(List.of(), level)", variant_resolution)
+        self.assertNotIn("SMITHING_TRANSFORM_ID", menu)
+        self.assertIn("matchesLookupOutput", match_contract)
+        self.assertIn("matchesLookupOutput", adapters)
+        self.assertRegex(
+            adapters,
+            r"SMITHING_TRANSFORM_ID[\s\S]*?BuiltInRecipeAdapters::smithingVariants",
+        )
+        self.assertRegex(
+            adapters,
+            r"SMITHING_TRIM_ID[\s\S]*?BuiltInRecipeAdapters::smithingVariants",
+        )
 
     def test_recipe_workspace_stacks_diagram_above_ledger_and_footer(self):
         layout = self.read_required(
