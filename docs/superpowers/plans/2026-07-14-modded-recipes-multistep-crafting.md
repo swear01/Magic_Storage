@@ -151,6 +151,18 @@ Keep EMI required on clients, absent from dedicated-server requirements, and lim
 
 Before Phase 2 implementation, record the chosen mod, exact mod/version/license/source, recipe type/class, station item, inputs/outputs/remainders, assembly semantics, and optional dependency policy. If any of those cannot be established from source or official API, stop rather than guessing.
 
+## 2026-07-20 compatibility test target audit
+
+External mods enter a test runtime only with assertions for the contract they are meant to prove. A boot-only collection is not a compatibility test and must not make normal CI depend on unrelated large artifacts.
+
+| Target | Audited 1.21.1 baseline | Contract to prove | Boundary |
+|---|---|---|---|
+| Applied Energistics 2 | [19.2.17](https://github.com/AppliedEnergistics/Applied-Energistics-2/releases/tag/neoforge/v19.2.17), LGPL-3.0 | An AE2 item in `c:tools/wrench` rotates and safely removes Magic Storage blocks; AE2 recipes using exact vanilla classes remain craftable. Charger is the second custom-family candidate because it is one item input to one fixed output. | GuideME is required. Inscriber is deferred: PRESS consumes optional plates while INSCRIBE retains them, so it needs explicit catalyst/remainder semantics rather than Charger assumptions. |
+| Sophisticated Storage | [1.21.1-1.5.80.1999](https://modrinth.com/mod/sophisticated-storage/version/IfMsqcCe), All Rights Reserved | Directional Import, passive Import, and Export interact with its registered block `Capabilities.ItemHandler.BLOCK` without duplication, loss, slot-order drift, or bypassing Magic Storage filters. | Sophisticated Core is required. This target tests bus capability interoperability, not recipe-adapter support; test jobs may fetch the official artifact but must never redistribute or bundle it. |
+| Mekanism | [10.7.19.85](https://github.com/mekanism/Mekanism/releases/tag/v1.21.1-10.7.19.85), MIT | First custom recipe adapter candidate: bounded Enriching and Crushing `ItemStackToItemStackRecipe` families, exact source stack, output/components/count, station/energy, capacity, reload, and rollback. | Start with deterministic item-to-item recipes only. Chemical/fluid, secondary/chance output, and machine-world side effects remain unsupported. |
+
+The main CI prerequisite is a repository-owned addon fixture proving that a separate mod can register process, instant, and consumable descriptors through `MachineDescriptorApi`. Real-mod present/absent matrices belong in an independently pinned compatibility job after the corresponding behavior assertions exist; they must not silently pass when the target mod failed to load.
+
 ## Non-goals for the first multi-step release
 
 - EMI internal `BoM`/`MaterialTree` linkage or reflection.

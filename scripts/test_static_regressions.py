@@ -637,8 +637,8 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertRegex(
             build,
-            r'fusionRuntimeRuntimeOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
-            "the isolated client/data runtime must exercise the full EMI mod",
+            r'fusionRuntimeRuntimeOnly\s+"maven\.modrinth:emi:\$\{emi_runtime_version\}"',
+            "the isolated client/data runtime must use the Modrinth full EMI artifact",
         )
         self.assertNotRegex(
             build,
@@ -648,13 +648,22 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("emiRuntime", build)
         self.assertRegex(
             build,
-            r'emiRuntime\s+"dev\.emi:emi-neoforge:\$\{emi_version\}"',
+            r'emiRuntime\s+"maven\.modrinth:emi:\$\{emi_runtime_version\}"',
         )
         self.assertIn('tasks.register("stageEmiRuntime", Copy)', build)
         self.assertIn("from configurations.emiRuntime", build)
         self.assertIn('into layout.buildDirectory.dir("client-smoke-mods")', build)
+        self.assertIn("def stagedEmiVersion = project.emi_version.toString()", build)
+        self.assertIn('rename { "emi-neoforge-${stagedEmiVersion}.jar" }', build)
+        self.assertNotIn('rename { "emi-neoforge-${emi_version}.jar" }', build)
         self.assertIn("emi_version=1.1.24+1.21.1", properties)
+        self.assertIn("emi_runtime_version=5sIPA1To", properties)
         self.assertIn("emi_version_range=[1.1.24,2)", properties)
+        self.assertNotRegex(
+            build,
+            r'(?m)^\s*(?:fusionRuntimeRuntimeOnly|emiRuntime)\s+"dev\.emi:',
+            "TerraformersMC must supply only the dedicated compile API artifact",
+        )
         self.assertRegex(build, r"emi_version_range\s*:\s*emi_version_range")
         self.assertRegex(
             metadata,

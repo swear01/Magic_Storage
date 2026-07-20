@@ -35,8 +35,8 @@ Current main keeps the explicit Storage/Craftable/Fuel tabs and ships nine built
 
 GitHub Actions runs on pushes to `main`, pull requests, and manual dispatch:
 
-- `.github/workflows/ci.yml` builds the mod, compiles against both the minimum and newest compatible EMI 1.21.1 API, runs `./gradlew runGameTestServer`, Python tests, and the `./gradlew runData` drift check, then uploads the jar and diagnostics. Client datagen stages EMI through `scripts/stage_emi_runtime.sh`, retrying the same Gradle command once after a transient failure and then failing explicitly.
-- `.github/workflows/client-smoke.yml` is manual-only (`workflow_dispatch`); it resolves and stages the newest compatible EMI client jar through the same single-retry script before launching HeadlessMC / MC-Runtime-Test. It catches client boot/resource crashes but is not GUI layout approval.
+- `.github/workflows/ci.yml` builds the mod, compiles against both the minimum and newest compatible EMI 1.21.1 API from EMI's developer Maven, runs `./gradlew runGameTestServer`, Python tests, and the `./gradlew runData` drift check, then uploads the jar and diagnostics. Full client/data EMI jars come from an exact Modrinth version ID through `scripts/stage_emi_runtime.sh`; after a transient failure the script retries the same Gradle command once and then fails explicitly.
+- `.github/workflows/client-smoke.yml` is manual-only (`workflow_dispatch`); it maps the newest compatible API version to the exact NeoForge 1.21.1 Modrinth runtime before launching HeadlessMC / MC-Runtime-Test. It catches client boot/resource crashes but is not GUI layout approval.
 - `.github/workflows/release.yml` runs when a tag `v<mod_version>` is pushed, verifies the tag matches `gradle.properties`, repeats every CI gate including the EMI minimum/latest compile checks, generates release notes, and publishes the jar.
 
 Release example:

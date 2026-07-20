@@ -67,7 +67,8 @@ jobs:
         run: |
           set -o pipefail
           MIN_EMI="$(sed -n 's/^emi_version=//p' gradle.properties)"
-          bash scripts/stage_emi_runtime.sh "$MIN_EMI" 2>&1 | tee build/ci-logs/emi-runtime.log
+          MIN_EMI_RUNTIME="$(python3 scripts/resolve_emi_runtime.py "$MIN_EMI")"
+          bash scripts/stage_emi_runtime.sh "$MIN_EMI" "$MIN_EMI_RUNTIME" 2>&1 | tee build/ci-logs/emi-runtime.log
           ./gradlew runData --console=plain --no-daemon 2>&1 | tee build/ci-logs/datagen.log
           if [ -n "$(git status --porcelain -- src/generated/resources src/main/resources)" ]; then
             echo "Datagen changed tracked or generated resources; run ./gradlew runData and commit the result." >&2

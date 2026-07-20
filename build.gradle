@@ -107,14 +107,16 @@ dependencies {
     compileOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
     runtimeOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
     compileOnly "dev.emi:emi-neoforge:${emi_version}:api"
-    fusionRuntimeRuntimeOnly "dev.emi:emi-neoforge:${emi_version}"
-    emiRuntime "dev.emi:emi-neoforge:${emi_version}"
+    fusionRuntimeRuntimeOnly "maven.modrinth:emi:${emi_runtime_version}"
+    emiRuntime "maven.modrinth:emi:${emi_runtime_version}"
     fusionRuntimeRuntimeOnly "maven.modrinth:fusion-connected-textures:h2GrA0Ku"
 }
 
+def stagedEmiVersion = project.emi_version.toString()
 tasks.register("stageEmiRuntime", Copy) {
     from configurations.emiRuntime
     into layout.buildDirectory.dir("client-smoke-mods")
+    rename { "emi-neoforge-${stagedEmiVersion}.jar" }
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {

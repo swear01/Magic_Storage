@@ -12,7 +12,12 @@ SCRIPT = ROOT / "scripts" / "stage_emi_runtime.sh"
 
 
 class StageEmiRuntimeTests(unittest.TestCase):
-    def run_stage(self, exit_codes: list[int], version: str | None = "1.1.24+1.21.1"):
+    def run_stage(
+        self,
+        exit_codes: list[int],
+        version: str | None = "1.1.24+1.21.1",
+        runtime_version: str | None = "5sIPA1To",
+    ):
         self.assertTrue(SCRIPT.exists(), "missing scripts/stage_emi_runtime.sh")
         with tempfile.TemporaryDirectory() as temp_dir:
             project = Path(temp_dir)
@@ -37,6 +42,8 @@ class StageEmiRuntimeTests(unittest.TestCase):
             command = ["bash", str(SCRIPT)]
             if version is not None:
                 command.append(version)
+                if runtime_version is not None:
+                    command.append(runtime_version)
             environment = os.environ.copy()
             environment.update(
                 {
@@ -74,6 +81,7 @@ class StageEmiRuntimeTests(unittest.TestCase):
             [
                 "stageEmiRuntime",
                 "-Pemi_version=1.1.24+1.21.1",
+                "-Pemi_runtime_version=5sIPA1To",
                 "--console=plain",
                 "--no-daemon",
             ],
@@ -92,6 +100,20 @@ class StageEmiRuntimeTests(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertEqual([], calls)
+        self.assertIn(
+            "usage: stage_emi_runtime.sh <emi-version> <modrinth-version-id>",
+            result.stderr,
+        )
+
+    def test_missing_runtime_version_fails_before_gradle(self):
+        result, calls = self.run_stage([0], runtime_version=None)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual([], calls)
+        self.assertIn(
+            "usage: stage_emi_runtime.sh <emi-version> <modrinth-version-id>",
+            result.stderr,
+        )
 
 
 if __name__ == "__main__":
