@@ -132,6 +132,26 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("gradle/actions/setup-gradle@v6", text)
         self.assertIn("./gradlew build --console=plain --no-daemon", text)
         self.assertIn("cp build/libs/magic_storage-*.jar run/mods/", text)
+        self.assertIn(
+            "./gradlew stageClientSmokeSupportMods --console=plain --no-daemon",
+            text,
+        )
+        self.assertIn(
+            "cp build/client-smoke-mods/patchouli-neoforge.jar run/mods/",
+            text,
+        )
+        self.assertIn(
+            "cp build/client-smoke-mods/fusion-connected-textures.jar run/mods/",
+            text,
+        )
+        self.assertIn(
+            'python3 -m zipfile -t "run/mods/patchouli-neoforge.jar"',
+            text,
+        )
+        self.assertIn(
+            'python3 -m zipfile -t "run/mods/fusion-connected-textures.jar"',
+            text,
+        )
         self.assertIn('EMI_VERSION="$(python3 scripts/resolve_emi_version.py)"', text)
         self.assertIn('EMI_RUNTIME_VERSION="$(python3 scripts/resolve_emi_runtime.py "$EMI_VERSION")"', text)
         self.assertIn('bash scripts/stage_emi_runtime.sh "$EMI_VERSION" "$EMI_RUNTIME_VERSION"', text)
@@ -140,6 +160,7 @@ class GitHubWorkflowTests(unittest.TestCase):
         self.assertIn("python3 -m zipfile -t", text)
         self.assertNotIn("curl ", text)
         self.assertIn("headlesshq/mc-runtime-test@4.4.0", text)
+        self.assertIn("timeout-minutes: 10", text)
         self.assertIn("mc: '1.21.1'", text)
         self.assertIn("modloader: neoforge", text)
         self.assertIn("regex: '.*neoforge.*'", text)

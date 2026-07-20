@@ -35,6 +35,11 @@ jobs:
         run: |
           mkdir -p run/mods
           cp build/libs/magic_storage-*.jar run/mods/
+          ./gradlew stageClientSmokeSupportMods --console=plain --no-daemon
+          cp build/client-smoke-mods/patchouli-neoforge.jar run/mods/
+          cp build/client-smoke-mods/fusion-connected-textures.jar run/mods/
+          python3 -m zipfile -t "run/mods/patchouli-neoforge.jar"
+          python3 -m zipfile -t "run/mods/fusion-connected-textures.jar"
           EMI_VERSION="$(python3 scripts/resolve_emi_version.py)"
           EMI_RUNTIME_VERSION="$(python3 scripts/resolve_emi_runtime.py "$EMI_VERSION")"
           bash scripts/stage_emi_runtime.sh "$EMI_VERSION" "$EMI_RUNTIME_VERSION"
@@ -44,6 +49,7 @@ jobs:
       # Client Smoke is a boot/resource smoke test, not GUI layout approval.
       # Manual Prism dev / Computer Use remains required for visible GUI/Patchouli changes.
       - name: Run NeoForge client smoke
+        timeout-minutes: 10
         uses: headlesshq/mc-runtime-test@4.4.0
         with:
           mc: '1.21.1'

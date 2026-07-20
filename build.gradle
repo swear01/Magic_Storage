@@ -80,6 +80,16 @@ configurations {
         canBeResolved = true
         transitive = false
     }
+    clientSmokePatchouli {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+    clientSmokeFusion {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
 }
 
 repositories {
@@ -110,6 +120,8 @@ dependencies {
     fusionRuntimeRuntimeOnly "maven.modrinth:emi:${emi_runtime_version}"
     emiRuntime "maven.modrinth:emi:${emi_runtime_version}"
     fusionRuntimeRuntimeOnly "maven.modrinth:fusion-connected-textures:h2GrA0Ku"
+    clientSmokePatchouli "vazkii.patchouli:Patchouli:${patchouli_version}"
+    clientSmokeFusion "maven.modrinth:fusion-connected-textures:h2GrA0Ku"
 }
 
 def stagedEmiVersion = project.emi_version.toString()
@@ -117,6 +129,16 @@ tasks.register("stageEmiRuntime", Copy) {
     from configurations.emiRuntime
     into layout.buildDirectory.dir("client-smoke-mods")
     rename { "emi-neoforge-${stagedEmiVersion}.jar" }
+}
+
+tasks.register("stageClientSmokeSupportMods", Copy) {
+    into layout.buildDirectory.dir("client-smoke-mods")
+    from(configurations.clientSmokePatchouli) {
+        rename { "patchouli-neoforge.jar" }
+    }
+    from(configurations.clientSmokeFusion) {
+        rename { "fusion-connected-textures.jar" }
+    }
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {

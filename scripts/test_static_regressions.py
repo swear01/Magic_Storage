@@ -664,6 +664,11 @@ class StaticRegressionTests(unittest.TestCase):
             r'(?m)^\s*(?:fusionRuntimeRuntimeOnly|emiRuntime)\s+"dev\.emi:',
             "TerraformersMC must supply only the dedicated compile API artifact",
         )
+        self.assertIn("clientSmokePatchouli", build)
+        self.assertIn("clientSmokeFusion", build)
+        self.assertIn('tasks.register("stageClientSmokeSupportMods", Copy)', build)
+        self.assertIn('rename { "patchouli-neoforge.jar" }', build)
+        self.assertIn('rename { "fusion-connected-textures.jar" }', build)
         self.assertRegex(build, r"emi_version_range\s*:\s*emi_version_range")
         self.assertRegex(
             metadata,
