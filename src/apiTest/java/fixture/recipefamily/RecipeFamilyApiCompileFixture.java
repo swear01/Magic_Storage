@@ -6,9 +6,27 @@ import com.swearprom.magicstorage.magic_storage.RecipeFamilyApi;
 import com.swearprom.magicstorage.magic_storage.RecipeFamilyCost;
 import com.swearprom.magicstorage.magic_storage.RecipeFamilyFactories;
 import com.swearprom.magicstorage.magic_storage.RecipePresentationKind;
+import com.swearprom.magicstorage.magic_storage.StorageResourceKey;
+import com.swearprom.magicstorage.magic_storage.StorageResourceKind;
+import com.swearprom.magicstorage.magic_storage.StorageResourceKindApi;
+import com.swearprom.magicstorage.magic_storage.StorageResourceCapabilities;
+import com.swearprom.magicstorage.magic_storage.StorageResourceHandler;
+import com.swearprom.magicstorage.magic_storage.StorageResourceTransaction;
+import com.swearprom.magicstorage.magic_storage.TypedRecipeInput;
+import com.swearprom.magicstorage.magic_storage.TypedRecipeOutput;
+import com.swearprom.magicstorage.magic_storage.TypedRecipePlan;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidStack;
+
+import java.util.List;
 
 public final class RecipeFamilyApiCompileFixture {
     private RecipeFamilyApiCompileFixture() {
@@ -25,9 +43,99 @@ public final class RecipeFamilyApiCompileFixture {
                 RecipePresentationKind.STONECUTTING);
     }
 
+    public static RecipeFamily createTyped() {
+        return RecipeFamilyFactories.deterministicResources(
+                StonecutterRecipe.class,
+                () -> RecipeType.STONECUTTING,
+                MachineEnergyTable.STONECUTTER_ID,
+                (recipe, registries) -> TypedRecipePlan.builder()
+                        .input(TypedRecipeInput.consume(resource("mana", "blue"), 100))
+                        .input(TypedRecipeInput.catalyst(resource("item", "diamond"), 1))
+                        .input(TypedRecipeInput.tool(resource("item", "iron_pickaxe"), 1))
+                        .output(TypedRecipeOutput.primary(resource("item", "redstone"), 2))
+                        .output(TypedRecipeOutput.remainder(resource("mana", "blue"), 25))
+                        .presentationOutput(new ItemStack(Items.REDSTONE, 2))
+                        .layout(3, 1, false)
+                        .build(),
+                recipe -> RecipeFamilyCost.free(),
+                RecipePresentationKind.STONECUTTING);
+    }
+
     public static DeferredRegister<RecipeFamily> register() {
         DeferredRegister<RecipeFamily> families = RecipeFamilyApi.createDeferredRegister("fixture_mod");
         families.register("stonecutting", RecipeFamilyApiCompileFixture::create);
         return families;
+    }
+
+    public static DeferredRegister<StorageResourceKind> registerResourceKinds() {
+        DeferredRegister<StorageResourceKind> kinds =
+                StorageResourceKindApi.createDeferredRegister("fixture_mod");
+        kinds.register("mana", () -> StorageResourceKind.variantAware(
+                () -> new ItemStack(Items.AMETHYST_SHARD)));
+        return kinds;
+    }
+
+    public static StorageResourceTransaction typedTransaction() {
+        StorageResourceKey mana = StorageResourceKey.of(
+                ResourceLocation.fromNamespaceAndPath("fixture_mod", "mana"),
+                ResourceLocation.fromNamespaceAndPath("fixture_mod", "blue"),
+                new CompoundTag());
+        StorageResourceKey dust = StorageResourceKey.of(
+                StorageResourceKindApi.ITEM_KIND,
+                ResourceLocation.fromNamespaceAndPath("minecraft", "redstone"),
+                new CompoundTag());
+        return StorageResourceTransaction.builder()
+                .add(mana, -100)
+                .add(dust, 1)
+                .build();
+    }
+
+    public static StorageResourceHandler resourceHandler() {
+        return new StorageResourceHandler() {
+            @Override
+            public List<StorageResourceKey> getStoredResources() {
+                return List.of();
+            }
+
+            @Override
+            public long getAmount(StorageResourceKey key) {
+                return 0;
+            }
+
+            @Override
+            public long insert(StorageResourceKey key, long amount, boolean simulate) {
+                return 0;
+            }
+
+            @Override
+            public long extract(StorageResourceKey key, long amount, boolean simulate) {
+                return 0;
+            }
+        };
+    }
+
+    public static Object resourceBlockCapability() {
+        return StorageResourceCapabilities.BLOCK;
+    }
+
+    public static List<StorageResourceKey> canonicalBuiltInKeys(HolderLookup.Provider registries) {
+        StorageResourceKey item = StorageResourceKey.item(
+                new ItemStack(Items.DIAMOND), registries);
+        StorageResourceKey fluid = StorageResourceKey.fluid(
+                new FluidStack(Fluids.WATER, 1), registries);
+        item.itemStack(registries).orElseThrow();
+        fluid.fluidStack(1, registries).orElseThrow();
+        return List.of(item, fluid, StorageResourceKey.neoforgeEnergy());
+    }
+
+    private static StorageResourceKey resource(String kind, String path) {
+        ResourceLocation kindId = kind.equals("item")
+                ? StorageResourceKindApi.ITEM_KIND
+                : ResourceLocation.fromNamespaceAndPath("fixture_mod", kind);
+        String namespace = kind.equals("item") ? "minecraft" : "fixture_mod";
+        return StorageResourceKey.of(
+                kindId,
+                ResourceLocation.fromNamespaceAndPath(namespace, path),
+                new CompoundTag());
     }
 }

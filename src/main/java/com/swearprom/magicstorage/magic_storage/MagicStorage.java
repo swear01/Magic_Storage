@@ -83,9 +83,13 @@ public class MagicStorage {
             RecipeFamilyApi.createDeferredRegister(MODID);
     public static final Registry<RecipeFamily> RECIPE_FAMILY_REGISTRY =
             RECIPE_FAMILIES.makeRegistry(builder -> builder.maxId(RecipeFamilyApi.MAX_FAMILIES - 1));
-
+    public static final DeferredRegister<StorageResourceKind> RESOURCE_KINDS =
+            StorageResourceKindApi.createDeferredRegister(MODID);
+    public static final Registry<StorageResourceKind> RESOURCE_KIND_REGISTRY =
+            RESOURCE_KINDS.makeRegistry(builder -> builder.maxId(StorageResourceKindApi.MAX_KINDS - 1));
     static {
         MachineEnergyTable.registerBuiltIns(MACHINE_DESCRIPTORS);
+        StorageResourceKinds.registerBuiltIns(RESOURCE_KINDS);
     }
 
     // === Core Block ===
@@ -217,6 +221,7 @@ public class MagicStorage {
         MENUS.register(modEventBus);
         MACHINE_DESCRIPTORS.register(modEventBus);
         RECIPE_FAMILIES.register(modEventBus);
+        RESOURCE_KINDS.register(modEventBus);
         NeoForge.EVENT_BUS.addListener(WrenchActions::onRightClickBlock);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onChunkLoad);
@@ -248,19 +253,48 @@ public class MagicStorage {
 
     private void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerBlockEntity(
+                StorageResourceCapabilities.BLOCK,
+                STORAGE_CORE_BE.get(),
+                (core, side) -> core.getLevel() == null || core.getLevel().isClientSide()
+                        ? null : core.resourceHandler());
+        event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,
                 IMPORT_BUS_BE.get(),
                 (bus, side) -> bus.passiveItemHandler());
+        event.registerBlockEntity(
+                StorageResourceCapabilities.BLOCK,
+                IMPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveResourceHandler());
+        event.registerBlockEntity(
+                StorageResourceCapabilities.BLOCK,
+                EXPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveResourceHandler());
         event.registerBlockEntity(
                 Capabilities.FluidHandler.BLOCK,
                 STORAGE_CORE_BE.get(),
                 (core, side) -> core.getLevel() == null || core.getLevel().isClientSide()
                         ? null : core.fluidHandler());
         event.registerBlockEntity(
+                Capabilities.FluidHandler.BLOCK,
+                IMPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveFluidHandler());
+        event.registerBlockEntity(
+                Capabilities.FluidHandler.BLOCK,
+                EXPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveFluidHandler());
+        event.registerBlockEntity(
                 Capabilities.EnergyStorage.BLOCK,
                 STORAGE_CORE_BE.get(),
                 (core, side) -> core.getLevel() == null || core.getLevel().isClientSide()
                         ? null : core.energyStorage());
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                IMPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveEnergyStorage());
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                EXPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveEnergyStorage());
         OptionalModCapabilities.register(event);
     }
 

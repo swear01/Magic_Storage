@@ -3,8 +3,10 @@ package com.swearprom.magicstorage.magic_storage;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
@@ -12,9 +14,13 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -111,6 +117,48 @@ public final class CreativeStorageUnitTests {
             if (core.getTypeCount() != finiteTierTotal + 1) {
                 helper.fail("Expected " + (finiteTierTotal + 1)
                         + " distinct component types, got " + core.getTypeCount());
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void creative_capacity_is_shared_by_items_fluids_and_power(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(),
+                MagicStorage.CREATIVE_STORAGE_UNIT.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Storage Core block entity missing");
+                return;
+            }
+            core.rebuildNetwork(level);
+            IFluidHandler fluids = level.getCapability(
+                    Capabilities.FluidHandler.BLOCK, corePos, null);
+            var energy = level.getCapability(Capabilities.EnergyStorage.BLOCK, corePos, null);
+            if (fluids == null || energy == null) {
+                helper.fail("Creative network did not expose typed resource capabilities");
+                return;
+            }
+            for (int variant = 0; variant < 16; variant++) {
+                ItemStack item = new ItemStack(Items.DIAMOND);
+                item.set(DataComponents.CUSTOM_NAME, Component.literal("Creative Item " + variant));
+                FluidStack fluid = new FluidStack(Fluids.WATER, 250);
+                fluid.set(DataComponents.CUSTOM_NAME, Component.literal("Creative Fluid " + variant));
+                if (core.insertItem(item) != 1
+                        || fluids.fill(fluid, IFluidHandler.FluidAction.EXECUTE) != 250) {
+                    helper.fail("Creative capacity rejected typed variant " + variant);
+                    return;
+                }
+            }
+            if (energy.receiveEnergy(4_000, false) != 4_000
+                    || core.getTypeCount() != 33
+                    || !core.getTypeCapacity().unlimited()) {
+                helper.fail("Creative capacity was not shared by item, fluid, and power types");
                 return;
             }
             helper.succeed();
@@ -674,7 +722,19 @@ public final class CreativeStorageUnitTests {
                         .relative(direction, 34);
             };
             ChunkPos candidateChunk = new ChunkPos(remoteProbe);
-            if (!level.getForcedChunks().contains(candidateChunk.toLong())) {
+            boolean insideForcedFullRadius = false;
+            for (long forcedChunkValue : level.getForcedChunks()) {
+                ChunkPos forcedChunk = new ChunkPos(
+                        ChunkPos.getX(forcedChunkValue),
+                        ChunkPos.getZ(forcedChunkValue));
+                if (Math.max(
+                        Math.abs(candidateChunk.x - forcedChunk.x),
+                        Math.abs(candidateChunk.z - forcedChunk.z)) <= 2) {
+                    insideForcedFullRadius = true;
+                    break;
+                }
+            }
+            if (!insideForcedFullRadius) {
                 int y = level.getMaxBuildHeight() - 2;
                 creativeUnitPos = switch (direction) {
                     case EAST -> new BlockPos(candidateChunk.getMinBlockX(), y, candidateChunk.getMiddleBlockZ());

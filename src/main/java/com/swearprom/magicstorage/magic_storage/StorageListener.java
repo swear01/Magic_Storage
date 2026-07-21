@@ -6,4 +6,12 @@ public interface StorageListener {
 
     default void onEnergyChanged(EnergyType type, long newAmount) {
     }
+
+    default void onResourceChanged(
+            StorageResourceKey key,
+            long delta,
+            long newAmount,
+            Actor actor
+    ) {
+    }
 }

@@ -28,7 +28,9 @@ public ExampleMod(IEventBus modEventBus) {
 
 `GRINDING_RECIPE_TYPE` may be a `DeferredHolder`, because the factory stores the supplier and resolves it after registry registration. `GRINDER_DESCRIPTOR_ID` must already identify a registered [`MachineDescriptor`](machine-descriptor-api.md). A missing descriptor, duplicate family registry ID, or duplicate exact class/type pair fails startup instead of silently choosing one family.
 
-## `singleItemToItem` contract
+## Factory contracts
+
+### `singleItemToItem`
 
 The first public factory is intentionally narrow:
 
@@ -43,7 +45,40 @@ The input, output, and cost functions must be deterministic and must not mutate 
 
 If a custom family does not fit this complete contract, do not approximate it with this factory. A new reusable factory must first model all inputs, outputs, components, remainders, costs, and side effects server-authoritatively. External-machine send-and-wait processing is outside this mod's installed-station magic-crafting scope.
 
-This is a current compatibility baseline, not the final deterministic-family limit. GitHub #9 first supplies the typed-resource transaction boundary; the next public factory revision must model bounded deterministic N-input/N-output contracts across items, fluids, power, chemicals, catalysts, tools, and remainders. Until that engine exists, this API must not claim those resources are craftable merely because the Core can store them.
+### `deterministicResources`
+
+Use `RecipeFamilyFactories.deterministicResources(...)` when one exact recipe resolves to a bounded `TypedRecipePlan`. The resolver receives the exact recipe and current server registries. The plan builder requires:
+
+- one to nine exact `TypedRecipeInput` values;
+- at least one `TypedRecipeOutput.primary(...)` item so the current item terminal can select the recipe;
+- any additional item, fluid, power, chemical, or registered addon outputs;
+- a non-empty exact presentation output and a `1..3 × 1..3` layout that fits all inputs.
+
+Input roles are explicit. `consume` removes `amount × crafts`; `catalyst` and `tool` require the declared amount but retain it, so one retained resource may serve the whole batch. Output roles are `primary` and `remainder`. Primary items follow Player/Storage delivery, item remainders follow the existing remainder policy, and non-item outputs return to Core. Duplicate input keys or duplicate output keys are rejected. Checked multiplication, retained-resource checks, item delivery, type capacity, and all Core item/non-item deltas are validated before one atomic ledger commit.
+
+Use `StorageResourceKey.item(stack, registries)`, `fluid(stack, registries)`, and `neoforgeEnergy()` for canonical built-in keys. `itemStack(...)` and `fluidStack(...)` decode exact built-in keys without dropping components. Custom kinds use their registered kind ID, stable resource ID, and canonical variant compound.
+
+```java
+RECIPE_FAMILIES.register("infusion", () -> RecipeFamilyFactories.deterministicResources(
+        InfusionRecipe.class,
+        INFUSION_RECIPE_TYPE,
+        INFUSER_DESCRIPTOR_ID,
+        (recipe, registries) -> TypedRecipePlan.builder()
+                .input(TypedRecipeInput.consume(
+                        StorageResourceKey.item(recipe.input(), registries), 2))
+                .input(TypedRecipeInput.consume(MANA_KEY, 100))
+                .input(TypedRecipeInput.catalyst(CATALYST_KEY, 1))
+                .output(TypedRecipeOutput.primary(
+                        StorageResourceKey.item(recipe.output(), registries), 3))
+                .output(TypedRecipeOutput.remainder(MANA_KEY, 25))
+                .presentationOutput(recipe.output().copyWithCount(3))
+                .layout(3, 1, false)
+                .build(),
+        recipe -> RecipeFamilyCost.free(),
+        RecipePresentationKind.STONECUTTING));
+```
+
+The resolver must be deterministic and side-effect free. Chance outputs, runtime machine polling, arbitrary Core/player/world callbacks, and external-machine send-and-wait are rejected by design. Multi-step planning remains a separate future server graph; EMI is presentation and selection only.
 
 ## Lifecycle and sides
 
@@ -54,7 +89,7 @@ This is a current compatibility baseline, not the final deterministic-family lim
 
 ## Repository verification fixture
 
-`src/apiTest/` proves the API compiles from a different Java package. `src/recipeAddonFixture/` is a separately loaded NeoForge mod that registers a custom recipe type and family, then proves station gating, discovery, exact preview/components/count, commit, and full-destination rollback.
+`src/apiTest/` proves both factories and resource APIs compile from a different Java package. `src/recipeAddonFixture/` is a separately loaded NeoForge mod that proves the legacy single-item family plus typed multi-input/multi-output discovery, retained roles, exact counts, mixed item/addon/fluid commit, terminal listing, destination capacity rejection, and rollback.
 
 ```bash
 ./gradlew compileApiTestJava

@@ -787,5 +787,22 @@ public final class SmithingTrimTests {
                     && actor.name().equals("magic_crafting")) return 0;
             return super.insertItemCount(key, amount, action, actor);
         }
+
+        @Override
+        public boolean applyResourceTransaction(
+                StorageResourceTransaction transaction,
+                Action action,
+                Actor actor
+        ) {
+            if (rejectTrimOutput && action == Action.EXECUTE
+                    && actor.name().equals("magic_crafting")
+                    && getLevel() != null
+                    && transaction.deltas().entrySet().stream()
+                    .anyMatch(entry -> entry.getValue() > 0
+                            && entry.getKey().itemStack(getLevel().registryAccess())
+                            .map(stack -> stack.has(DataComponents.TRIM))
+                            .orElse(false))) return false;
+            return super.applyResourceTransaction(transaction, action, actor);
+        }
     }
 }

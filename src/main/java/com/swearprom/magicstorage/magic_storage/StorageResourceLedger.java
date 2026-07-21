@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 final class StorageResourceLedger {
     private static final int SCHEMA = 1;
@@ -119,10 +120,16 @@ final class StorageResourceLedger {
     }
 
     CompoundTag save() {
+        return save(key -> true);
+    }
+
+    CompoundTag save(Predicate<StorageResourceKey> include) {
+        Objects.requireNonNull(include, "include");
         CompoundTag root = new CompoundTag();
         root.putInt(TAG_SCHEMA, SCHEMA);
         ListTag entries = new ListTag();
         amounts.entrySet().stream()
+                .filter(entry -> include.test(entry.getKey()))
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> {
                     CompoundTag encoded = new CompoundTag();

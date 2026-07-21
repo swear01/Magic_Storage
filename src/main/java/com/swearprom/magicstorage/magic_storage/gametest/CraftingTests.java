@@ -4299,6 +4299,21 @@ public class CraftingTests {
             }
             return super.insertItemCount(key, amount, action, actor);
         }
+
+        @Override
+        public boolean applyResourceTransaction(
+                StorageResourceTransaction transaction,
+                Action action,
+                Actor actor
+        ) {
+            if (rejectCraftOutput && action == Action.EXECUTE
+                    && actor.name().equals("magic_crafting")
+                    && transaction.deltas().entrySet().stream()
+                    .anyMatch(entry -> entry.getValue() > 0
+                            && entry.getKey().resourceId().equals(
+                            ResourceLocation.withDefaultNamespace("stick")))) return false;
+            return super.applyResourceTransaction(transaction, action, actor);
+        }
     }
 
     private static final class CountingPreviewCore extends StorageCoreBlockEntity {

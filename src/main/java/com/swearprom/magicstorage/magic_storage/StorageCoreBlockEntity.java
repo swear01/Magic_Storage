@@ -8,13 +8,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
-
 import java.util.*;
 import java.util.function.Predicate;
 
@@ -43,9 +40,9 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private Map<EnergyType, Long> energy = new EnumMap<>(EnergyType.class);
     private SimpleContainer machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
 
-    private Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
     private StorageResourceLedger resourceLedger = new StorageResourceLedger();
     private final Map<ItemKey, Long> flatCache = new HashMap<>();
+    private final CoreStorageResourceHandler resourceHandler = new CoreStorageResourceHandler(this);
     private final CoreFluidHandler fluidHandler = new CoreFluidHandler(this);
     private final CoreEnergyStorage energyStorage = new CoreEnergyStorage(this);
     private final List<StorageListener> listeners = new ArrayList<>();
@@ -311,7 +308,6 @@ public class StorageCoreBlockEntity extends BlockEntity {
             machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
             descriptorAmounts = new HashMap<>();
             infiniteDescriptors = new HashSet<>();
-            inventory = new IdentityHashMap<>();
             resourceLedger = new StorageResourceLedger();
             typeCount = 0;
             cacheDirty = true;
@@ -362,7 +358,6 @@ public class StorageCoreBlockEntity extends BlockEntity {
         machines = record.machines();
         descriptorAmounts = record.descriptorAmounts();
         infiniteDescriptors = record.infiniteDescriptors();
-        inventory = record.inventory();
         resourceLedger = record.resourceLedger();
         typeCount = record.typeCount();
         cacheDirty = true;
@@ -405,11 +400,11 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private void rebuildCache() {
         if (!cacheDirty) return;
         flatCache.clear();
-        for (var entry : inventory.entrySet()) {
-            var variantMap = entry.getValue();
-            for (var variantEntry : variantMap.object2LongEntrySet()) {
-                flatCache.merge(variantEntry.getKey(), variantEntry.getLongValue(), Long::sum);
-            }
+        if (level == null) return;
+        for (StorageResourceKey resourceKey : resourceLedger.keys(StorageResourceBridge.ITEM_KIND)) {
+            StorageResourceBridge.itemKey(resourceKey, level.registryAccess())
+                    .ifPresent(key -> flatCache.merge(
+                            key, resourceLedger.amount(resourceKey), Long::sum));
         }
         cacheDirty = false;
     }
@@ -433,6 +428,30 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private void notifyChanged(ItemKey key, long delta, long newAmount, Actor actor) {
         for (StorageListener listener : List.copyOf(listeners)) {
             listener.onChanged(key, delta, newAmount, actor);
+        }
+    }
+
+    private void fireResourceChanged(
+            StorageResourceKey key,
+            long delta,
+            long newAmount,
+            Actor actor
+    ) {
+        if (mutationBatchDepth > 0) {
+            deferredListenerEvents.add(() -> notifyResourceChanged(key, delta, newAmount, actor));
+            return;
+        }
+        notifyResourceChanged(key, delta, newAmount, actor);
+    }
+
+    private void notifyResourceChanged(
+            StorageResourceKey key,
+            long delta,
+            long newAmount,
+            Actor actor
+    ) {
+        for (StorageListener listener : List.copyOf(listeners)) {
+            listener.onResourceChanged(key, delta, newAmount, actor);
         }
     }
 
@@ -475,33 +494,88 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return inserted;
     }
 
-    long insertResource(StorageResourceKey key, long amount, Action action) {
+    public long insertResource(StorageResourceKey key, long amount, Action action) {
         if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
-        StorageTypeCapacity resourceCapacity = resourceCapacity();
-        long inserted = resourceLedger.insert(key, amount, resourceCapacity, action);
-        if (action == Action.EXECUTE && inserted > 0) {
-            typeCount = itemTypeCount() + resourceLedger.typeCount();
-            markStorageChanged();
-        }
+        long existing = resourceLedger.amount(key);
+        if (existing == 0 && !ledgerCapacity().canAcceptNewType(resourceLedger.typeCount())) return 0;
+        long inserted = Math.min(amount, Long.MAX_VALUE - existing);
+        if (inserted <= 0 || !applyResourceTransaction(
+                Map.of(key, inserted), action, Actor.EMPTY)) return 0;
         return inserted;
     }
 
-    long extractResource(StorageResourceKey key, long amount, Action action) {
+    public long extractResource(StorageResourceKey key, long amount, Action action) {
         if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
-        long extracted = resourceLedger.extract(key, amount, action);
-        if (action == Action.EXECUTE && extracted > 0) {
-            typeCount = itemTypeCount() + resourceLedger.typeCount();
-            markStorageChanged();
-        }
+        long extracted = Math.min(amount, resourceLedger.amount(key));
+        if (extracted <= 0 || !applyResourceTransaction(
+                Map.of(key, -extracted), action, Actor.EMPTY)) return 0;
         return extracted;
     }
 
-    long getResourceAmount(StorageResourceKey key) {
+    boolean applyResourceTransaction(
+            Map<StorageResourceKey, Long> deltas,
+            Action action,
+            Actor actor
+    ) {
+        Objects.requireNonNull(deltas, "deltas");
+        Objects.requireNonNull(action, "action");
+        Objects.requireNonNull(actor, "actor");
+        if (deltas.isEmpty() || conflicted || !isStorageAvailable() || level == null) return false;
+        Map<StorageResourceKey, ItemKey> itemKeys = new HashMap<>();
+        for (StorageResourceKey key : deltas.keySet()) {
+            if (!StorageResourceKinds.accepts(key)) return false;
+            if (!key.kindId().equals(StorageResourceBridge.ITEM_KIND)) continue;
+            var itemKey = StorageResourceBridge.itemKey(key, level.registryAccess());
+            if (itemKey.isEmpty()) return false;
+            itemKeys.put(key, itemKey.get());
+        }
+        if (!resourceLedger.applyExact(deltas, ledgerCapacity(), action)) return false;
+        if (action == Action.EXECUTE) {
+            refreshTypeCount();
+            if (!itemKeys.isEmpty()) cacheDirty = true;
+            markStorageChanged();
+            for (Map.Entry<StorageResourceKey, ItemKey> entry : itemKeys.entrySet()) {
+                fireChanged(
+                        entry.getValue(),
+                        deltas.get(entry.getKey()),
+                        resourceLedger.amount(entry.getKey()),
+                        actor);
+            }
+            for (Map.Entry<StorageResourceKey, Long> entry : deltas.entrySet()) {
+                if (itemKeys.containsKey(entry.getKey())) continue;
+                fireResourceChanged(
+                        entry.getKey(),
+                        entry.getValue(),
+                        resourceLedger.amount(entry.getKey()),
+                        actor);
+            }
+        }
+        return true;
+    }
+
+    public boolean applyResourceTransaction(
+            StorageResourceTransaction transaction,
+            Action action,
+            Actor actor
+    ) {
+        Objects.requireNonNull(transaction, "transaction");
+        return applyResourceTransaction(transaction.deltas(), action, actor);
+    }
+
+    public long getResourceAmount(StorageResourceKey key) {
         return isStorageAvailable() ? resourceLedger.amount(key) : 0;
     }
 
-    List<StorageResourceKey> getResourceKeys(ResourceLocation kindId) {
+    public List<StorageResourceKey> getResourceKeys(ResourceLocation kindId) {
         return isStorageAvailable() ? resourceLedger.keys(kindId) : List.of();
+    }
+
+    public List<StorageResourceKey> getResourceKeys() {
+        return isStorageAvailable() ? resourceLedger.snapshot().keySet().stream().toList() : List.of();
+    }
+
+    StorageResourceHandler resourceHandler() {
+        return resourceHandler;
     }
 
     CoreFluidHandler fluidHandler() {
@@ -512,37 +586,29 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return energyStorage;
     }
 
-    private StorageTypeCapacity resourceCapacity() {
+    private StorageTypeCapacity ledgerCapacity() {
         if (typeCapacity.unlimited()) return StorageTypeCapacity.unlimitedCapacity();
+        int unresolvedTypes = storageRecord == null
+                ? 0 : storageRecord.unresolvedInventoryEntries().size();
         return StorageTypeCapacity.finite(Math.max(
-                0, typeCapacity.finiteTypeSlots() - itemTypeCount()));
+                0, typeCapacity.finiteTypeSlots() - unresolvedTypes));
     }
 
-    private int itemTypeCount() {
-        return Math.max(0, typeCount - resourceLedger.typeCount());
+    private void refreshTypeCount() {
+        typeCount = storageRecord == null
+                ? resourceLedger.typeCount() : storageRecord.typeCount();
     }
 
     public long insertItemCount(ItemKey key, long amount, Action action, Actor actor) {
         if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
-        Item primary = key.item();
-        var variants = inventory.get(primary);
-        long existing = variants != null ? variants.getLong(key) : 0;
-        if (existing == 0 && !typeCapacity.canAcceptNewType(typeCount)) return 0;
+        if (level == null) return 0;
+        StorageResourceKey resourceKey = StorageResourceBridge.itemKey(key, level.registryAccess());
+        long existing = resourceLedger.amount(resourceKey);
+        if (existing == 0 && !ledgerCapacity().canAcceptNewType(resourceLedger.typeCount())) return 0;
         long inserted = Math.min(amount, Long.MAX_VALUE - existing);
         if (inserted <= 0) return 0;
-        if (action == Action.EXECUTE) {
-            if (variants == null) {
-                variants = new Object2LongOpenHashMap<>();
-                inventory.put(primary, variants);
-            }
-            if (existing == 0) typeCount++;
-            long newAmount = existing + inserted;
-            variants.put(key, newAmount);
-            cacheDirty = true;
-            markStorageChanged();
-            fireChanged(key, inserted, newAmount, actor);
-        }
-        return inserted;
+        return applyResourceTransaction(Map.of(resourceKey, inserted), action, actor)
+                ? inserted : 0;
     }
 
     public long insertItem(ItemStack stack, boolean simulate) {
@@ -562,28 +628,14 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     public long extractItemCount(ItemKey key, long amount, Action action, Actor actor) {
         if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
-        Item primary = key.item();
-        var variants = inventory.get(primary);
-        if (variants == null) return 0;
-
-        long existing = variants.getLong(key);
+        if (level == null) return 0;
+        StorageResourceKey resourceKey = StorageResourceBridge.itemKey(key, level.registryAccess());
+        long existing = resourceLedger.amount(resourceKey);
         if (existing <= 0) return 0;
 
         long extracted = Math.min(amount, existing);
-        if (action == Action.EXECUTE) {
-            long remaining = existing - extracted;
-            if (remaining <= 0) {
-                variants.removeLong(key);
-                if (variants.isEmpty()) inventory.remove(primary);
-                typeCount--;
-            } else {
-                variants.put(key, remaining);
-            }
-            cacheDirty = true;
-            markStorageChanged();
-            fireChanged(key, -extracted, Math.max(remaining, 0), actor);
-        }
-        return extracted;
+        return applyResourceTransaction(Map.of(resourceKey, -extracted), action, actor)
+                ? extracted : 0;
     }
 
     public ItemStack extractItem(ItemKey key, long amount, boolean simulate) {
@@ -621,12 +673,43 @@ public class StorageCoreBlockEntity extends BlockEntity {
         return result;
     }
 
+    public List<ItemStack> getTerminalDisplayStacks(
+            String filter,
+            SortMode mode,
+            SortOrder order
+    ) {
+        List<ItemStack> result = new ArrayList<>(getDisplayStacks(filter));
+        if (level == null) return result;
+        for (Map.Entry<StorageResourceKey, Long> entry : resourceLedger.snapshot().entrySet()) {
+            StorageResourceKey key = entry.getKey();
+            if (key.kindId().equals(StorageResourceBridge.ITEM_KIND)) continue;
+            if (!StorageResourceKinds.isRegistered(key)) continue;
+            ItemStack representative = StorageResourceKinds.representative(
+                    key, level.registryAccess());
+            if (!matchesResourceFilter(key, representative, filter)) continue;
+            result.add(TerminalResourceDisplay.create(representative, key, entry.getValue()));
+        }
+        result.sort(TerminalEntryComparator.forMode(mode, order));
+        return result;
+    }
+
+    private static boolean matchesResourceFilter(
+            StorageResourceKey key,
+            ItemStack representative,
+            String filter
+    ) {
+        if (filter == null || filter.isBlank()) return true;
+        String identity = (key.kindId() + " " + key.resourceId() + " "
+                + representative.getHoverName().getString()).toLowerCase(Locale.ROOT);
+        for (String token : filter.toLowerCase(Locale.ROOT).split("\\s+")) {
+            if (!token.isEmpty() && !identity.contains(token)) return false;
+        }
+        return true;
+    }
+
     public long getItemCount(ItemKey key) {
-        if (!isStorageAvailable()) return 0;
-        Item primary = key.item();
-        var variants = inventory.get(primary);
-        if (variants == null) return 0;
-        return variants.getLong(key);
+        if (!isStorageAvailable() || level == null) return 0;
+        return resourceLedger.amount(StorageResourceBridge.itemKey(key, level.registryAccess()));
     }
 
     public long countMatching(Predicate<ItemStack> pred) {
@@ -718,7 +801,6 @@ public class StorageCoreBlockEntity extends BlockEntity {
         machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
         descriptorAmounts = new HashMap<>();
         infiniteDescriptors = new HashSet<>();
-        inventory = new IdentityHashMap<>();
         resourceLedger = new StorageResourceLedger();
         typeCount = 0;
         cacheDirty = true;

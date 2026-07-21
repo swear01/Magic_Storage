@@ -9,6 +9,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
 
 import java.util.List;
@@ -77,6 +79,35 @@ public class ImportBusBlockEntity extends BlockEntity {
             return slot == 0 && !stack.isEmpty();
         }
     };
+    private final StorageResourceHandler passiveResourceHandler = new StorageResourceHandler() {
+        @Override
+        public List<StorageResourceKey> getStoredResources() {
+            return List.of();
+        }
+
+        @Override
+        public long getAmount(StorageResourceKey key) {
+            return 0;
+        }
+
+        @Override
+        public long insert(StorageResourceKey key, long amount, boolean simulate) {
+            if (amount <= 0 || !allowsResource(key)) return 0;
+            StorageCoreBlockEntity core = resolveCore();
+            if (core == null || core.isConflicted()) return 0;
+            return core.insertResource(
+                    key, amount, simulate ? Action.SIMULATE : Action.EXECUTE);
+        }
+
+        @Override
+        public long extract(StorageResourceKey key, long amount, boolean simulate) {
+            return 0;
+        }
+    };
+    private final IFluidHandler passiveFluidHandler = new ResourceFluidHandler(
+            passiveResourceHandler, () -> level.registryAccess());
+    private final IEnergyStorage passiveEnergyStorage =
+            new ResourceEnergyStorage(passiveResourceHandler);
 
     public ImportBusBlockEntity(BlockPos pos, BlockState state) {
         super(MagicStorage.IMPORT_BUS_BE.get(), pos, state);
@@ -84,6 +115,30 @@ public class ImportBusBlockEntity extends BlockEntity {
 
     IItemHandler passiveItemHandler() {
         return passiveItemHandler;
+    }
+
+    StorageResourceHandler passiveResourceHandler() {
+        return passiveResourceHandler;
+    }
+
+    IFluidHandler passiveFluidHandler() {
+        return passiveFluidHandler;
+    }
+
+    IEnergyStorage passiveEnergyStorage() {
+        return passiveEnergyStorage;
+    }
+
+    private boolean allowsResource(StorageResourceKey key) {
+        if (level == null || level.isClientSide()
+                || !busConfiguration.supported()
+                || !busConfiguration.automationEnabled()) return false;
+        if (!key.kindId().equals(StorageResourceKindApi.ITEM_KIND)) {
+            return busConfiguration.filterMode() == BusFilterMode.DENY;
+        }
+        return StorageResourceBridge.itemKey(key, level.registryAccess())
+                .map(item -> BusFilterPolicy.compile(busConfiguration, level.registryAccess()).allows(item))
+                .orElse(false);
     }
 
     public void tick() {

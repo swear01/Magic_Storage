@@ -1,6 +1,5 @@
 package com.swearprom.magicstorage.magic_storage;
 
-import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -9,13 +8,12 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.SimpleContainer;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.IdentityHashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +45,6 @@ final class CoreStorageRecord {
     private final Set<ResourceLocation> infiniteDescriptors = new java.util.HashSet<>();
     private final List<CompoundTag> unresolvedDescriptorEntries = new ArrayList<>();
     private final List<CompoundTag> unresolvedMachineEntries = new ArrayList<>();
-    private final Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
     private StorageResourceLedger resourceLedger = new StorageResourceLedger();
     private final List<CompoundTag> unresolvedInventoryEntries = new ArrayList<>();
     private final SimpleContainer machines;
@@ -122,16 +119,16 @@ final class CoreStorageRecord {
             }
             record.loadDescriptorEntries(descriptorEntries);
             record.loadMachineEntries(machineEntries, registries);
-            String inventoryError = record.loadInventorySegments(inventorySegments, registries);
-            if (inventoryError != null) {
-                return LoadResult.failure(storageId, raw, inventoryError);
-            }
             if (tag.contains(TAG_RESOURCE_LEDGER)) {
                 if (!tag.contains(TAG_RESOURCE_LEDGER, Tag.TAG_COMPOUND)) {
                     return LoadResult.failure(storageId, raw, "typed resource ledger is not a compound");
                 }
                 record.resourceLedger = StorageResourceLedger.load(
                         tag.getCompound(TAG_RESOURCE_LEDGER));
+            }
+            String inventoryError = record.loadInventorySegments(inventorySegments, registries);
+            if (inventoryError != null) {
+                return LoadResult.failure(storageId, raw, inventoryError);
             }
             return LoadResult.success(record);
         } catch (RuntimeException exception) {
@@ -181,17 +178,16 @@ final class CoreStorageRecord {
         tag.put(TAG_MACHINE_DESCRIPTORS, machineTags);
 
         List<CompoundTag> inventoryEntries = new ArrayList<>();
-        for (Object2LongOpenHashMap<ItemKey> variants : inventory.values()) {
-            for (var entry : variants.object2LongEntrySet()) {
-                long count = entry.getLongValue();
-                if (count <= 0) {
-                    continue;
-                }
-                CompoundTag inventoryEntry = new CompoundTag();
-                inventoryEntry.put(TAG_ITEM, entry.getKey().toStack(1).save(registries));
-                inventoryEntry.putLong(TAG_COUNT, count);
-                inventoryEntries.add(inventoryEntry);
-            }
+        Set<StorageResourceKey> persistedAsInventory = new HashSet<>();
+        for (Map.Entry<StorageResourceKey, Long> entry : resourceLedger.snapshot().entrySet()) {
+            if (!entry.getKey().kindId().equals(StorageResourceBridge.ITEM_KIND)) continue;
+            var itemKey = StorageResourceBridge.itemKey(entry.getKey(), registries);
+            if (itemKey.isEmpty()) continue;
+            CompoundTag inventoryEntry = new CompoundTag();
+            inventoryEntry.put(TAG_ITEM, itemKey.get().toStack(1).save(registries));
+            inventoryEntry.putLong(TAG_COUNT, entry.getValue());
+            inventoryEntries.add(inventoryEntry);
+            persistedAsInventory.add(entry.getKey());
         }
         inventoryEntries.sort(Comparator
                 .comparing((CompoundTag entry) -> entry.getCompound(TAG_ITEM).getString("id"))
@@ -211,7 +207,8 @@ final class CoreStorageRecord {
             segments.add(segment);
         }
         tag.put(TAG_INVENTORY_SEGMENTS, segments);
-        tag.put(TAG_RESOURCE_LEDGER, resourceLedger.save());
+        tag.put(TAG_RESOURCE_LEDGER, resourceLedger.save(
+                key -> !persistedAsInventory.contains(key)));
         return tag;
     }
 
@@ -289,6 +286,7 @@ final class CoreStorageRecord {
     }
 
     private String loadInventorySegments(ListTag segments, HolderLookup.Provider registries) {
+        Set<StorageResourceKey> loadedLegacyKeys = new HashSet<>();
         for (int segmentIndex = 0; segmentIndex < segments.size(); segmentIndex++) {
             CompoundTag segment = segments.getCompound(segmentIndex);
             if (!segment.contains(TAG_ENTRIES, Tag.TAG_LIST)) {
@@ -318,7 +316,13 @@ final class CoreStorageRecord {
                     unresolvedInventoryEntries.add(entry.copy());
                     continue;
                 }
-                putItemInternal(ItemKey.of(stack), count);
+                StorageResourceKey key = StorageResourceBridge.itemKey(
+                        ItemKey.of(stack), registries);
+                if (resourceLedger.amount(key) > 0 && !loadedLegacyKeys.contains(key)) {
+                    return "item exists in both inventory segments and typed resource ledger";
+                }
+                putItemInternal(key, count);
+                loadedLegacyKeys.add(key);
             }
         }
         return null;
@@ -375,10 +379,6 @@ final class CoreStorageRecord {
         return unresolvedMachineEntries;
     }
 
-    Map<Item, Object2LongOpenHashMap<ItemKey>> inventory() {
-        return inventory;
-    }
-
     StorageResourceLedger resourceLedger() {
         return resourceLedger;
     }
@@ -389,20 +389,15 @@ final class CoreStorageRecord {
 
     int typeCount() {
         long count = unresolvedInventoryEntries.size() + (long) resourceLedger.typeCount();
-        for (Object2LongOpenHashMap<ItemKey> variants : inventory.values()) {
-            count += variants.size();
-            if (count >= Integer.MAX_VALUE) {
-                return Integer.MAX_VALUE;
-            }
-        }
+        if (count >= Integer.MAX_VALUE) return Integer.MAX_VALUE;
         return (int) count;
     }
 
     long itemCount() {
         long total = 0;
-        for (Object2LongOpenHashMap<ItemKey> variants : inventory.values()) {
-            for (var entry : variants.object2LongEntrySet()) {
-                total = saturatingAdd(total, Math.max(0, entry.getLongValue()));
+        for (Map.Entry<StorageResourceKey, Long> entry : resourceLedger.snapshot().entrySet()) {
+            if (entry.getKey().kindId().equals(StorageResourceBridge.ITEM_KIND)) {
+                total = saturatingAdd(total, entry.getValue());
             }
         }
         for (CompoundTag unresolved : unresolvedInventoryEntries) {
@@ -411,27 +406,25 @@ final class CoreStorageRecord {
         return total;
     }
 
-    long getItemCount(ItemKey key) {
-        Object2LongOpenHashMap<ItemKey> variants = inventory.get(key.item());
-        return variants == null ? 0 : variants.getLong(key);
+    long getItemCount(ItemKey key, HolderLookup.Provider registries) {
+        return resourceLedger.amount(StorageResourceBridge.itemKey(key, registries));
     }
 
-    void putItem(ItemKey key, long amount) {
+    void putItem(ItemKey key, long amount, HolderLookup.Provider registries) {
         if (amount <= 0) {
             throw new IllegalArgumentException("Core storage amount must be positive");
         }
-        putItemInternal(key, amount);
+        putItemInternal(StorageResourceBridge.itemKey(key, registries), amount);
         markChanged();
     }
 
-    private void putItemInternal(ItemKey key, long amount) {
-        Object2LongOpenHashMap<ItemKey> variants =
-                inventory.computeIfAbsent(key.item(), ignored -> new Object2LongOpenHashMap<>());
-        variants.put(key, saturatingAdd(variants.getLong(key), amount));
+    private void putItemInternal(StorageResourceKey key, long amount) {
+        resourceLedger.insert(
+                key, amount, StorageTypeCapacity.unlimitedCapacity(), Action.EXECUTE);
     }
 
     boolean isEmpty() {
-        if (!inventory.isEmpty() || !resourceLedger.isEmpty()
+        if (!resourceLedger.isEmpty()
                 || !machines.isEmpty() || !descriptorAmounts.isEmpty()
                 || !infiniteDescriptors.isEmpty() || !unresolvedDescriptorEntries.isEmpty()
                 || !unresolvedMachineEntries.isEmpty() || !unresolvedInventoryEntries.isEmpty()) {

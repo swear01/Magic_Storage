@@ -24,6 +24,7 @@ public final class RecipeFamily {
     private final ResourceLocation stationDescriptorId;
     private final Function<Recipe<?>, Ingredient> input;
     private final BiFunction<Recipe<?>, HolderLookup.Provider, ItemStack> output;
+    private final BiFunction<Recipe<?>, HolderLookup.Provider, TypedRecipePlan> typedPlan;
     private final Function<Recipe<?>, RecipeFamilyCost> cost;
     private final RecipePresentationKind presentationKind;
 
@@ -41,6 +42,25 @@ public final class RecipeFamily {
         this.stationDescriptorId = Objects.requireNonNull(stationDescriptorId, "stationDescriptorId");
         this.input = Objects.requireNonNull(input, "input");
         this.output = Objects.requireNonNull(output, "output");
+        this.typedPlan = null;
+        this.cost = Objects.requireNonNull(cost, "cost");
+        this.presentationKind = Objects.requireNonNull(presentationKind, "presentationKind");
+    }
+
+    RecipeFamily(
+            Class<? extends Recipe<?>> exactRecipeClass,
+            Supplier<? extends RecipeType<?>> recipeType,
+            ResourceLocation stationDescriptorId,
+            BiFunction<Recipe<?>, HolderLookup.Provider, TypedRecipePlan> typedPlan,
+            Function<Recipe<?>, RecipeFamilyCost> cost,
+            RecipePresentationKind presentationKind
+    ) {
+        this.exactRecipeClass = Objects.requireNonNull(exactRecipeClass, "exactRecipeClass");
+        this.recipeType = Objects.requireNonNull(recipeType, "recipeType");
+        this.stationDescriptorId = Objects.requireNonNull(stationDescriptorId, "stationDescriptorId");
+        this.input = null;
+        this.output = null;
+        this.typedPlan = Objects.requireNonNull(typedPlan, "typedPlan");
         this.cost = Objects.requireNonNull(cost, "cost");
         this.presentationKind = Objects.requireNonNull(presentationKind, "presentationKind");
     }
@@ -62,6 +82,7 @@ public final class RecipeFamily {
     }
 
     private Ingredient inputFor(Recipe<?> recipe) {
+        if (input == null) throw new IllegalStateException("Typed recipe family has no legacy input");
         Ingredient ingredient = Objects.requireNonNull(input.apply(recipe), "recipe family input");
         if (ingredient.isEmpty()) {
             throw new IllegalArgumentException("Recipe family input cannot be empty");
@@ -70,9 +91,18 @@ public final class RecipeFamily {
     }
 
     private ItemStack outputFor(Recipe<?> recipe, HolderLookup.Provider registries) {
+        if (output == null) throw new IllegalStateException("Typed recipe family has no legacy output");
         ItemStack stack = Objects.requireNonNull(
                 output.apply(recipe, registries), "recipe family output");
         return stack.copy();
+    }
+
+    private TypedRecipePlan typedPlanFor(
+            Recipe<?> recipe,
+            HolderLookup.Provider registries
+    ) {
+        if (typedPlan == null) throw new IllegalStateException("Legacy recipe family has no typed plan");
+        return Objects.requireNonNull(typedPlan.apply(recipe, registries), "typed recipe plan");
     }
 
     private RecipeFamilyCost costFor(Recipe<?> recipe) {
@@ -110,6 +140,7 @@ public final class RecipeFamily {
         @Override
         public RecipeCandidateIndex candidateIndex(RecipeHolder<?> holder) {
             Recipe<?> recipe = checkedRecipe(holder);
+            if (typedPlan != null) return RecipeCandidateIndex.nonExhaustive(List.of());
             Ingredient ingredient = inputFor(recipe);
             List<ItemStack> representatives = Arrays.stream(ingredient.getItems())
                     .filter(stack -> !stack.isEmpty())
@@ -123,6 +154,17 @@ public final class RecipeFamily {
         @Override
         public RecipeAdapterMatch.Contract contract(RecipeHolder<?> holder) {
             Recipe<?> recipe = checkedRecipe(holder);
+            if (typedPlan != null) {
+                RecipeAdapterMatch.Presentation presentation = new RecipeAdapterMatch.Presentation(
+                        presentationKind,
+                        1,
+                        1,
+                        false,
+                        (inputs, level) -> ItemStack.EMPTY);
+                RecipeAdapterMatch.HolderValidator validator = this::supports;
+                return RecipeAdapterMatch.Contract.pendingTyped(
+                        stationDescriptorId, costFor(recipe).toInternal(), presentation, validator);
+            }
             Ingredient ingredient = inputFor(recipe);
             RecipeAdapterMatch.Input adapterInput = RecipeAdapterMatch.Input.of(
                     ingredient,
@@ -167,6 +209,29 @@ public final class RecipeFamily {
                 Level level
         ) {
             Recipe<?> recipe = checkedRecipe(holder);
+            if (typedPlan != null) {
+                if (level == null) return List.of();
+                TypedRecipePlan plan = typedPlanFor(recipe, level.registryAccess());
+                RecipeAdapterMatch.OutputResolver outputResolver = (allocations, crafts, currentLevel) ->
+                        checkedTypedOutput(plan, allocations, crafts, currentLevel);
+                RecipeAdapterMatch.Presentation presentation = new RecipeAdapterMatch.Presentation(
+                        presentationKind,
+                        plan.width(),
+                        plan.height(),
+                        plan.shapeless(),
+                        (inputs, currentLevel) -> plan.presentationOutput());
+                RecipeAdapterMatch.HolderValidator validator = this::supports;
+                return List.of(new RecipeAdapterMatch.Contract(
+                        List.of(),
+                        stationDescriptorId,
+                        costFor(recipe).toInternal(),
+                        outputResolver,
+                        presentation,
+                        validator,
+                        validator,
+                        plan,
+                        false));
+            }
             if (level == null || outputFor(recipe, level.registryAccess()).isEmpty()) return List.of();
             return List.of(contract(holder));
         }
@@ -180,8 +245,45 @@ public final class RecipeFamily {
         ) {
             Recipe<?> recipe = checkedRecipe(holder);
             if (level == null || requestedOutput.isEmpty()) return false;
+            if (typedPlan != null) {
+                TypedRecipePlan plan = variantContract.typedRecipePlan();
+                return plan != null && ItemStack.isSameItemSameComponents(
+                        plan.presentationOutput(), requestedOutput);
+            }
             ItemStack result = outputFor(recipe, level.registryAccess());
             return !result.isEmpty() && ItemStack.isSameItemSameComponents(result, requestedOutput);
+        }
+
+        private Optional<RecipeAdapterMatch.CheckedOutput> checkedTypedOutput(
+                TypedRecipePlan plan,
+                List<Map<ItemKey, Long>> allocations,
+                long crafts,
+                Level level
+        ) {
+            if (level == null || crafts <= 0 || !allocations.isEmpty()) return Optional.empty();
+            Map<ItemKey, Long> primary = new java.util.LinkedHashMap<>();
+            Map<ItemKey, Long> remainders = new java.util.LinkedHashMap<>();
+            Map<StorageResourceKey, Long> resources = new java.util.LinkedHashMap<>();
+            try {
+                for (TypedRecipeOutput output : plan.outputs()) {
+                    long amount = Math.multiplyExact(output.amount(), crafts);
+                    if (output.key().kindId().equals(StorageResourceKindApi.ITEM_KIND)) {
+                        ItemKey key = StorageResourceBridge.itemKey(
+                                output.key(), level.registryAccess()).orElse(null);
+                        if (key == null) return Optional.empty();
+                        Map<ItemKey, Long> target = output.role() == TypedRecipeOutput.Role.PRIMARY
+                                ? primary : remainders;
+                        target.merge(key, amount, Math::addExact);
+                    } else {
+                        resources.merge(output.key(), amount, Math::addExact);
+                    }
+                }
+            } catch (ArithmeticException exception) {
+                return Optional.empty();
+            }
+            if (primary.isEmpty()) return Optional.empty();
+            return Optional.of(new RecipeAdapterMatch.CheckedOutput(
+                    primary, remainders, resources));
         }
 
         @Override

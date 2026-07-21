@@ -16,6 +16,10 @@ import com.swearprom.magicstorage.magic_storage.ImportBusBlockEntity;
 import com.swearprom.magicstorage.magic_storage.ItemKey;
 import com.swearprom.magicstorage.magic_storage.MagicStorage;
 import com.swearprom.magicstorage.magic_storage.StorageCoreBlockEntity;
+import com.swearprom.magicstorage.magic_storage.StorageResourceCapabilities;
+import com.swearprom.magicstorage.magic_storage.StorageResourceHandler;
+import com.swearprom.magicstorage.magic_storage.StorageResourceKey;
+import com.swearprom.magicstorage.magic_storage.StorageResourceKindApi;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -35,6 +39,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BarrelBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -592,6 +598,129 @@ public final class BusAutomationTests {
             if (source.getItem(0).getCount() != 3 || passiveRemainder.getCount() != 3
                     || core.getTypeCount() != 0) {
                 helper.fail("Disabled automation still mutated active or passive Import state");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void passive_import_accepts_typed_resources_through_generic_and_native_capabilities(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        BlockPos busPos = corePos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.IMPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Typed Import Core is missing");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceHandler generic = level.getCapability(
+                    StorageResourceCapabilities.BLOCK, busPos, Direction.UP);
+            IFluidHandler fluids = level.getCapability(
+                    Capabilities.FluidHandler.BLOCK, busPos, Direction.UP);
+            var energy = level.getCapability(
+                    Capabilities.EnergyStorage.BLOCK, busPos, Direction.UP);
+            if (generic == null || fluids == null || energy == null) {
+                helper.fail("Import Bus did not expose all typed insertion capabilities");
+                return;
+            }
+            StorageResourceKey water = StorageResourceKey.of(
+                    StorageResourceKindApi.FLUID_KIND,
+                    ResourceLocation.withDefaultNamespace("water"),
+                    new CompoundTag());
+            if (generic.insert(water, 1_000, true) != 1_000
+                    || core.getResourceAmount(water) != 0
+                    || generic.insert(water, 1_000, false) != 1_000
+                    || core.getResourceAmount(water) != 1_000) {
+                helper.fail("Generic Import capability violated simulation or exact insertion");
+                return;
+            }
+            FluidStack namedWater = new FluidStack(
+                    net.minecraft.world.level.material.Fluids.WATER, 250);
+            namedWater.set(DataComponents.CUSTOM_NAME, Component.literal("Bus Variant"));
+            if (fluids.fill(namedWater, IFluidHandler.FluidAction.EXECUTE) != 250
+                    || energy.receiveEnergy(600, false) != 600
+                    || core.getTypeCount() != 3
+                    || !generic.getStoredResources().isEmpty()) {
+                helper.fail("Native Import capabilities did not route into the universal ledger");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void passive_export_extracts_typed_resources_without_accepting_insertion(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        BlockPos busPos = corePos.east();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(busPos, MagicStorage.EXPORT_BUS.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Typed Export Core is missing");
+                return;
+            }
+            core.rebuildNetwork(level);
+            BusConfiguration config = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    true,
+                    true,
+                    BusFilterMode.DENY,
+                    List.of(),
+                    Optional.empty(),
+                    1);
+            if (!applyConfiguration(level, busPos, MagicStorage.EXPORT_BUS_BE.get(),
+                    MagicStorage.EXPORT_BUS_ITEM.get(), config)) {
+                helper.fail("Could not configure typed Export capability");
+                return;
+            }
+            StorageResourceKey water = StorageResourceKey.of(
+                    StorageResourceKindApi.FLUID_KIND,
+                    ResourceLocation.withDefaultNamespace("water"),
+                    new CompoundTag());
+            StorageResourceKey energyKey = StorageResourceKey.of(
+                    StorageResourceKindApi.ENERGY_KIND,
+                    ResourceLocation.fromNamespaceAndPath("neoforge", "energy"),
+                    new CompoundTag());
+            if (core.insertResource(water, 2_000, com.swearprom.magicstorage.magic_storage.Action.EXECUTE)
+                    != 2_000
+                    || core.insertResource(energyKey, 800,
+                    com.swearprom.magicstorage.magic_storage.Action.EXECUTE) != 800) {
+                helper.fail("Could not seed typed Export resources");
+                return;
+            }
+            StorageResourceHandler generic = level.getCapability(
+                    StorageResourceCapabilities.BLOCK, busPos, Direction.UP);
+            IFluidHandler fluids = level.getCapability(
+                    Capabilities.FluidHandler.BLOCK, busPos, Direction.UP);
+            var energy = level.getCapability(
+                    Capabilities.EnergyStorage.BLOCK, busPos, Direction.UP);
+            if (generic == null || fluids == null || energy == null) {
+                helper.fail("Export Bus did not expose all typed extraction capabilities");
+                return;
+            }
+            if (generic.extract(water, 600, true) != 600
+                    || core.getResourceAmount(water) != 2_000
+                    || generic.extract(water, 600, false) != 600
+                    || generic.insert(water, 1, false) != 0
+                    || fluids.drain(400, IFluidHandler.FluidAction.EXECUTE).getAmount() != 400
+                    || energy.extractEnergy(300, false) != 300
+                    || core.getResourceAmount(water) != 1_000
+                    || core.getResourceAmount(energyKey) != 500) {
+                helper.fail("Typed Export capability violated extraction direction or exact amounts");
                 return;
             }
             helper.succeed();

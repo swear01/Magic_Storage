@@ -48,6 +48,10 @@ record RecipeAdapterMatch(
         return contract.presentation();
     }
 
+    Optional<TypedRecipePlan> typedRecipePlan() {
+        return Optional.ofNullable(contract.typedRecipePlan());
+    }
+
     boolean isCurrentHolder(RecipeHolder<?> currentHolder) {
         return holder == currentHolder;
     }
@@ -127,14 +131,36 @@ record RecipeAdapterMatch(
             OutputResolver outputResolver,
             Presentation presentation,
             HolderValidator simulationValidator,
-            HolderValidator commitValidator
+            HolderValidator commitValidator,
+            TypedRecipePlan typedRecipePlan,
+            boolean pendingTypedPlan
     ) {
+        Contract(
+                List<Input> orderedInputs,
+                ResourceLocation stationDescriptorId,
+                Cost cost,
+                OutputResolver outputResolver,
+                Presentation presentation,
+                HolderValidator simulationValidator,
+                HolderValidator commitValidator
+        ) {
+            this(orderedInputs, stationDescriptorId, cost, outputResolver, presentation,
+                    simulationValidator, commitValidator, null, false);
+        }
+
         Contract {
             Objects.requireNonNull(orderedInputs, "orderedInputs");
             orderedInputs = List.copyOf(orderedInputs);
-            if (orderedInputs.isEmpty()
-                    || orderedInputs.stream().noneMatch(input -> !input.isEmpty())) {
+            if (!pendingTypedPlan && typedRecipePlan == null
+                    && (orderedInputs.isEmpty()
+                    || orderedInputs.stream().noneMatch(input -> !input.isEmpty()))) {
                 throw new IllegalArgumentException("Recipe adapter contract requires an input");
+            }
+            if ((pendingTypedPlan || typedRecipePlan != null) && !orderedInputs.isEmpty()) {
+                throw new IllegalArgumentException("Typed recipe contracts cannot mix legacy item inputs");
+            }
+            if (pendingTypedPlan && typedRecipePlan != null) {
+                throw new IllegalArgumentException("Pending typed recipe contract already has a plan");
             }
             if (orderedInputs.size() > RecipePresentation.MAX_INPUTS) {
                 throw new IllegalArgumentException("Recipe adapter contract has more than nine inputs");
@@ -145,6 +171,24 @@ record RecipeAdapterMatch(
             Objects.requireNonNull(presentation, "presentation");
             Objects.requireNonNull(simulationValidator, "simulationValidator");
             Objects.requireNonNull(commitValidator, "commitValidator");
+        }
+
+        static Contract pendingTyped(
+                ResourceLocation stationDescriptorId,
+                Cost cost,
+                Presentation presentation,
+                HolderValidator validator
+        ) {
+            return new Contract(
+                    List.of(),
+                    stationDescriptorId,
+                    cost,
+                    (allocations, crafts, level) -> Optional.empty(),
+                    presentation,
+                    validator,
+                    validator,
+                    null,
+                    true);
         }
     }
 
@@ -262,10 +306,19 @@ record RecipeAdapterMatch(
         }
     }
 
-    record CheckedOutput(Map<ItemKey, Long> primaryOutputs, Map<ItemKey, Long> remainders) {
+    record CheckedOutput(
+            Map<ItemKey, Long> primaryOutputs,
+            Map<ItemKey, Long> remainders,
+            Map<StorageResourceKey, Long> resourceOutputs
+    ) {
+        CheckedOutput(Map<ItemKey, Long> primaryOutputs, Map<ItemKey, Long> remainders) {
+            this(primaryOutputs, remainders, Map.of());
+        }
+
         CheckedOutput {
             primaryOutputs = checkedAmounts(primaryOutputs, "primaryOutputs");
             remainders = checkedAmounts(remainders, "remainders");
+            resourceOutputs = checkedResourceAmounts(resourceOutputs);
             if (primaryOutputs.isEmpty()) {
                 throw new IllegalArgumentException("Checked output requires a primary output");
             }
@@ -277,6 +330,19 @@ record RecipeAdapterMatch(
                 Objects.requireNonNull(entry.getKey(), name + ".key");
                 if (entry.getValue() == null || entry.getValue() <= 0) {
                     throw new IllegalArgumentException(name + " amounts must be positive");
+                }
+            }
+            return Map.copyOf(amounts);
+        }
+
+        private static Map<StorageResourceKey, Long> checkedResourceAmounts(
+                Map<StorageResourceKey, Long> amounts
+        ) {
+            Objects.requireNonNull(amounts, "resourceOutputs");
+            for (Map.Entry<StorageResourceKey, Long> entry : amounts.entrySet()) {
+                Objects.requireNonNull(entry.getKey(), "resourceOutputs.key");
+                if (entry.getValue() == null || entry.getValue() <= 0) {
+                    throw new IllegalArgumentException("resourceOutputs amounts must be positive");
                 }
             }
             return Map.copyOf(amounts);

@@ -44,4 +44,30 @@ public final class RecipeFamilyFactories {
                 recipe -> cost.apply(exactRecipeClass.cast(recipe)),
                 presentationKind);
     }
+
+    public static <R extends Recipe<?>> RecipeFamily deterministicResources(
+            Class<R> exactRecipeClass,
+            Supplier<? extends RecipeType<?>> recipeType,
+            ResourceLocation stationDescriptorId,
+            BiFunction<? super R, HolderLookup.Provider, TypedRecipePlan> plan,
+            Function<? super R, RecipeFamilyCost> cost,
+            RecipePresentationKind presentationKind
+    ) {
+        Objects.requireNonNull(exactRecipeClass, "exactRecipeClass");
+        Objects.requireNonNull(recipeType, "recipeType");
+        Objects.requireNonNull(stationDescriptorId, "stationDescriptorId");
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(cost, "cost");
+        Objects.requireNonNull(presentationKind, "presentationKind");
+        if (presentationKind == RecipePresentationKind.NONE) {
+            throw new IllegalArgumentException("Recipe family presentation cannot be NONE");
+        }
+        return new RecipeFamily(
+                exactRecipeClass,
+                recipeType,
+                stationDescriptorId,
+                (recipe, registries) -> plan.apply(exactRecipeClass.cast(recipe), registries),
+                recipe -> cost.apply(exactRecipeClass.cast(recipe)),
+                presentationKind);
+    }
 }

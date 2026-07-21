@@ -17,13 +17,12 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 public final class MekanismChemicalCompat {
-    private static final ResourceLocation CHEMICAL_KIND =
-            ResourceLocation.fromNamespaceAndPath("mekanism", "chemical");
+    private static final ResourceLocation CHEMICAL_KIND = StorageResourceKindApi.CHEMICAL_KIND;
     private static final BlockCapability<IChemicalHandler, Direction> CHEMICAL_CAPABILITY =
             BlockCapability.createSided(
                     ResourceLocation.fromNamespaceAndPath("mekanism", "chemical_handler"),
                     IChemicalHandler.class);
-    private static final Map<StorageCoreBlockEntity, WeakReference<IChemicalHandler>> HANDLERS =
+    private static final Map<Object, WeakReference<IChemicalHandler>> HANDLERS =
             new WeakHashMap<>();
 
     private MekanismChemicalCompat() {
@@ -34,15 +33,28 @@ public final class MekanismChemicalCompat {
                 CHEMICAL_CAPABILITY,
                 MagicStorage.STORAGE_CORE_BE.get(),
                 (core, side) -> core.getLevel() == null || core.getLevel().isClientSide()
-                        ? null : handler(core));
+                        ? null : handler(core, core.resourceHandler()));
+        event.registerBlockEntity(
+                CHEMICAL_CAPABILITY,
+                MagicStorage.IMPORT_BUS_BE.get(),
+                (bus, side) -> bus.getLevel() == null || bus.getLevel().isClientSide()
+                        ? null : handler(bus, bus.passiveResourceHandler()));
+        event.registerBlockEntity(
+                CHEMICAL_CAPABILITY,
+                MagicStorage.EXPORT_BUS_BE.get(),
+                (bus, side) -> bus.getLevel() == null || bus.getLevel().isClientSide()
+                        ? null : handler(bus, bus.passiveResourceHandler()));
     }
 
-    private static synchronized IChemicalHandler handler(StorageCoreBlockEntity core) {
-        WeakReference<IChemicalHandler> reference = HANDLERS.get(core);
+    private static synchronized IChemicalHandler handler(
+            Object owner,
+            StorageResourceHandler resources
+    ) {
+        WeakReference<IChemicalHandler> reference = HANDLERS.get(owner);
         IChemicalHandler existing = reference == null ? null : reference.get();
         if (existing != null) return existing;
-        IChemicalHandler created = new CoreChemicalHandler(core);
-        HANDLERS.put(core, new WeakReference<>(created));
+        IChemicalHandler created = new ResourceChemicalHandler(resources);
+        HANDLERS.put(owner, new WeakReference<>(created));
         return created;
     }
 
@@ -61,11 +73,11 @@ public final class MekanismChemicalCompat {
                 .orElse(ChemicalStack.EMPTY);
     }
 
-    private static final class CoreChemicalHandler implements IChemicalHandler {
-        private final StorageCoreBlockEntity core;
+    private static final class ResourceChemicalHandler implements IChemicalHandler {
+        private final StorageResourceHandler resources;
 
-        private CoreChemicalHandler(StorageCoreBlockEntity core) {
-            this.core = core;
+        private ResourceChemicalHandler(StorageResourceHandler resources) {
+            this.resources = resources;
         }
 
         @Override
@@ -78,7 +90,7 @@ public final class MekanismChemicalCompat {
             List<StorageResourceKey> keys = availableKeys();
             if (tank < 0 || tank >= keys.size()) return ChemicalStack.EMPTY;
             StorageResourceKey key = keys.get(tank);
-            return stack(key, core.getResourceAmount(key));
+            return stack(key, resources.getAmount(key));
         }
 
         @Override
@@ -109,12 +121,10 @@ public final class MekanismChemicalCompat {
         @Override
         public ChemicalStack insertChemical(ChemicalStack chemicalStack, Action action) {
             if (chemicalStack.isEmpty()) return ChemicalStack.EMPTY;
-            long inserted = core.insertResource(
+            long inserted = resources.insert(
                     key(chemicalStack),
                     chemicalStack.getAmount(),
-                    action.execute()
-                            ? com.swearprom.magicstorage.magic_storage.Action.EXECUTE
-                            : com.swearprom.magicstorage.magic_storage.Action.SIMULATE);
+                    action.simulate());
             long remaining = chemicalStack.getAmount() - inserted;
             return remaining == 0 ? ChemicalStack.EMPTY : chemicalStack.copyWithAmount(remaining);
         }
@@ -124,18 +134,18 @@ public final class MekanismChemicalCompat {
             List<StorageResourceKey> keys = availableKeys();
             if (amount <= 0 || tank < 0 || tank >= keys.size()) return ChemicalStack.EMPTY;
             StorageResourceKey key = keys.get(tank);
-            long extracted = core.extractResource(
+            long extracted = resources.extract(
                     key,
                     amount,
-                    action.execute()
-                            ? com.swearprom.magicstorage.magic_storage.Action.EXECUTE
-                            : com.swearprom.magicstorage.magic_storage.Action.SIMULATE);
+                    action.simulate());
             return stack(key, extracted);
         }
 
         private List<StorageResourceKey> availableKeys() {
-            return core.getResourceKeys(CHEMICAL_KIND).stream()
+            return resources.getStoredResources().stream()
+                    .filter(key -> key.kindId().equals(CHEMICAL_KIND))
                     .filter(key -> !stack(key, 1).isEmpty())
+                    .sorted()
                     .toList();
         }
     }

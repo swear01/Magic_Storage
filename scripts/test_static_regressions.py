@@ -689,7 +689,8 @@ class StaticRegressionTests(unittest.TestCase):
     def test_recipe_addon_gametest_gate_rejects_any_selftest_failure(self):
         build = self.read_required("build.gradle")
         self.assertIn("tasks.named('runGameTestServer').configure", build)
-        self.assertIn("All 329 required tests passed", build)
+        self.assertIn("All 335 required tests passed", build)
+        self.assertIn("All 5 required tests passed", build)
         self.assertIn("text.contains('TESTS FAILED!')", build)
         self.assertNotIn("SelfTest: 1 TESTS FAILED!", build)
 
@@ -725,7 +726,7 @@ class StaticRegressionTests(unittest.TestCase):
             "a weak-key map still leaks when each strongly held handler references its Core key",
         )
         self.assertIn("tasks.named('runMekanismGameTestServer').configure", build)
-        self.assertIn("All 1 required tests passed", build)
+        self.assertIn("All 2 required tests passed", build)
         self.assertIn('modId="mekanism"', fixture_metadata)
         self.assertIn('versionRange="[10.7,)"', fixture_metadata)
         self.assertNotRegex(fixture_metadata, r'versionRange="\[10\.7\.\d')
@@ -736,6 +737,24 @@ class StaticRegressionTests(unittest.TestCase):
                 r"output\s*\+\s*sourceSets\.main\.runtimeClasspath.*?\}",
                 f"{source_set} runtime must not inherit main compileOnly mods",
             )
+
+    def test_items_share_the_universal_live_transaction_ledger(self):
+        record = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CoreStorageRecord.java"
+        )
+        core = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageCoreBlockEntity.java"
+        )
+        bridge = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageResourceBridge.java"
+        )
+        self.assertNotIn("Object2LongOpenHashMap<ItemKey>", record)
+        self.assertNotIn("Object2LongOpenHashMap<ItemKey>", core)
+        self.assertNotIn("private Map<Item,", record)
+        self.assertNotIn("private Map<Item,", core)
+        self.assertIn("static final ResourceLocation ITEM_KIND", bridge)
+        self.assertIn("StorageResourceBridge.itemKey(key", core)
+        self.assertIn("resourceLedger.applyExact", core)
 
     def test_recipe_family_registry_freezes_before_selftests(self):
         entrypoint = self.read_required(
@@ -1690,15 +1709,16 @@ class StaticRegressionTests(unittest.TestCase):
             r"\bprivate\s+boolean\s+commitCraft\s*\(",
             "CraftingTerminalMenu.commitCraft",
         )
-        precheck = self.java_block(
+        transaction = self.java_block(
             menu,
-            r"\bprivate\s+static\s+boolean\s+canExtractCoreReservation\s*\(",
-            "CraftingTerminalMenu.canExtractCoreReservation",
+            r"\bprivate\s+static\s+boolean\s+applyCoreResourceDeltas\s*\(",
+            "CraftingTerminalMenu.applyCoreResourceDeltas",
         )
-        self.assertIn("extractItemCount(", commit)
-        self.assertIn("extractItemCount(", precheck)
+        self.assertIn("applyCoreResourceDeltas(", commit)
+        self.assertIn("StorageResourceTransaction.builder()", transaction)
+        self.assertIn("core.applyResourceTransaction(", transaction)
         self.assertNotIn("while (remaining > 0)", commit)
-        self.assertNotIn("while (remaining > 0)", precheck)
+        self.assertNotIn("while (remaining > 0)", transaction)
 
     def test_smithing_variant_paths_bind_same_id_to_exact_selected_output(self):
         menu = self.read_required(

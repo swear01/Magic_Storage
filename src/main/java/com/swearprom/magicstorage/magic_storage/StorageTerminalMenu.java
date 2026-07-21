@@ -61,6 +61,16 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         public void onEnergyChanged(EnergyType type, long newAmount) {
             energyDirty = true;
         }
+
+        @Override
+        public void onResourceChanged(
+                StorageResourceKey key,
+                long delta,
+                long newAmount,
+                Actor actor
+        ) {
+            storageDirty = true;
+        }
     };
 
     public StorageTerminalMenu(int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
@@ -244,7 +254,8 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         this.currentFilter = filter != null ? filter : "";
         displayInventory.clearContent();
         if (core == null) { totalItemTypes = 0; return; }
-        java.util.List<ItemStack> stacks = core.getDisplayStacks(currentFilter, sortMode, sortOrder);
+        java.util.List<ItemStack> stacks = core.getTerminalDisplayStacks(
+                currentFilter, sortMode, sortOrder);
         totalItemTypes = stacks.size();
         displayTypeCount = core.getTypeCount();
         displayMaxTypes = core.getTotalTypeSlots();
@@ -297,6 +308,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
             if (!player.level().isClientSide()) {
                 Slot slot = getSlot(slotIndex);
                 ItemStack displayStack = slot.getItem();
+                if (TerminalResourceDisplay.isTyped(displayStack)) return;
                 if (!displayStack.isEmpty() && getCarried().isEmpty()) {
                     StorageCoreBlockEntity core = getCore(player.level());
                     if (core != null) {
@@ -338,6 +350,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         ItemStack stackInSlot = slot.getItem();
 
         if (index < DISPLAY_SLOTS) {
+            if (TerminalResourceDisplay.isTyped(stackInSlot)) return ItemStack.EMPTY;
             if (!player.level().isClientSide()) {
                 StorageCoreBlockEntity core = getCore(player.level());
                 if (core != null) {

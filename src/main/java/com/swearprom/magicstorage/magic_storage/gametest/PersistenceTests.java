@@ -53,7 +53,7 @@ public class PersistenceTests {
             for (int index = 0; index < 785; index++) {
                 ItemStack variant = new ItemStack(Items.PAPER);
                 variant.set(DataComponents.CUSTOM_NAME, Component.literal("chunk-boundary-" + index));
-                record.putItem(ItemKey.of(variant), index + 1L);
+                record.putItem(ItemKey.of(variant), index + 1L, level.registryAccess());
             }
             CompoundTag tag = new CompoundTag();
             core.saveAdditional(tag, level.registryAccess());
@@ -109,7 +109,7 @@ public class PersistenceTests {
         }
         ItemStack namedDiamond = new ItemStack(Items.DIAMOND);
         namedDiamond.set(DataComponents.CUSTOM_NAME, Component.literal("Repository Diamond"));
-        source.putItem(ItemKey.of(namedDiamond), Long.MAX_VALUE - 7);
+        source.putItem(ItemKey.of(namedDiamond), Long.MAX_VALUE - 7, registries);
         source.machines().setItem(MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE, 3));
         source.descriptorAmounts().put(MachineEnergyTable.AXE_ID, 37L);
         source.infiniteDescriptors().add(ResourceLocation.fromNamespaceAndPath(
@@ -144,7 +144,7 @@ public class PersistenceTests {
                 return;
             }
         }
-        if (restored.getItemCount(ItemKey.of(namedDiamond)) != Long.MAX_VALUE - 7
+        if (restored.getItemCount(ItemKey.of(namedDiamond), registries) != Long.MAX_VALUE - 7
                 || restored.machines().getItem(MachineEnergyTable.FURNACE_SLOT).getCount() != 3
                 || restored.descriptorAmounts().getOrDefault(MachineEnergyTable.AXE_ID, 0L) != 37
                 || restored.unresolvedInventoryEntries().size() != 1
@@ -171,7 +171,7 @@ public class PersistenceTests {
             for (int index = 0; index < cases[caseIndex]; index++) {
                 ItemStack variant = new ItemStack(Items.PAPER);
                 variant.set(DataComponents.CUSTOM_NAME, Component.literal("segment-" + index));
-                record.putItem(ItemKey.of(variant), index + 1L);
+                record.putItem(ItemKey.of(variant), index + 1L, registries);
             }
             CompoundTag encoded = record.save(registries);
             ListTag segments = encoded.getList("inventorySegments", Tag.TAG_COMPOUND);
@@ -250,7 +250,7 @@ public class PersistenceTests {
         UUID playerId = UUID.randomUUID();
         CoreStorageRecord stored = repository.createFresh(origin, originalOwnerToken);
         UUID networkId = stored.networkId();
-        stored.putItem(ItemKey.of(new ItemStack(Items.DIAMOND)), 81);
+        stored.putItem(ItemKey.of(new ItemStack(Items.DIAMOND)), 81, registries);
 
         CoreStorageRepository.RecoverySummary summary = repository.prepareRecovery(
                 stored.storageId(), origin, originalOwnerToken, playerId, 1234L).orElseThrow();
@@ -274,7 +274,8 @@ public class PersistenceTests {
                 summary.id(), temporaryFresh.storageId(), target, targetOwnerToken);
         if (!claimed.success() || claimed.record() != stored
                 || !claimed.record().networkId().equals(networkId)
-                || claimed.record().getItemCount(ItemKey.of(new ItemStack(Items.DIAMOND))) != 81
+                || claimed.record().getItemCount(
+                        ItemKey.of(new ItemStack(Items.DIAMOND)), registries) != 81
                 || repository.hasRecovery(summary.id())
                 || repository.hasRecord(temporaryFresh.storageId())) {
             helper.fail("Recovery claim copied, reset, or failed to consume the repository mapping");
@@ -355,7 +356,9 @@ public class PersistenceTests {
         }
 
         CoreStorageRecord duplicateSource = CoreStorageRecord.fresh(UUID.randomUUID());
-        duplicateSource.putItem(ItemKey.of(new ItemStack(Items.DIAMOND)), 17);
+        duplicateSource.putItem(
+                ItemKey.of(new ItemStack(Items.DIAMOND)), 17,
+                helper.getLevel().registryAccess());
         CompoundTag firstCopy = duplicateSource.save(helper.getLevel().registryAccess());
         firstCopy.putString("sentinel", "first-copy");
         CompoundTag secondCopy = firstCopy.copy();
@@ -439,7 +442,7 @@ public class PersistenceTests {
         }
 
         CoreStorageRecord countSource = CoreStorageRecord.fresh(UUID.randomUUID());
-        countSource.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1);
+        countSource.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1, registries);
         CompoundTag malformedInventoryCount = countSource.save(registries);
         malformedInventoryCount.getList("inventorySegments", Tag.TAG_COMPOUND)
                 .getCompound(0).getList("entries", Tag.TAG_COMPOUND)
@@ -467,7 +470,7 @@ public class PersistenceTests {
         }
 
         CoreStorageRecord populated = CoreStorageRecord.fresh(UUID.randomUUID());
-        populated.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1);
+        populated.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1, registries);
         CompoundTag malformedEntries = populated.save(registries);
         ListTag segments = malformedEntries.getList("inventorySegments", Tag.TAG_COMPOUND);
         ListTag wrongEntries = new ListTag();
@@ -538,7 +541,9 @@ public class PersistenceTests {
         }
 
         CoreStorageRecord populated = repository.createFresh(location, ownerToken);
-        populated.putItem(ItemKey.of(new ItemStack(Items.STONE)), 1);
+        populated.putItem(
+                ItemKey.of(new ItemStack(Items.STONE)), 1,
+                helper.getLevel().registryAccess());
         if (repository.removeIfEmpty(populated.storageId(), location, ownerToken)
                 || !repository.hasRecord(populated.storageId())) {
             helper.fail("Non-empty Core record was deleted on removal");
@@ -665,7 +670,8 @@ public class PersistenceTests {
         UUID attachmentToken = UUID.randomUUID();
         UUID owner = UUID.randomUUID();
         CoreStorageRecord record = repository.createFresh(origin, attachmentToken);
-        record.putItem(ItemKey.of(new ItemStack(Items.STONE)), 9);
+        record.putItem(
+                ItemKey.of(new ItemStack(Items.STONE)), 9, level.registryAccess());
         CoreStorageRepository.RecoverySummary summary = repository.prepareRecovery(
                 record.storageId(), origin, attachmentToken, owner, level.getGameTime()).orElseThrow();
         repository.release(record.storageId(), origin, attachmentToken);

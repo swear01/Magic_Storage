@@ -1,6 +1,6 @@
 # Typed Resource Storage Architecture
 
-> Status: active implementation under GitHub [#9](https://github.com/swear01/Magic_Storage/issues/9). The universal non-item ledger, persistent raw keys, NeoForge fluid/energy capabilities, and optional Mekanism chemical capability are implemented. Existing items still use the legacy exact-`ItemKey` map; terminal listings, buses, the public addon kind registry, and mixed item/non-item crafting remain later phases.
+> Status: implemented foundation under GitHub [#9](https://github.com/swear01/Magic_Storage/issues/9). Item, fluid, NeoForge Energy, optional Mekanism chemical, and registered addon kinds now share one live ledger and transaction domain. Terminal listing, passive Bus capabilities, Creative unlimited type capacity, the public resource-kind API, and deterministic typed recipe families are connected.
 
 ## Product boundary
 
@@ -27,7 +27,7 @@ Variant data is part of identity. Item and fluid components cannot be discarded 
 
 - Identity: exact item registry ID plus exact data components.
 - Amount: item count as `long`.
-- Existing `ItemKey` behavior remains the compatibility baseline while the Core moves to the universal ledger.
+- `ItemKey` remains the exact item adapter, but live counts are stored only in the universal ledger. The old segmented item NBT is now a persistence compatibility encoding, not a second runtime map.
 
 ### Fluid
 
@@ -44,6 +44,7 @@ Variant data is part of identity. Item and fluid components cannot be discarded 
 ### Chemical
 
 - Identity: exact Mekanism chemical registry ID.
+- The persisted resource-kind ID remains `mekanism:chemical` for compatibility with 0.1.31 worlds. The built-in registry entry is exposed through a NeoForge alias from `mekanism:chemical` to `magic_storage:chemical`; do not rename it or silently migrate saved keys.
 - Amount: chemical amount as `long`.
 - The compatibility module uses `ChemicalStack` and `IChemicalHandler` only when Mekanism is present. The normal build and dedicated server must remain safe when it is absent.
 - The player-facing dependency is not pinned to the one representative version exercised by CI. No Mekanism multi-version CI matrix is planned; incompatibilities outside that representative fixture are handled from user reports.
@@ -60,33 +61,29 @@ Variant data is part of identity. Item and fluid components cannot be discarded 
 
 ## Resource-kind registration boundary
 
-The future public registry is keyed by `ResourceLocation` and freezes during normal NeoForge mod loading. A complete resource-kind contract must define:
+`StorageResourceKindApi.createDeferredRegister(modId)` registers stable kind IDs in `magic_storage:resource_kind` during normal NeoForge loading. A kind declares whether exact variant payloads are legal and supplies a non-empty representative item. Addons construct canonical `StorageResourceKey` values and may expose them through `StorageResourceCapabilities.BLOCK`; built-in helpers create and decode exact item/fluid keys and the singleton NeoForge Energy key.
 
-- canonical identity encoding and validation;
-- amount unit and legal bounds;
-- deterministic ordering;
-- persistence and network codecs;
-- server-side insertion/extraction bridge;
-- client presentation data that does not expose authoritative storage state;
-- missing-provider recovery behavior.
+Registration does not grant Core/player mutation callbacks. `StorageResourceHandler` exposes bounded list/amount/insert/extract operations; `StorageResourceTransaction` is the only public multi-key mutation request. Magic Storage still owns validation, capacity, persistence, synchronization, and all-or-nothing commit. Missing providers remain raw on disk and are omitted from terminal presentation until their kind is registered again; new live mutations reject unregistered kinds instead of guessing or fabricating a representative.
 
-Registration does not grant Core/player mutation callbacks. Addons describe values and deterministic deltas; Magic Storage owns simulation, capacity planning, commit, rollback, persistence, and synchronization.
+Terminal entries carry the exact key and long amount in display-only metadata. Clicking a non-item representative never extracts its icon. Import and Export Buses expose the generic resource capability plus native fluid/energy and optional chemical wrappers: Import is insert-only and Export is extract-only. Existing item filters are not reinterpreted as typed filters, so non-item resources pass only under `DENY` policy; active front scanning remains item-only. Creative Storage makes the same shared type domain unlimited, not only items.
 
 ## Recipe-family relationship
 
-GitHub [#1](https://github.com/swear01/Magic_Storage/issues/1) will replace the initial `singleItemToItem` factory with bounded deterministic N-input/N-output contracts over this ledger. Inputs, outputs, catalysts, tools, remainders, fluids, power, and chemicals must all become explicit transaction roles. Unknown chance, event, world, player, or asynchronous machine semantics remain unsupported.
+`RecipeFamilyFactories.deterministicResources(...)` resolves a `TypedRecipePlan` from the current exact recipe holder and server registries. A plan declares one to nine exact inputs, multiple exact outputs, a selectable primary item output, layout, and explicit roles. `CONSUME` multiplies by craft count; `CATALYST` and `TOOL` are retained and reusable across a batch; `PRIMARY` item outputs follow the selected Player/Storage destination, while non-item outputs and typed remainders return to Core. Checked multiplication, destination capacity, every consumed item/non-item, and every Core output are simulated and committed as one ledger transaction.
+
+Chance, dynamic world/player callbacks, arbitrary mutation callbacks, and external-machine send-and-wait remain unsupported. Multi-step graph planning is still future work under GitHub [#1](https://github.com/swear01/Magic_Storage/issues/1).
 
 ## Delivery phases
 
 1. **Implemented:** universal key, delta, ledger, persistence, simulation, and atomic commit algebra.
-2. Item bridge and unchanged item persistence/GameTest behavior.
+2. **Implemented:** item live-ledger bridge with exact components and legacy segmented-NBT compatibility.
 3. **Implemented:** fluid storage plus `IFluidHandler` capability and transfer tests.
 4. **Implemented:** NeoForge Energy storage plus `IEnergyStorage` capability and separation tests.
 5. **Implemented foundation:** optional Mekanism chemical capability, absent-mod base run, and one representative present-mod GameTest fixture. This is intentionally not a multi-version matrix; other-version incompatibilities are fixed from user reports rather than turning CI into a version guarantee.
-6. Typed terminal listings, buses, creative infinite storage, and addon resource-kind API.
-7. Deterministic N-input/N-output recipe families and later multi-step planning.
+6. **Implemented:** typed terminal listings, generic/native passive Bus capabilities, Creative unlimited type capacity, and addon resource-kind registry/capability API.
+7. **Implemented:** deterministic N-input/N-output typed recipe families. **Future:** bounded multi-step planning.
 
-The current ledger can atomically validate and commit deltas spanning arbitrary stable kind IDs, including unknown provider IDs. It is not yet the Core's only transaction domain: item mutations still live in the legacy item map, so production crafting must not claim atomic item+fluid/power/chemical execution until phase 2 and the mixed transaction bridge are complete.
+The current ledger is the Core's only live item/resource transaction domain. Persistence may still encode resolvable items in legacy segmented form so existing worlds remain readable, but load immediately migrates them into the same ledger and rejects duplicate dual representation.
 
 ## Verification gates
 
