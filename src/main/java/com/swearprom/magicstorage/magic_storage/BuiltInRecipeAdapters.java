@@ -56,7 +56,7 @@ final class BuiltInRecipeAdapters {
     static final ResourceLocation AXE_TRANSFORMATION_ID = id("axe_transformation");
 
     private static final ResourceLocation COMPATIBILITY_PROBE_ID = id("compatibility_probe");
-    private static final List<RecipeType<?>> DISCOVERY_TYPES = List.of(
+    private static final List<RecipeType<?>> BUILT_IN_DISCOVERY_TYPES = List.of(
             RecipeType.CRAFTING,
             RecipeType.SMELTING,
             RecipeType.BLASTING,
@@ -67,7 +67,7 @@ final class BuiltInRecipeAdapters {
     );
     private static final Map<Recipe<?>, SmithingRepresentatives> SMITHING_INPUT_CACHE =
             Collections.synchronizedMap(new WeakHashMap<>());
-    private static final RecipeAdapterRegistry REGISTRY = new RecipeAdapterRegistry(List.of(
+    private static final List<RecipeAdapter> BUILT_IN_ADAPTERS = List.of(
             exact(SHAPED_ID, 0, ShapedRecipe.class, RecipeType.CRAFTING,
                     recipe -> recipe.getWidth() <= 3
                             && recipe.getHeight() <= 3
@@ -139,25 +139,33 @@ final class BuiltInRecipeAdapters {
                     recipe -> candidateIndex(List.of(recipe.input())),
                     BuiltInRecipeAdapters::singleVariant,
                     BuiltInRecipeAdapters::axeContract)
-    ));
+    );
 
     private BuiltInRecipeAdapters() {
     }
 
     static RecipeAdapterRegistry registry() {
-        return REGISTRY;
+        return RecipeAdapters.snapshot().registry();
     }
 
     static List<RecipeType<?>> discoveryTypes() {
-        return DISCOVERY_TYPES;
+        return RecipeAdapters.snapshot().discoveryTypes();
+    }
+
+    static List<RecipeAdapter> builtInAdapters() {
+        return BUILT_IN_ADAPTERS;
+    }
+
+    static List<RecipeType<?>> builtInDiscoveryTypes() {
+        return BUILT_IN_DISCOVERY_TYPES;
     }
 
     static boolean supportsRecipe(Recipe<?> recipe) {
-        return REGISTRY.classify(new RecipeHolder<>(COMPATIBILITY_PROBE_ID, recipe)).isPresent();
+        return registry().classify(new RecipeHolder<>(COMPATIBILITY_PROBE_ID, recipe)).isPresent();
     }
 
     static EnergyCost energyCost(Recipe<?> recipe) {
-        return REGISTRY.classify(new RecipeHolder<>(COMPATIBILITY_PROBE_ID, recipe))
+        return registry().classify(new RecipeHolder<>(COMPATIBILITY_PROBE_ID, recipe))
                 .flatMap(match -> match.cost().energyCost())
                 .orElse(null);
     }
@@ -835,6 +843,11 @@ final class BuiltInRecipeAdapters {
             }
             return lookupOutputMatcher.matches(
                     recipeClass.cast(holder.value()), variantContract, requestedOutput, level);
+        }
+
+        @Override
+        public Optional<RecipeFamilyKey> exactFamilyKey() {
+            return Optional.of(new RecipeFamilyKey(recipeClass, recipeType));
         }
     }
 

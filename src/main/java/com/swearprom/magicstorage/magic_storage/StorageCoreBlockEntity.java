@@ -44,7 +44,10 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private SimpleContainer machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
 
     private Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
+    private StorageResourceLedger resourceLedger = new StorageResourceLedger();
     private final Map<ItemKey, Long> flatCache = new HashMap<>();
+    private final CoreFluidHandler fluidHandler = new CoreFluidHandler(this);
+    private final CoreEnergyStorage energyStorage = new CoreEnergyStorage(this);
     private final List<StorageListener> listeners = new ArrayList<>();
     private final List<Runnable> deferredListenerEvents = new ArrayList<>();
     private int mutationBatchDepth;
@@ -309,6 +312,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
             descriptorAmounts = new HashMap<>();
             infiniteDescriptors = new HashSet<>();
             inventory = new IdentityHashMap<>();
+            resourceLedger = new StorageResourceLedger();
             typeCount = 0;
             cacheDirty = true;
             updateStorageAvailability(StorageAvailability.from(result.reason()));
@@ -359,6 +363,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         descriptorAmounts = record.descriptorAmounts();
         infiniteDescriptors = record.infiniteDescriptors();
         inventory = record.inventory();
+        resourceLedger = record.resourceLedger();
         typeCount = record.typeCount();
         cacheDirty = true;
         record.setMachineMutationCallback(this::onMachineChanged);
@@ -468,6 +473,53 @@ public class StorageCoreBlockEntity extends BlockEntity {
         long inserted = insertItemCount(key, stack.getCount(), action, actor);
         if (action == Action.EXECUTE && inserted > 0) stack.shrink((int) inserted);
         return inserted;
+    }
+
+    long insertResource(StorageResourceKey key, long amount, Action action) {
+        if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
+        StorageTypeCapacity resourceCapacity = resourceCapacity();
+        long inserted = resourceLedger.insert(key, amount, resourceCapacity, action);
+        if (action == Action.EXECUTE && inserted > 0) {
+            typeCount = itemTypeCount() + resourceLedger.typeCount();
+            markStorageChanged();
+        }
+        return inserted;
+    }
+
+    long extractResource(StorageResourceKey key, long amount, Action action) {
+        if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
+        long extracted = resourceLedger.extract(key, amount, action);
+        if (action == Action.EXECUTE && extracted > 0) {
+            typeCount = itemTypeCount() + resourceLedger.typeCount();
+            markStorageChanged();
+        }
+        return extracted;
+    }
+
+    long getResourceAmount(StorageResourceKey key) {
+        return isStorageAvailable() ? resourceLedger.amount(key) : 0;
+    }
+
+    List<StorageResourceKey> getResourceKeys(ResourceLocation kindId) {
+        return isStorageAvailable() ? resourceLedger.keys(kindId) : List.of();
+    }
+
+    CoreFluidHandler fluidHandler() {
+        return fluidHandler;
+    }
+
+    CoreEnergyStorage energyStorage() {
+        return energyStorage;
+    }
+
+    private StorageTypeCapacity resourceCapacity() {
+        if (typeCapacity.unlimited()) return StorageTypeCapacity.unlimitedCapacity();
+        return StorageTypeCapacity.finite(Math.max(
+                0, typeCapacity.finiteTypeSlots() - itemTypeCount()));
+    }
+
+    private int itemTypeCount() {
+        return Math.max(0, typeCount - resourceLedger.typeCount());
     }
 
     public long insertItemCount(ItemKey key, long amount, Action action, Actor actor) {
@@ -667,6 +719,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
         descriptorAmounts = new HashMap<>();
         infiniteDescriptors = new HashSet<>();
         inventory = new IdentityHashMap<>();
+        resourceLedger = new StorageResourceLedger();
         typeCount = 0;
         cacheDirty = true;
         storageAvailability = storageId == null

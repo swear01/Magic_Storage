@@ -2,11 +2,12 @@
 
 ## Backlog
 
+- Typed-resource Core / GitHub #9：universal non-item ledger、raw-preserving persistence、NeoForge fluid/energy capability與optional Mekanism chemical present/absent fixture已完成。下一步將existing item接進同一live transaction boundary，再做terminal/bus/creative/public addon-kind registry與deterministic N-input/N-output recipe family。Item/fluid/power/chemical只是首批；provider缺席保留raw payload，不做external-machine send-and-wait。完整契約見`docs/typed-resource-storage.md`。
 - 擴充方塊(第二階段,PLAN §四)。
 - Tier 3 遠端存取完整體驗(背包開關、遠端 GUI 優化)。
 - Recipe scope expansion：exact component-matched/preserving `SmithingTransformRecipe`、exact component-preserving `SmithingTrimRecipe`與deterministic vanilla default-state axe strip/scrape/wax-off已支援；mod block tool hooks、special/dynamic/incomplete或缺少registry context的variants、event/player/world-state-dependent transforms、loom/cartography/grindstone/anvil/enchanting仍需逐類建立可完整simulate/commit的server contract，否則繼續fail closed。
 - Brewing production path:`BREW_ENERGY` / `blaze_fuel` 已有資料模型,但尚未接可執行的 brewing recipe consumer；`bottle_fuel` 已退役且現行repository不遷移舊NBT。
-- Modded recipe adapters：現行十個 built-in families 已由完整 adapter match contract 單獨擁有 input/output/component/remainder/station/energy/tool/presentation/simulate/commit policy；非`minecraft` namespace但使用同一 exact vanilla class 可工作。custom `RecipeType`/class仍必須逐family提供同等完整 contract，禁止用`Recipe#getIngredients()`當通用fallback。第一個目標mod與公開 addon API仍待依官方source/API另開 TDD slice。完整分期見`docs/superpowers/plans/2026-07-14-modded-recipes-multistep-crafting.md`。
+- Modded recipe adapters：現行十個 built-in families 已由完整 adapter match contract 單獨擁有 input/output/component/remainder/station/energy/tool/presentation/simulate/commit policy；非`minecraft` namespace但使用同一 exact vanilla class 可工作。公開custom API目前仍只有bounded `singleItemToItem`。GitHub #9完成後要改成deterministic N-input/N-output typed-resource contract，明確涵蓋item/fluid/power/chemical/catalyst/tool/remainder；禁止用`Recipe#getIngredients()`或external-machine send-and-wait當fallback。完整分期見`docs/typed-resource-storage.md`與`docs/superpowers/plans/2026-07-14-modded-recipes-multistep-crafting.md`。
 - Multi-step magic crafting：最低支援EMI 1.1.24的公開API可查recipe並開tree screen，但建立/讀取`BoM`/`MaterialTree`是internal API，不能作server planner。keyed station descriptors與normalized built-in adapter contracts已完成；下一步才是bounded/cycle-safe、exact-component、energy/remainder/capacity-aware的server graph與整筆atomic net transaction。EMI僅作client tree/selection UI；首版不含queued jobs/crafting CPU/monitor。
 - Bus 自動化後續：Phase 1的versioned config/migration/owner/actor與Phase 2的deterministic filter policy及既有directional transfer wiring已完成。Phase 2仍缺server config packets、ownership enforcement與capability invalidation；Phase 3–4仍須完成directionless capability matrix、re-entry isolation、filtered Export extraction及adversarial/modded handler。契約見`docs/superpowers/specs/2026-07-17-bus-automation-contract.md`；每段必須先補RED，不能把目前output handler隨意暴露成可抽整個Core。
 - Craft planner 完整性 hardening：目前 deterministic allocation/packing 已安全 fail closed，但後續要把 ingredient source 與 destination 聯合規劃，避免「改吃玩家材料即可騰出格子」仍被拒絕；primary output 與 container remainder 也要共同 packing，讓既有 Core stack/new inventory type 的可行交換不被固定順序漏掉。
@@ -68,6 +69,11 @@
 - 網路 BFS 掃描、Core ↔ Unit 連通(M2)。
 - Storage Unit 六 Tier、`storage_terminal`、能量池系統、`crafting_terminal`、即時/熔爐類合成(M3–M8 大致到位,以程式碼為準)。
 
+## Completed 2026-07-21
+
+- Typed-resource first slice：完成stable arbitrary kind/resource/variant key、long ledger、mixed-key simulate/atomic commit、schema-1 record persistence與corrupt/raw fail-closed；Core新增exact-component NeoForge fluid、獨立FE與optional Mekanism chemical capability。Mekanism compat只在ModList確認存在後載入，present-mod fixture驗5-billion amount、simulation、exact extraction與multiple chemical types；base run驗缺席安全。Items、UI/buses/creative/public kind API與live mixed crafting仍在#9後續。
+- Recipe Family A+B initial slice：supported exact vanilla class/type 保持跨 namespace 零設定發現；公開 `magic_storage:recipe_family` registry、opaque `RecipeFamily`、bounded `singleItemToItem` factory、station/duplicate validation、deterministic external ordering與custom `RecipeType` discovery已完成。Different-package compile fixture與獨立NeoForge addon GameTest驗證discovery/preview/components/count/commit/rollback。更多完整語意 factories、real-mod present assertions與multi-step planner仍是後續；generic inference與external-machine processing patterns不做。
+
 ## Completed 2026-07-17
 
 - Core out-of-chunk storage repository：`StorageCoreBlockEntity` chunk NBT固定只含`storageId`/`storageSchema`；overworld `magic_storage_core_storages.dat`唯一持有inventory、energy、machines、descriptor與raw unresolved NBT。庫存以每段最多63種的任意多段格式保存，runtime attachment拒絕duplicate owner，missing/corrupt/packed/duplicate狀態全部fail closed。含資料Core的掉落token只指向同一record，claim不複製payload，空Core移除才刪record；舊inline與full-snapshot格式刻意不遷移。
@@ -75,5 +81,5 @@
 
 ## Completed 2026-07-15
 
-- 第三方 machine descriptor API：公開 NeoForge custom registry、stable ID驗證、cached server opening snapshot、clientbound consumable state、固定256 menu/Core slots與raw unavailable entry保留已完成；原先parseable stack migration已由2026-07-17 no-migration repository格式取代，built-in recipe-family adapter authority已完成；第三方family/public addon API仍是獨立backlog。
+- 第三方 machine descriptor API：公開 NeoForge custom registry、stable ID驗證、cached server opening snapshot、clientbound consumable state、固定256 menu/Core slots與raw unavailable entry保留已完成；原先parseable stack migration已由2026-07-17 no-migration repository格式取代，built-in recipe-family adapter authority已完成。Recipe Family A+B 的初始完成狀態見2026-07-21項目。
 - Superseded Core oversized-drop/recovery中繼版：當時survival、creative、explosion與Wrench會建立完整SavedData snapshot再掉UUID token；現行2026-07-17實作改為永久repository record加無payload recovery indirection。

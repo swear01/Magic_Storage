@@ -61,9 +61,10 @@ This contract keeps the current behavior until each migration phase lands:
 - RS2's tri-state security providers are a useful composition pattern, but Magic
   Storage will not copy that API or make RS2 a dependency:
   [`SecurityDecision`](https://github.com/refinedmods/refinedstorage2/blob/0643e6f4bc25f12dc01893916c53d393ecdc08d0/refinedstorage-network-api/src/main/java/com/refinedmods/refinedstorage/api/network/security/SecurityDecision.java).
-- The first real optional-handler matrix targets Sophisticated Storage 1.21.x's
-  direct storage and controller handlers, in addition to adversarial synthetic
-  handlers:
+- Sophisticated Storage 1.21.x's direct storage and controller handlers are the
+  first external reference targets. Automated coverage uses both adversarial
+  synthetic handlers and one representative Sophisticated Storage version; that
+  test artifact is not a player-facing version restriction:
   [`StorageBlockEntity`](https://github.com/P3pp3rF1y/SophisticatedStorage/blob/9aa6ad5170f8615a192d96c0607d3e4c0dc7e54c/src/main/java/net/p3pp3rf1y/sophisticatedstorage/block/StorageBlockEntity.java) and
   [`ControllerBlockEntity`](https://github.com/P3pp3rF1y/SophisticatedStorage/blob/9aa6ad5170f8615a192d96c0607d3e4c0dc7e54c/src/main/java/net/p3pp3rf1y/sophisticatedstorage/block/ControllerBlockEntity.java).
 
@@ -410,8 +411,9 @@ before adding client controls.
 ### Phase 4 — Presentation and compatibility
 
 Add the shared bus configuration screen, blockstate/models/textures, i18n,
-Wrench/access integration, deterministic Prism lab fixtures, and the optional
-Sophisticated Storage test runtime. Do not bundle or require that mod in release.
+Wrench/access integration, deterministic Prism lab fixtures, one representative
+Sophisticated Storage compatibility runtime, and player-report-driven compatibility
+notes. Do not bundle, require, or restrict players to the CI-tested version.
 
 ## RED-first verification matrix
 
@@ -440,8 +442,9 @@ Sophisticated Storage test runtime. Do not bundle or require that mod in release
   filter, and stack limits;
 - synthetic handlers cover slot-order change, capability replacement, same-object
   remainder, partial execution, recursive callback, invalid slot, and over-request;
-- Sophisticated Storage direct storage and controller handlers pass present-mod;
-  the dedicated server and normal build pass absent-mod without loading its classes;
+- synthetic handlers prove the public item-handler contract, while one representative
+  Sophisticated Storage version proves direct storage and controller present-mod
+  behavior; production code has no direct Sophisticated Storage class linkage;
 - missing/conflicted Core, disconnected path, unloaded intermediate/target chunk,
   bus move, piston move, Wrench rotation, reload, and datapack tag reload fail
   closed without loading chunks;
@@ -471,4 +474,6 @@ Sophisticated Storage test runtime. Do not bundle or require that mod in release
 - No item provenance tags or heuristic cross-tick loop blacklist.
 - No global Core/terminal/remote ACL redesign.
 - No bundled or required Sophisticated Storage dependency.
+- No player-facing external-mod version restriction or multi-version CI sweep; each
+  real-mod compatibility job exercises one representative version.
 - No silent downgrade when a target, addon, config schema, or capability is absent.

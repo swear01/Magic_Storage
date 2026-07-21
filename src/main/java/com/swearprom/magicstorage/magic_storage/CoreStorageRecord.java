@@ -32,6 +32,7 @@ final class CoreStorageRecord {
     static final String TAG_DESCRIPTOR_CONSUMABLES = "descriptorConsumables";
     static final String TAG_MACHINE_DESCRIPTORS = "machineDescriptors";
     static final String TAG_INVENTORY_SEGMENTS = "inventorySegments";
+    static final String TAG_RESOURCE_LEDGER = "resourceLedger";
     static final String TAG_ENTRIES = "entries";
     static final String TAG_DESCRIPTOR_ID = "descriptorId";
     static final String TAG_ITEM = "item";
@@ -47,6 +48,7 @@ final class CoreStorageRecord {
     private final List<CompoundTag> unresolvedDescriptorEntries = new ArrayList<>();
     private final List<CompoundTag> unresolvedMachineEntries = new ArrayList<>();
     private final Map<Item, Object2LongOpenHashMap<ItemKey>> inventory = new IdentityHashMap<>();
+    private StorageResourceLedger resourceLedger = new StorageResourceLedger();
     private final List<CompoundTag> unresolvedInventoryEntries = new ArrayList<>();
     private final SimpleContainer machines;
 
@@ -123,6 +125,13 @@ final class CoreStorageRecord {
             String inventoryError = record.loadInventorySegments(inventorySegments, registries);
             if (inventoryError != null) {
                 return LoadResult.failure(storageId, raw, inventoryError);
+            }
+            if (tag.contains(TAG_RESOURCE_LEDGER)) {
+                if (!tag.contains(TAG_RESOURCE_LEDGER, Tag.TAG_COMPOUND)) {
+                    return LoadResult.failure(storageId, raw, "typed resource ledger is not a compound");
+                }
+                record.resourceLedger = StorageResourceLedger.load(
+                        tag.getCompound(TAG_RESOURCE_LEDGER));
             }
             return LoadResult.success(record);
         } catch (RuntimeException exception) {
@@ -202,6 +211,7 @@ final class CoreStorageRecord {
             segments.add(segment);
         }
         tag.put(TAG_INVENTORY_SEGMENTS, segments);
+        tag.put(TAG_RESOURCE_LEDGER, resourceLedger.save());
         return tag;
     }
 
@@ -369,12 +379,16 @@ final class CoreStorageRecord {
         return inventory;
     }
 
+    StorageResourceLedger resourceLedger() {
+        return resourceLedger;
+    }
+
     List<CompoundTag> unresolvedInventoryEntries() {
         return unresolvedInventoryEntries;
     }
 
     int typeCount() {
-        long count = unresolvedInventoryEntries.size();
+        long count = unresolvedInventoryEntries.size() + (long) resourceLedger.typeCount();
         for (Object2LongOpenHashMap<ItemKey> variants : inventory.values()) {
             count += variants.size();
             if (count >= Integer.MAX_VALUE) {
@@ -417,7 +431,8 @@ final class CoreStorageRecord {
     }
 
     boolean isEmpty() {
-        if (!inventory.isEmpty() || !machines.isEmpty() || !descriptorAmounts.isEmpty()
+        if (!inventory.isEmpty() || !resourceLedger.isEmpty()
+                || !machines.isEmpty() || !descriptorAmounts.isEmpty()
                 || !infiniteDescriptors.isEmpty() || !unresolvedDescriptorEntries.isEmpty()
                 || !unresolvedMachineEntries.isEmpty() || !unresolvedInventoryEntries.isEmpty()) {
             return false;

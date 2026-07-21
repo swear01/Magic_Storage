@@ -686,6 +686,66 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotRegex(build, r'(?m)^\s*url\s+"')
         self.assertIn('url = uri("file://${project.projectDir}/repo")', build)
 
+    def test_recipe_addon_gametest_gate_rejects_any_selftest_failure(self):
+        build = self.read_required("build.gradle")
+        self.assertIn("tasks.named('runGameTestServer').configure", build)
+        self.assertIn("All 329 required tests passed", build)
+        self.assertIn("text.contains('TESTS FAILED!')", build)
+        self.assertNotIn("SelfTest: 1 TESTS FAILED!", build)
+
+    def test_mekanism_chemical_compat_is_optional_and_ci_exercised(self):
+        build = self.read_required("build.gradle")
+        properties = self.read_required("gradle.properties")
+        metadata = self.read_required("src/main/templates/META-INF/neoforge.mods.toml")
+        bootstrap = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/OptionalModCapabilities.java"
+        )
+        compat = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MekanismChemicalCompat.java"
+        )
+        fixture_metadata = self.read_required(
+            "src/mekanismFixture/resources/META-INF/neoforge.mods.toml"
+        )
+
+        self.assertIn('compileOnly "maven.modrinth:mekanism:${mekanism_ci_version}"', build)
+        self.assertIn(
+            'mekanismFixtureRuntimeOnly "maven.modrinth:mekanism:${mekanism_ci_version}"',
+            build,
+        )
+        self.assertNotRegex(build, r'(?m)^\s*runtimeOnly\s+"[^"]*mekanism')
+        self.assertRegex(properties, r"(?m)^mekanism_ci_version=[A-Za-z0-9]+$")
+        self.assertNotIn('modId="mekanism"', metadata)
+        self.assertIn('ModList.get().isLoaded(MEKANISM_MOD_ID)', bootstrap)
+        self.assertNotIn("import mekanism.", bootstrap)
+        self.assertIn("Class.forName(MEKANISM_COMPAT_CLASS)", bootstrap)
+        self.assertIn("WeakReference<IChemicalHandler>", compat)
+        self.assertNotIn(
+            "Map<StorageCoreBlockEntity, IChemicalHandler>",
+            compat,
+            "a weak-key map still leaks when each strongly held handler references its Core key",
+        )
+        self.assertIn("tasks.named('runMekanismGameTestServer').configure", build)
+        self.assertIn("All 1 required tests passed", build)
+        self.assertIn('modId="mekanism"', fixture_metadata)
+        self.assertIn('versionRange="[10.7,)"', fixture_metadata)
+        self.assertNotRegex(fixture_metadata, r'versionRange="\[10\.7\.\d')
+        for source_set in ["recipeAddonFixture", "mekanismFixture"]:
+            self.assertRegex(
+                build,
+                rf"(?s){source_set}\s*\{{.*?runtimeClasspath\s*\+=\s*"
+                r"output\s*\+\s*sourceSets\.main\.runtimeClasspath.*?\}",
+                f"{source_set} runtime must not inherit main compileOnly mods",
+            )
+
+    def test_recipe_family_registry_freezes_before_selftests(self):
+        entrypoint = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java"
+        )
+        self.assertRegex(
+            entrypoint,
+            r"event\.enqueueWork\(\(\) -> \{\s*RecipeAdapters\.snapshot\(\);\s*SelfTest\.runAll\(\);\s*}\);",
+        )
+
     def test_recipe_renderer_boundary_keeps_emi_out_of_base_screen_and_native_path(self):
         interface = self.read_required(
             "src/main/java/com/swearprom/magicstorage/magic_storage/RecipeDiagramRenderer.java"

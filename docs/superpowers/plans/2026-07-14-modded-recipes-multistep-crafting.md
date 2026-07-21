@@ -1,6 +1,6 @@
 # Modded Recipe Compatibility and Multi-Step Magic Crafting Plan
 
-> Status: the keyed machine-descriptor prerequisite and the built-in Phase 1 adapter authority are implemented. Ten exact built-in families now provide complete one-level input/output/remainder/station/energy/tool/presentation/simulation/commit contracts plus exhaustive/non-exhaustive candidate discovery. GitHub #2's first slice adds exact component-preserving Smithing Trim variants; third-party families, a public addon API, and multi-step planning/execution are not implemented.
+> Status: the keyed machine-descriptor prerequisite, built-in Phase 1 adapter authority, and initial A+B public family slice are implemented. Ten exact built-in families provide complete one-level contracts. Custom exact class/type families can register the bounded deterministic `singleItemToItem` contract through the public NeoForge recipe-family registry; a separately loaded addon fixture verifies that path. GitHub #9 now precedes the broader API: deterministic N-input/N-output families will use the typed-resource ledger for items, fluids, power, chemicals, catalysts, tools, and remainders. The broader API, real-mod compatibility modules, and multi-step planning/execution are not implemented.
 
 ## Goals
 
@@ -12,9 +12,10 @@
 ## Current boundary
 
 - A mod recipe that uses vanilla shaped, shapeless, cooking, stonecutting, Smithing Transform, or Smithing Trim serializers already produces the exact vanilla recipe classes accepted by Magic Storage; a non-`minecraft` recipe namespace alone does not make it unsupported.
-- Custom recipe classes/types, dynamic outputs, world/player/event-dependent transforms, fluids, chance outputs, and custom side effects remain fail-closed.
+- The initial **A + B** slice is complete: supported standard exact class/type families keep zero-configuration discovery, while addons can register one bounded `singleItemToItem` family through the public `magic_storage:recipe_family` registry. One family registration covers all its recipe IDs.
+- Custom recipe classes/types outside that registered one-input deterministic contract remain fail-closed today. Fluids and chemicals are approved future explicit resource roles through GitHub #9; dynamic/chance outputs and world/player/event-dependent side effects remain out of scope.
 - `CraftableRecipeCatalog` now consumes exact built-in adapter classifications and an explicit candidate coverage result. Simple ingredient representatives are exhaustive; non-simple/custom representatives and Smithing predicate scans are conservatively non-exhaustive and therefore remain in the unindexed candidate set so a valid recipe is not omitted before its real predicate is reached.
-- `BuiltInRecipeAdapters` is the sole policy authority for the supported one-level families. `CraftingTerminalMenu` consumes normalized matches and owns only joint reservation, destination delivery, capacity checks, mutation, and rollback; the replaced station/energy family-table source files are gone.
+- `BuiltInRecipeAdapters` remains the policy authority for built-in families. `RecipeAdapterSnapshot` appends validated external families after built-ins and adds their exact recipe types to server discovery. `CraftingTerminalMenu` consumes normalized matches and owns only joint reservation, destination delivery, capacity checks, mutation, and rollback; external families receive no Core/player mutation callback.
 - The Fuel layout and public `magic_storage:machine_descriptor` registry are descriptor-count-driven and paged. Core state persists by stable descriptor ID, menu opening uses a cached server snapshot plus a fixed 256-slot parity bank, and unavailable addon-item NBT is retained for later reload. Recipe-family registration remains separate and is not implied by a machine descriptor.
 
 ## EMI source audit
@@ -51,6 +52,8 @@ Introduce an internal adapter registry keyed by stable adapter ID. Each adapter 
 - simulation and commit validation.
 
 The existing vanilla families move behind adapters without changing behavior first. There is no generic `Recipe#getIngredients()` fallback: an unknown recipe is unsupported until an adapter proves its complete contract.
+
+The implemented expansion layer starts with `singleItemToItem`: one non-empty ingredient consumed once, deterministic exact output, one existing station descriptor, free or existing `EnergyCost`, no remainder, and an existing presentation kind. The opaque registry value never exposes storage, player, allocation, or commit authority. This is a verified bootstrap contract, not the intended final family shape. After GitHub #9, the public contract becomes bounded deterministic N-input/N-output typed-resource declarations that explicitly model every consumed input, produced output, component, catalyst, tool, remainder, fluid, power, chemical, and cost. The API removes per-mod transaction boilerplate; it never infers unknown semantics by reflection, names, EMI widgets, serializer JSON, or generic `Recipe#getIngredients()`.
 
 The completed built-in slice keeps `RecipeAdapterRegistry` keyed by stable `ResourceLocation`, rejects duplicate IDs, orders by priority then ID, binds each match to the exact holder instance, and recognizes only the exact shaped, shapeless, four cooking, stonecutting, Smithing Transform, Smithing Trim, and internal axe-transformation classes. Every successful match also carries ordered predicates and multiplicity, a stable station descriptor ID, process/Fuel/tool costs, checked component-sensitive output and remainders, presentation semantics, source-backed variant resolution, and simulation/commit validators. Smithing Transform and Trim enumerate only exact currently available template/base/addition stacks in canonical registry/component order and fail closed above 65,536 combinations. Trim assembly must resolve its pattern/material in the current registry context and may expose multiple exact output identities under one recipe ID. Every lookup, select, preview, Max, execute, and EMI request resolves the current holder by recipe ID; selected Smithing variants are then rebound by exact output identity, and a replaced same-ID holder still fails the in-flight identity check. Transform's generic target-result lookup remains an explicit discovery-only compatibility path and still executes a source-bound exact variant. There is no generic family fallback. Adapters are pure policy/validation and never mutate Core; the existing menu reservation/delivery/capacity/atomic rollback engine remains the only mutation owner.
 
@@ -102,14 +105,15 @@ Keep EMI required on clients, absent from dedicated-server requirements, and lim
 1. **Complete:** RED-first dist-neutral tests cover stable keyed IDs, duplicate rejection, priority/ID order, exact family selection, unsupported custom classes, candidate coverage, holder identity, and all mandatory match obligations.
 2. **Complete:** nine table-driven GameTests use non-`minecraft` recipe IDs and prove the original families' exact adapter selection, preview, execute, components/output count/remainder, station, concrete cooking energy, and finite/infinite axe deltas. Dedicated `SmithingTrimTests` extends coverage to the tenth family: exact predicates/components/count, source-bound Transform regression, canonical order, bounded-cap fail-closed, multi-variant discovery/selection/execution, current-holder reload, missing station/context, full destination, and rollback.
 3. **Complete:** built-in input/output/station/energy/tool/presentation/simulation/commit family policy is behind adapters; the menu retains only the generic transaction engine and reclassifies fresh holders at each operation.
-4. **Out of scope:** third-party compatibility, public adapter registration, multi-step planning/execution, GUI/resources/lang changes, and EMI tree integration remain later phases.
+4. **Historical boundary:** this phase intentionally excluded third-party compatibility, public registration, multi-step execution, GUI/resources/lang changes, and EMI tree integration. The initial public registration slice is now completed in Phase 2; the other items remain later work.
 
-### Phase 2 — First third-party compatibility module
+### Phase 2 — Generic family factories and first third-party modules
 
-1. Select one installed NeoForge 1.21.1 mod and one bounded recipe family after inspecting its real source/API.
-2. Prefer a fixed item-input/item-output family with deterministic assembly and a single station. Do not start with world-interaction, fluid-network, chance, or event-driven recipes.
-3. Add its API as `compileOnly` only if source-level integration is required; runtime dependency remains optional unless the user explicitly changes the product policy.
-4. Write absent-mod classloading, recipe reload, station missing/present, exact components, amount, remainder, capacity, rollback, EMI backing-ID, and dedicated-server tests before implementation.
+1. **Complete:** expose an opaque NeoForge custom registry and the smallest bounded deterministic `singleItemToItem` factory without adding family-specific branches to the menu or transaction engine.
+2. **Complete:** compile the API from a different Java package and independently load a repository-owned addon mod with a custom exact recipe class/type. RED-first GameTests prove station missing/present, custom-type discovery, exact preview/components/count, commit, capacity refusal, rollback, and dedicated-server classloading.
+3. **Complete:** reject missing station descriptors and duplicate exact class/type ownership, append external families after built-ins in stable full-ID order, and preserve server-owned lookup/reload/transaction validation.
+4. **Pending:** inspect a real mod's source/API before adding a compatibility module. Add its API as `compileOnly` only if source-level integration is required; runtime remains optional. A dedicated CI job is allowed only with a present-mod load assertion plus actual family behavior assertions, and its representative artifact version is not a player-facing exact pin.
+5. **Pending:** replace the narrow factory with deterministic N-input/N-output typed-resource contracts after GitHub #9 provides atomic mixed-kind storage. RED tests must cover remainder/catalyst/tool/energy/fluid/chemical/component semantics. No external-machine send-and-wait fallback.
 
 ### Phase 3 — Dynamic station descriptors
 
@@ -149,19 +153,19 @@ Keep EMI required on clients, absent from dedicated-server requirements, and lim
 
 ## First target selection gate
 
-Before Phase 2 implementation, record the chosen mod, exact mod/version/license/source, recipe type/class, station item, inputs/outputs/remainders, assembly semantics, and optional dependency policy. If any of those cannot be established from source or official API, stop rather than guessing.
+Before any real-mod Phase 2 compatibility module, record the chosen family, representative CI artifact version, Minecraft/loader/API boundary, license/source, recipe type/class, station item, inputs/outputs/remainders, assembly semantics, and optional dependency policy. The tested version is traceability for that CI run, not a supported-version or release restriction. If the behavior cannot be established from source or official API, stop rather than guessing.
 
-## 2026-07-20 compatibility test target audit
+## 2026-07-20 external compatibility policy
 
-External mods enter a test runtime only with assertions for the contract they are meant to prove. A boot-only collection is not a compatibility test and must not make normal CI depend on unrelated large artifacts.
+Optional external integrations such as AE2, Sophisticated Storage, and Mekanism are best-effort interoperability targets. Releases do not require them or restrict players to the version exercised by CI. Each dedicated compatibility job loads one representative version of one target mod and must execute present-mod behavior assertions; the normal build proves absent-mod safety. Passing that one version is treated as representative family-level evidence, not a technical proof for every version, and incompatibilities in untested player combinations are handled from player reports. Main CI also keeps repository-owned addon fixtures and adversarial synthetic handlers for Magic Storage's own contracts. This policy does not replace declared compatibility ranges or reproducible development baselines for Magic Storage's actual build/runtime dependencies.
 
-| Target | Audited 1.21.1 baseline | Contract to prove | Boundary |
-|---|---|---|---|
-| Applied Energistics 2 | [19.2.17](https://github.com/AppliedEnergistics/Applied-Energistics-2/releases/tag/neoforge/v19.2.17), LGPL-3.0 | An AE2 item in `c:tools/wrench` rotates and safely removes Magic Storage blocks; AE2 recipes using exact vanilla classes remain craftable. Charger is the second custom-family candidate because it is one item input to one fixed output. | GuideME is required. Inscriber is deferred: PRESS consumes optional plates while INSCRIBE retains them, so it needs explicit catalyst/remainder semantics rather than Charger assumptions. |
-| Sophisticated Storage | [1.21.1-1.5.80.1999](https://modrinth.com/mod/sophisticated-storage/version/IfMsqcCe), All Rights Reserved | Directional Import, passive Import, and Export interact with its registered block `Capabilities.ItemHandler.BLOCK` without duplication, loss, slot-order drift, or bypassing Magic Storage filters. | Sophisticated Core is required. This target tests bus capability interoperability, not recipe-adapter support; test jobs may fetch the official artifact but must never redistribute or bundle it. |
-| Mekanism | [10.7.19.85](https://github.com/mekanism/Mekanism/releases/tag/v1.21.1-10.7.19.85), MIT | First custom recipe adapter candidate: bounded Enriching and Crushing `ItemStackToItemStackRecipe` families, exact source stack, output/components/count, station/energy, capacity, reload, and rollback. | Start with deterministic item-to-item recipes only. Chemical/fluid, secondary/chance output, and machine-world side effects remain unsupported. |
+| Target family | Intended interoperability | Boundary |
+|---|---|---|
+| Applied Energistics 2 | Items in `c:tools/wrench` should rotate and safely remove Magic Storage blocks; recipes using exact vanilla classes should remain craftable. Charger remains the second custom-family candidate because it is one item input to one fixed output. | Inscriber is deferred: PRESS consumes optional plates while INSCRIBE retains them, so it needs explicit catalyst/remainder semantics rather than Charger assumptions. |
+| Sophisticated Storage | Directional Import, passive Import, and Export should interoperate through the registered `Capabilities.ItemHandler.BLOCK` contract without duplication, loss, slot-order drift, or bypassing Magic Storage filters. | This is bus capability interoperability, not recipe-adapter support. Do not bundle or require Sophisticated Storage or Sophisticated Core. |
+| Mekanism | First custom recipe adapter candidate: bounded deterministic Enriching/Crushing and later explicit fluid/chemical families, exact typed inputs/outputs, station/energy, capacity, reload, and rollback. | Chemical/fluid roles require GitHub #9 first. Chance output and machine-world side effects remain unsupported. |
 
-The main CI prerequisite is a repository-owned addon fixture proving that a separate mod can register process, instant, and consumable descriptors through `MachineDescriptorApi`. Real-mod present/absent matrices belong in an independently pinned compatibility job after the corresponding behavior assertions exist; they must not silently pass when the target mod failed to load.
+Main CI now independently loads a repository-owned recipe addon fixture that registers a custom `RecipeType` and public family, then executes exact discovery/preview/commit/rollback assertions. The separate machine-descriptor fixture continues to cover process, instant, and consumable descriptor registration. Real-mod compatibility jobs are added only after corresponding integration code and present-mod behavior assertions exist; they fail if the target did not load or the assertions did not run. A recorded test artifact is not a player-facing version pin or compatibility guarantee.
 
 ## Non-goals for the first multi-step release
 
@@ -169,5 +173,6 @@ The main CI prerequisite is a repository-owned addon fixture proving that a sepa
 - Automatic support for every registered `RecipeType`.
 - Fluid/chemical/network side effects without an explicit transaction adapter.
 - Chance recipes whose probability/remainder semantics cannot be simulated exactly.
+- External-machine orchestration, processing patterns, pattern export/import, or asynchronous send-and-wait crafting. These do not match Magic Storage's installed-station magic-crafting model and are not a fallback for unsupported recipe families.
 - Persistent asynchronous jobs, crafting CPUs, monitors, or chunk-loading workers.
 - Client-owned storage snapshots or client-authoritative craft plans.

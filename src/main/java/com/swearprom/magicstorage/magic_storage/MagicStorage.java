@@ -79,6 +79,10 @@ public class MagicStorage {
             MachineDescriptorApi.createDeferredRegister(MODID);
     public static final Registry<MachineDescriptor> MACHINE_DESCRIPTOR_REGISTRY =
             MACHINE_DESCRIPTORS.makeRegistry(builder -> builder.maxId(MachineDescriptorApi.MAX_DESCRIPTORS - 1));
+    public static final DeferredRegister<RecipeFamily> RECIPE_FAMILIES =
+            RecipeFamilyApi.createDeferredRegister(MODID);
+    public static final Registry<RecipeFamily> RECIPE_FAMILY_REGISTRY =
+            RECIPE_FAMILIES.makeRegistry(builder -> builder.maxId(RecipeFamilyApi.MAX_FAMILIES - 1));
 
     static {
         MachineEnergyTable.registerBuiltIns(MACHINE_DESCRIPTORS);
@@ -212,6 +216,7 @@ public class MagicStorage {
         CREATIVE_MODE_TABS.register(modEventBus);
         MENUS.register(modEventBus);
         MACHINE_DESCRIPTORS.register(modEventBus);
+        RECIPE_FAMILIES.register(modEventBus);
         NeoForge.EVENT_BUS.addListener(WrenchActions::onRightClickBlock);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onChunkLoad);
@@ -235,7 +240,10 @@ public class MagicStorage {
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
-        event.enqueueWork(SelfTest::runAll);
+        event.enqueueWork(() -> {
+            RecipeAdapters.snapshot();
+            SelfTest.runAll();
+        });
     }
 
     private void registerCapabilities(RegisterCapabilitiesEvent event) {
@@ -243,6 +251,17 @@ public class MagicStorage {
                 Capabilities.ItemHandler.BLOCK,
                 IMPORT_BUS_BE.get(),
                 (bus, side) -> bus.passiveItemHandler());
+        event.registerBlockEntity(
+                Capabilities.FluidHandler.BLOCK,
+                STORAGE_CORE_BE.get(),
+                (core, side) -> core.getLevel() == null || core.getLevel().isClientSide()
+                        ? null : core.fluidHandler());
+        event.registerBlockEntity(
+                Capabilities.EnergyStorage.BLOCK,
+                STORAGE_CORE_BE.get(),
+                (core, side) -> core.getLevel() == null || core.getLevel().isClientSide()
+                        ? null : core.energyStorage());
+        OptionalModCapabilities.register(event);
     }
 
     private void registerCommands(RegisterCommandsEvent event) {

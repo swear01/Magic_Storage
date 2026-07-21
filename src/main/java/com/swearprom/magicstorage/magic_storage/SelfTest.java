@@ -29,7 +29,9 @@ import net.neoforged.neoforge.common.crafting.DataComponentIngredient;
 
 import java.util.HashSet;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 class SelfTest {
@@ -38,6 +40,7 @@ class SelfTest {
 
     static void runAll() {
         testItemKey();
+        testStorageResourceLedger();
         testAxeSyntheticDiscovery();
         testAxeEnergyContract();
         testFuelTable();
@@ -45,6 +48,8 @@ class SelfTest {
         testRecipeEnergyTable();
         testRecipeAdapterFoundation();
         testRecipeAdapterRegistryContract();
+        testPublicRecipeFamilyFactory();
+        testRecipeAdapterSnapshot();
         testBuiltInRecipeAdapterFamilies();
         testSmithingTrimAdapterFoundation();
         testRecipeAdapterCandidateCoverage();
@@ -88,6 +93,99 @@ class SelfTest {
         assertTrue("key = itself", key1.equals(key1));
         assertTrue("key != null", !key1.equals(null));
         assertTrue("primaryKey returns item", key1.item() == Items.DIAMOND_SWORD);
+    }
+
+    private static void testStorageResourceLedger() {
+        ResourceLocation itemKind = ResourceLocation.fromNamespaceAndPath("magic_storage", "item");
+        ResourceLocation fluidKind = ResourceLocation.fromNamespaceAndPath("magic_storage", "fluid");
+        ResourceLocation powerKind = ResourceLocation.fromNamespaceAndPath("magic_storage", "neoforge_energy");
+        ResourceLocation chemicalKind = ResourceLocation.fromNamespaceAndPath("mekanism", "chemical");
+
+        CompoundTag itemVariant = new CompoundTag();
+        itemVariant.putString("component", "exact");
+        StorageResourceKey item = StorageResourceKey.of(itemKind,
+                ResourceLocation.fromNamespaceAndPath("minecraft", "diamond"), itemVariant);
+        itemVariant.putString("component", "mutated");
+        CompoundTag exposedVariant = item.variantData();
+        exposedVariant.putString("component", "also_mutated");
+        assertTrue("typed resource keys defensively copy exact variant data",
+                item.variantData().getString("component").equals("exact"));
+
+        StorageResourceKey fluid = StorageResourceKey.of(fluidKind,
+                ResourceLocation.fromNamespaceAndPath("minecraft", "water"), new CompoundTag());
+        StorageResourceKey power = StorageResourceKey.of(powerKind,
+                ResourceLocation.fromNamespaceAndPath("neoforge", "energy"), new CompoundTag());
+        StorageResourceKey chemical = StorageResourceKey.of(chemicalKind,
+                ResourceLocation.fromNamespaceAndPath("mekanism", "oxygen"), new CompoundTag());
+        StorageResourceLedger ledger = new StorageResourceLedger();
+
+        assertTrue("typed resource exact insertion accepts the requested amount",
+                ledger.insert(item, 3, StorageTypeCapacity.finite(4), Action.EXECUTE) == 3
+                        && ledger.amount(item) == 3 && ledger.typeCount() == 1);
+
+        Map<StorageResourceKey, Long> mixed = new LinkedHashMap<>();
+        mixed.put(item, -2L);
+        mixed.put(fluid, 1_000L);
+        mixed.put(power, 500L);
+        mixed.put(chemical, 250L);
+        assertTrue("mixed item fluid power and chemical transaction simulates without mutation",
+                ledger.applyExact(mixed, StorageTypeCapacity.finite(4), Action.SIMULATE)
+                        && ledger.amount(item) == 3
+                        && ledger.amount(fluid) == 0
+                        && ledger.typeCount() == 1);
+        assertTrue("mixed item fluid power and chemical transaction commits atomically",
+                ledger.applyExact(mixed, StorageTypeCapacity.finite(4), Action.EXECUTE)
+                        && ledger.amount(item) == 1
+                        && ledger.amount(fluid) == 1_000
+                        && ledger.amount(power) == 500
+                        && ledger.amount(chemical) == 250
+                        && ledger.typeCount() == 4);
+
+        Map<StorageResourceKey, Long> underflow = new LinkedHashMap<>();
+        underflow.put(item, -2L);
+        underflow.put(fluid, 1L);
+        assertTrue("underflow rejects the complete mixed transaction without partial mutation",
+                !ledger.applyExact(underflow, StorageTypeCapacity.finite(4), Action.EXECUTE)
+                        && ledger.amount(item) == 1 && ledger.amount(fluid) == 1_000);
+
+        StorageResourceKey extra = StorageResourceKey.of(
+                ResourceLocation.fromNamespaceAndPath("example", "mana"),
+                ResourceLocation.fromNamespaceAndPath("example", "arcane"),
+                new CompoundTag());
+        assertTrue("type capacity rejects a new resource kind without changing existing amounts",
+                !ledger.applyExact(Map.of(extra, 1L, fluid, 1L),
+                        StorageTypeCapacity.finite(4), Action.EXECUTE)
+                        && ledger.amount(item) == 1
+                        && ledger.amount(fluid) == 1_000
+                        && ledger.amount(extra) == 0);
+
+        assertTrue("bounded exact insertion reports Long.MAX_VALUE headroom",
+                ledger.insert(power, Long.MAX_VALUE, StorageTypeCapacity.finite(4), Action.EXECUTE)
+                        == Long.MAX_VALUE - 500
+                        && ledger.amount(power) == Long.MAX_VALUE);
+        assertTrue("overflow rejects a complete mixed transaction without consuming another key",
+                !ledger.applyExact(Map.of(power, 1L, item, -1L),
+                        StorageTypeCapacity.finite(4), Action.EXECUTE)
+                        && ledger.amount(power) == Long.MAX_VALUE && ledger.amount(item) == 1);
+
+        CompoundTag saved = ledger.save();
+        StorageResourceLedger loaded = StorageResourceLedger.load(saved);
+        assertTrue("typed resource ledger preserves all known and optional-provider entries",
+                loaded.snapshot().equals(ledger.snapshot())
+                        && loaded.amount(chemical) == 250
+                        && loaded.typeCount() == 4);
+
+        CompoundTag malformed = saved.copy();
+        malformed.getList("entries", net.minecraft.nbt.Tag.TAG_COMPOUND)
+                .add(malformed.getList("entries", net.minecraft.nbt.Tag.TAG_COMPOUND)
+                        .getCompound(0).copy());
+        boolean duplicateRejected = false;
+        try {
+            StorageResourceLedger.load(malformed);
+        } catch (IllegalArgumentException expected) {
+            duplicateRejected = true;
+        }
+        assertTrue("duplicate persisted resource keys fail closed", duplicateRejected);
     }
 
     private static void testAxeSyntheticDiscovery() {
@@ -362,6 +460,180 @@ class SelfTest {
         };
     }
 
+    private static void testPublicRecipeFamilyFactory() {
+        final class FixtureRecipe extends StonecutterRecipe {
+            private FixtureRecipe() {
+                super("", Ingredient.of(Items.DIRT), new ItemStack(Items.DIAMOND, 2));
+            }
+        }
+
+        ResourceLocation familyId = testRecipeId("public_family");
+        RecipeFamily family = RecipeFamilyFactories.singleItemToItem(
+                FixtureRecipe.class,
+                () -> net.minecraft.world.item.crafting.RecipeType.STONECUTTING,
+                MachineEnergyTable.STONECUTTER_ID,
+                recipe -> recipe.getIngredients().getFirst(),
+                (recipe, registries) -> recipe.getResultItem(registries),
+                recipe -> RecipeFamilyCost.free(),
+                RecipePresentationKind.STONECUTTING);
+        RecipeAdapterRegistry registry = new RecipeAdapterRegistry(List.of(family.adapter(familyId, 1000)));
+        RecipeHolder<FixtureRecipe> holder = new RecipeHolder<>(
+                testRecipeId("public_family_recipe"), new FixtureRecipe());
+        RecipeAdapterMatch match = registry.classify(holder).orElse(null);
+
+        assertTrue("public exact family receives its stable registry ID",
+                match != null && match.adapterId().equals(familyId));
+        assertTrue("public exact family exposes deterministic input candidates",
+                match != null && match.candidateIndex().isExhaustive()
+                        && match.candidateIndex().representatives().stream()
+                        .anyMatch(stack -> stack.is(Items.DIRT)));
+        assertTrue("public exact family maps station cost and presentation",
+                match != null
+                        && match.stationDescriptorId().equals(MachineEnergyTable.STONECUTTER_ID)
+                        && match.cost().equals(RecipeAdapterMatch.Cost.free())
+                        && match.presentation().kind() == RecipePresentationKind.STONECUTTING);
+        assertTrue("public exact family does not claim the recipe superclass",
+                registry.classify(new RecipeHolder<>(
+                        testRecipeId("vanilla_stonecutting"),
+                        new StonecutterRecipe("", Ingredient.of(Items.DIRT),
+                                new ItemStack(Items.DIAMOND)))).isEmpty());
+
+        boolean nonePresentationRejected = false;
+        try {
+            RecipeFamilyFactories.singleItemToItem(
+                    FixtureRecipe.class,
+                    () -> net.minecraft.world.item.crafting.RecipeType.STONECUTTING,
+                    MachineEnergyTable.STONECUTTER_ID,
+                    recipe -> recipe.getIngredients().getFirst(),
+                    (recipe, registries) -> recipe.getResultItem(registries),
+                    recipe -> RecipeFamilyCost.free(),
+                    RecipePresentationKind.NONE);
+        } catch (IllegalArgumentException expected) {
+            nonePresentationRejected = true;
+        }
+        assertTrue("public recipe families reject NONE presentation", nonePresentationRejected);
+
+        boolean negativeEnergyRejected = false;
+        try {
+            RecipeFamilyCost.energy(new EnergyCost(
+                    EnergyType.SMELTING_ENERGY,
+                    -1,
+                    EnergyType.FURNACE_FUEL,
+                    1));
+        } catch (IllegalArgumentException expected) {
+            negativeEnergyRejected = true;
+        }
+        assertTrue("public recipe families reject negative energy costs", negativeEnergyRejected);
+
+        boolean emptyEnergyRejected = false;
+        try {
+            RecipeFamilyCost.energy(new EnergyCost(
+                    EnergyType.SMELTING_ENERGY,
+                    0,
+                    EnergyType.FURNACE_FUEL,
+                    0));
+        } catch (IllegalArgumentException expected) {
+            emptyEnergyRejected = true;
+        }
+        assertTrue("public recipe families require free() for zero energy cost", emptyEnergyRejected);
+
+        boolean overlappingEnergyRejected = false;
+        try {
+            RecipeFamilyCost.energy(new EnergyCost(
+                    EnergyType.SMELTING_ENERGY,
+                    1,
+                    EnergyType.SMELTING_ENERGY,
+                    1));
+        } catch (IllegalArgumentException expected) {
+            overlappingEnergyRejected = true;
+        }
+        assertTrue("public recipe families reject overlapping energy pools",
+                overlappingEnergyRejected);
+    }
+
+    private static void testRecipeAdapterSnapshot() {
+        RecipeFamily family = RecipeFamilyFactories.singleItemToItem(
+                StonecutterRecipe.class,
+                () -> net.minecraft.world.item.crafting.RecipeType.STONECUTTING,
+                MachineEnergyTable.STONECUTTER_ID,
+                recipe -> recipe.getIngredients().getFirst(),
+                (recipe, registries) -> recipe.getResultItem(registries),
+                recipe -> RecipeFamilyCost.free(),
+                RecipePresentationKind.STONECUTTING);
+        RecipeAdapterSnapshot snapshot = RecipeAdapterSnapshot.create(
+                List.of(testRecipeAdapter("built_in", 10)),
+                List.of(net.minecraft.world.item.crafting.RecipeType.CRAFTING),
+                java.util.Map.of(testRecipeId("registered_family"), family),
+                id -> id.equals(MachineEnergyTable.STONECUTTER_ID));
+
+        assertTrue("registered families join the deterministic adapter registry",
+                snapshot.registry().adapters().stream().map(RecipeAdapter::id).toList().equals(List.of(
+                        testRecipeId("built_in"), testRecipeId("registered_family"))));
+        assertTrue("registered family recipe types join discovery exactly once",
+                snapshot.discoveryTypes().equals(List.of(
+                        net.minecraft.world.item.crafting.RecipeType.CRAFTING,
+                        net.minecraft.world.item.crafting.RecipeType.STONECUTTING)));
+
+        RecipeAdapterSnapshot ordered = RecipeAdapterSnapshot.create(
+                List.of(testRecipeAdapter("built_in", 10)),
+                List.of(),
+                java.util.Map.of(
+                        testRecipeId("z_family"), family,
+                        testRecipeId("a_family"), RecipeFamilyFactories.singleItemToItem(
+                                StonecutterRecipe.class,
+                                () -> net.minecraft.world.item.crafting.RecipeType.SMELTING,
+                                MachineEnergyTable.STONECUTTER_ID,
+                                recipe -> recipe.getIngredients().getFirst(),
+                                (recipe, registries) -> recipe.getResultItem(registries),
+                                recipe -> RecipeFamilyCost.free(),
+                                RecipePresentationKind.STONECUTTING)),
+                id -> true);
+        assertTrue("registered families are ordered by full ID after built-ins",
+                ordered.registry().adapters().stream().map(RecipeAdapter::id).toList().equals(List.of(
+                        testRecipeId("built_in"), testRecipeId("a_family"), testRecipeId("z_family"))));
+
+        boolean duplicateFamilyRejected = false;
+        try {
+            RecipeAdapterSnapshot.create(
+                    List.of(),
+                    List.of(),
+                    java.util.Map.of(
+                            testRecipeId("duplicate_a"), family,
+                            testRecipeId("duplicate_b"), family),
+                    id -> true);
+        } catch (IllegalArgumentException expected) {
+            duplicateFamilyRejected = true;
+        }
+        assertTrue("duplicate exact recipe class and type registrations are rejected",
+                duplicateFamilyRejected);
+
+        boolean builtInShadowRejected = false;
+        try {
+            RecipeAdapterSnapshot.create(
+                    List.of(family.adapter(testRecipeId("built_in_family"), 0)),
+                    List.of(),
+                    java.util.Map.of(testRecipeId("external_shadow"), family),
+                    id -> true);
+        } catch (IllegalArgumentException expected) {
+            builtInShadowRejected = true;
+        }
+        assertTrue("registered families cannot shadow built-in exact class and type ownership",
+                builtInShadowRejected);
+
+        boolean missingStationRejected = false;
+        try {
+            RecipeAdapterSnapshot.create(
+                    List.of(),
+                    List.of(),
+                    java.util.Map.of(testRecipeId("missing_station"), family),
+                    id -> false);
+        } catch (IllegalArgumentException expected) {
+            missingStationRejected = true;
+        }
+        assertTrue("recipe families with missing station descriptors fail closed",
+                missingStationRejected);
+    }
+
     private static void testBuiltInRecipeAdapterFamilies() {
         List<RecipeHolder<?>> holders = List.of(
                 new RecipeHolder<>(testRecipeId("shaped"), new ShapedRecipe(
@@ -421,7 +693,9 @@ class SelfTest {
         }
         assertTrue("built-in adapter IDs have a stable deterministic order",
                 BuiltInRecipeAdapters.registry().adapters().stream()
-                        .map(RecipeAdapter::id).toList().equals(expectedAdapterIds));
+                        .map(RecipeAdapter::id)
+                        .filter(id -> id.getNamespace().equals(MagicStorage.MODID))
+                        .toList().equals(expectedAdapterIds));
 
         ShapelessRecipe customFamily = new ShapelessRecipe(
                 "", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),

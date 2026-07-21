@@ -6,6 +6,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.Level;
 
 import java.util.List;
+import java.util.Optional;
 
 interface RecipeAdapter {
     ResourceLocation id();
@@ -30,4 +31,8 @@ interface RecipeAdapter {
             ItemStack requestedOutput,
             Level level
     );
+
+    default Optional<RecipeFamilyKey> exactFamilyKey() {
+        return Optional.empty();
+    }
 }
