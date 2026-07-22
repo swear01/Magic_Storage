@@ -36,11 +36,6 @@ When changing behavior, change it — do not keep the old behavior as an option.
 Never add flags, parameters, or config options that were not explicitly requested.
 If you are about to add an "option to preserve old behavior," stop: just change the behavior.
 
-### Player-Facing UX
-Simple is better for player-facing text and controls.
-Show only what the player needs for the current action; omit implementation details,
-redundant instructions, and input hints that are discoverable through interaction.
-
 ## No Silent Fallback
 
 ### Banned Behaviors
@@ -62,6 +57,19 @@ redundant instructions, and input hints that are discoverable through interactio
 3. Relevant error output
 4. Fallback considered but NOT implemented
 5. Decision needed from user
+
+## Learn From Mistakes
+
+When you discover that your own incorrect assumption, decision, or action caused
+an error, persist the lesson during the same task if it is verified and reusable.
+
+- Record project-specific facts and gotchas in `docs/notes.md`.
+- Update the relevant active doc when the correction changes documented behavior,
+  commands, APIs, configuration, or workflow.
+- Change `AGENTS.md` or its managed template only when the lesson is a durable rule
+  that should govern future agent behavior.
+- State what was updated in the final response.
+- Do not record transient failures, guesses, or secrets.
 
 ## Docs Lifecycle
 
@@ -132,6 +140,12 @@ Expected `git status` after archiving:
     R  docs/old.md -> archive/docs/old.md
 # END agents_rule-base
 
+## Player-Facing UX
+
+Simple is better for player-facing text and controls.
+Show only what the player needs for the current action; omit implementation details,
+redundant instructions, and input hints that are discoverable through interaction.
+
 ## Project Docs
 
 - Overview: docs/overview.md
@@ -146,7 +160,7 @@ Expected `git status` after archiving:
 - CI lives in `.github/workflows/ci.yml` and must keep `./gradlew build`, minimum/latest-compatible EMI API compilation, `./gradlew runGameTestServer`, `./gradlew runRecipeAddonGameTestServer`, `./gradlew runMekanismGameTestServer`, `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts`, and the `./gradlew runData` datagen drift check green. The addon run independently loads the repository-owned `magic_storage_recipe_fixture`; the Mekanism run loads one representative CI artifact and executes real long-amount chemical capability assertions. Do not add a Mekanism multi-version matrix: the fixture version is CI evidence, not a player-facing exact dependency pin, and compatibility fixes for other versions are driven by user reports. TerraformersMC supplies only EMI's dedicated compile API artifact; every full EMI client/data runtime is resolved by exact Modrinth version ID. It uploads jar + logs/reports artifacts.
 - Optional client boot/resource smoke lives in `.github/workflows/client-smoke.yml` and is `workflow_dispatch` only; it stages required Patchouli, pinned Fusion, and the exact NeoForge 1.21.1 Modrinth runtime matching the latest EMI accepted by `emi_version_range`. The HeadlessMC step has a 10-minute hard timeout and is not GUI layout approval.
 - CD lives in `.github/workflows/release.yml`: push tag `v<mod_version>` only after `gradle.properties` has the matching `mod_version`; the workflow rejects mismatched tags, regenerates release notes from git history, reruns all CI gates, and uploads jar + logs/reports.
-- GUI/Patchouli/visual changes require `python3 scripts/run_prism_gui_session.py --scenario <scenario>` plus the fixed Prism dev / manual handoff checklist in `docs/notes.md` and `docs/macos-fullscreen-guide.md`. The runner clears the Computer Use wrapper, disables Prism's per-instance error-console pop-up, launches offline with `-o MagicStorageBot` in automatic Minecraft F11 fullscreen, waits for `MS_GUI_TEST_READY`, verifies that the captured macOS desktop display mode is unchanged, then stops automation and hands control to the user. On macOS, `MacOsWindowMixin` makes F11 a borderless Cocoa window and must never attach GLFW to a monitor or select a display mode. macOS native fullscreen (green button or Control-Command-F) and combined native+Minecraft fullscreen are forbidden. Closing is also gated: press F11 once, wait for the normal bordered window, then press Command-Q; never press Command-Q directly from F11 fullscreen. Each visual run starts an exact-PID-and-command shutdown watchdog that terminates only its test Java process if `Stopping!` is followed by a five-second GLFW swap stall, writes `shutdown.json`, and the next run precisely clears any stale process from the same dev test instance. It still scans `latest.log` and fails on every non-whitelisted current-run error. Visual verification owner: user; the user must confirm the fullscreen gate before any GUI action. `boot-smoke` does not require visual approval; visual scenarios do. Do not claim GUI verified from GameTest/client-smoke alone.
+- GUI/Patchouli/visual changes require `python3 scripts/run_prism_gui_session.py --scenario <scenario>` plus the fixed Prism dev / manual handoff checklist in `docs/notes.md` and `docs/macos-fullscreen-guide.md`. The runner clears the Computer Use wrapper, disables Prism's per-instance error-console pop-up, and requires an already-running, fully initialized normal-root Prism process before using Prism's documented CLI against the configured `dev` instance: `.../prismlauncher -l dev -w MagicStorageGuiTest -o MagicStorageBot`. It must fail before launch when Prism is not warm because Prism cold start refreshes Microsoft/Xbox ownership even with `-o`. Never create a fabricated one-account `-d` root: Prism still requires an owning account to authorize the full game, so an Offline-only root falls into demo/account-selection flow. The runner must not modify `accounts.json`; it reads only the current launcher-log segment and fails before handoff on real Microsoft/Xbox/XSTS/Minecraft-services auth steps or endpoints. Generic Offline `AuthFlow(...)` task and `RefreshSchedule` bookkeeping lines are not sufficient evidence of network authentication. After `MS_GUI_TEST_READY`, it also verifies that the captured macOS desktop display mode is unchanged, then stops automation and hands control to the user. On macOS, `MacOsWindowMixin` makes F11 a borderless Cocoa window and must never attach GLFW to a monitor or select a display mode. macOS native fullscreen (green button or Control-Command-F) and combined native+Minecraft fullscreen are forbidden. Closing is also gated: press F11 once, wait for the normal bordered window, then press Command-Q; never press Command-Q directly from F11 fullscreen. Each visual run starts an exact-PID-and-command shutdown watchdog that terminates only its test Java process if `Stopping!` is followed by a five-second GLFW swap stall, writes `shutdown.json`, and the next run precisely clears any stale process from the same dev test instance. It still scans `latest.log` and fails on every non-whitelisted current-run error. Visual verification owner: user; the user must confirm the fullscreen gate before any GUI action. `boot-smoke` does not require visual approval; visual scenarios do. Do not claim GUI verified from GameTest/client-smoke alone.
 
 ## Mod-Specific Essentials
 
