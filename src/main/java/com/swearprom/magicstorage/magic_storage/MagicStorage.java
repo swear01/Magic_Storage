@@ -89,9 +89,21 @@ public class MagicStorage {
             StorageResourceKindApi.createDeferredRegister(MODID);
     public static final Registry<StorageResourceKind> RESOURCE_KIND_REGISTRY =
             RESOURCE_KINDS.makeRegistry(builder -> builder.maxId(StorageResourceKindApi.MAX_KINDS - 1));
+    public static final DeferredRegister<StorageResourceContainerStrategy> RESOURCE_CONTAINER_STRATEGIES =
+            StorageResourceContainerApi.createDeferredRegister(MODID);
+    public static final Registry<StorageResourceContainerStrategy> RESOURCE_CONTAINER_STRATEGY_REGISTRY =
+            RESOURCE_CONTAINER_STRATEGIES.makeRegistry(
+                    builder -> builder.maxId(StorageResourceContainerApi.MAX_STRATEGIES - 1));
+    public static final DeferredRegister<StorageResourceBlockStrategy> RESOURCE_BLOCK_STRATEGIES =
+            StorageResourceBlockApi.createDeferredRegister(MODID);
+    public static final Registry<StorageResourceBlockStrategy> RESOURCE_BLOCK_STRATEGY_REGISTRY =
+            RESOURCE_BLOCK_STRATEGIES.makeRegistry(
+                    builder -> builder.maxId(StorageResourceBlockApi.MAX_STRATEGIES - 1));
     static {
         MachineEnergyTable.registerBuiltIns(MACHINE_DESCRIPTORS);
         StorageResourceKinds.registerBuiltIns(RESOURCE_KINDS);
+        StorageResourceContainerStrategies.registerBuiltIns(RESOURCE_CONTAINER_STRATEGIES);
+        StorageResourceBlockStrategies.registerBuiltIns(RESOURCE_BLOCK_STRATEGIES);
     }
 
     // === Core Block ===
@@ -178,6 +190,10 @@ public class MagicStorage {
             MENUS.register("crafting_terminal", () -> IMenuTypeExtension.create(
                     (windowId, inv, buf) -> new CraftingTerminalMenu(windowId, inv, buf)));
 
+    public static final DeferredHolder<MenuType<?>, MenuType<BusConfigurationMenu>> BUS_CONFIGURATION_MENU =
+            MENUS.register("bus_configuration", () -> IMenuTypeExtension.create(
+                    BusConfigurationMenu::new));
+
     // === Core BlockEntity ===
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<StorageCoreBlockEntity>> STORAGE_CORE_BE =
             BLOCK_ENTITIES.register("storage_core",
@@ -225,6 +241,13 @@ public class MagicStorage {
         MACHINE_DESCRIPTORS.register(modEventBus);
         RECIPE_FAMILIES.register(modEventBus);
         RESOURCE_KINDS.register(modEventBus);
+        RESOURCE_CONTAINER_STRATEGIES.register(modEventBus);
+        RESOURCE_BLOCK_STRATEGIES.register(modEventBus);
+        NeoForge.EVENT_BUS.addListener(
+                net.neoforged.bus.api.EventPriority.HIGHEST,
+                true,
+                net.neoforged.neoforge.event.level.BlockDropsEvent.class,
+                BusRecoveryDrops::protectEscrowDrop);
         NeoForge.EVENT_BUS.addListener(WrenchActions::onRightClickBlock);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onChunkLoad);
@@ -239,6 +262,10 @@ public class MagicStorage {
             registrar.playToServer(SearchFilterPacket.TYPE, SearchFilterPacket.STREAM_CODEC, this::handleSearchFilter);
             registrar.playToServer(TerminalSettingsPacket.TYPE, TerminalSettingsPacket.STREAM_CODEC, this::handleTerminalSettings);
             registrar.playToServer(TerminalScrollPacket.TYPE, TerminalScrollPacket.STREAM_CODEC, this::handleTerminalScroll);
+            registrar.playToServer(
+                    TerminalHeldContainerTransferPacket.TYPE,
+                    TerminalHeldContainerTransferPacket.STREAM_CODEC,
+                    this::handleTerminalHeldContainerTransfer);
             registrar.playToServer(CraftingRecipeSelectionPacket.TYPE, CraftingRecipeSelectionPacket.STREAM_CODEC,
                     this::handleCraftingRecipeSelection);
             registrar.playToClient(MachineDescriptorStatePacket.TYPE, MachineDescriptorStatePacket.STREAM_CODEC,
@@ -250,6 +277,8 @@ public class MagicStorage {
     private void commonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
             RecipeAdapters.snapshot();
+            StorageResourceContainerStrategies.snapshot();
+            StorageResourceBlockStrategies.snapshot();
             SelfTest.runAll();
         });
     }
@@ -263,15 +292,19 @@ public class MagicStorage {
         event.registerBlockEntity(
                 Capabilities.ItemHandler.BLOCK,
                 IMPORT_BUS_BE.get(),
-                (bus, side) -> bus.passiveItemHandler());
+                (bus, side) -> bus.passiveItemHandler(side));
+        event.registerBlockEntity(
+                Capabilities.ItemHandler.BLOCK,
+                EXPORT_BUS_BE.get(),
+                (bus, side) -> bus.passiveItemHandler(side));
         event.registerBlockEntity(
                 StorageResourceCapabilities.BLOCK,
                 IMPORT_BUS_BE.get(),
-                (bus, side) -> bus.passiveResourceHandler());
+                (bus, side) -> bus.passiveResourceHandler(side));
         event.registerBlockEntity(
                 StorageResourceCapabilities.BLOCK,
                 EXPORT_BUS_BE.get(),
-                (bus, side) -> bus.passiveResourceHandler());
+                (bus, side) -> bus.passiveResourceHandler(side));
         event.registerBlockEntity(
                 Capabilities.FluidHandler.BLOCK,
                 STORAGE_CORE_BE.get(),
@@ -280,11 +313,11 @@ public class MagicStorage {
         event.registerBlockEntity(
                 Capabilities.FluidHandler.BLOCK,
                 IMPORT_BUS_BE.get(),
-                (bus, side) -> bus.passiveFluidHandler());
+                (bus, side) -> bus.passiveFluidHandler(side));
         event.registerBlockEntity(
                 Capabilities.FluidHandler.BLOCK,
                 EXPORT_BUS_BE.get(),
-                (bus, side) -> bus.passiveFluidHandler());
+                (bus, side) -> bus.passiveFluidHandler(side));
         event.registerBlockEntity(
                 Capabilities.EnergyStorage.BLOCK,
                 STORAGE_CORE_BE.get(),
@@ -293,11 +326,11 @@ public class MagicStorage {
         event.registerBlockEntity(
                 Capabilities.EnergyStorage.BLOCK,
                 IMPORT_BUS_BE.get(),
-                (bus, side) -> bus.passiveEnergyStorage());
+                (bus, side) -> bus.passiveEnergyStorage(side));
         event.registerBlockEntity(
                 Capabilities.EnergyStorage.BLOCK,
                 EXPORT_BUS_BE.get(),
-                (bus, side) -> bus.passiveEnergyStorage());
+                (bus, side) -> bus.passiveEnergyStorage(side));
         OptionalModCapabilities.register(event);
     }
 
@@ -380,6 +413,17 @@ public class MagicStorage {
                 menu.refreshDisplayItems(core);
                 menu.broadcastChanges();
             }
+        });
+    }
+
+    private void handleTerminalHeldContainerTransfer(
+            TerminalHeldContainerTransferPacket packet,
+            net.neoforged.neoforge.network.handling.IPayloadContext ctx
+    ) {
+        ctx.enqueueWork(() -> {
+            var player = ctx.player();
+            if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)) return;
+            menu.handleHeldContainerTransfer(packet, player);
         });
     }
 

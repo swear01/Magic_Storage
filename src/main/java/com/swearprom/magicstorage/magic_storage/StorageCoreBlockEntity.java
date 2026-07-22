@@ -495,20 +495,28 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     public long insertResource(StorageResourceKey key, long amount, Action action) {
+        return insertResource(key, amount, action, Actor.EMPTY);
+    }
+
+    long insertResource(StorageResourceKey key, long amount, Action action, Actor actor) {
         if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
         long existing = resourceLedger.amount(key);
         if (existing == 0 && !ledgerCapacity().canAcceptNewType(resourceLedger.typeCount())) return 0;
         long inserted = Math.min(amount, Long.MAX_VALUE - existing);
         if (inserted <= 0 || !applyResourceTransaction(
-                Map.of(key, inserted), action, Actor.EMPTY)) return 0;
+                Map.of(key, inserted), action, actor)) return 0;
         return inserted;
     }
 
     public long extractResource(StorageResourceKey key, long amount, Action action) {
+        return extractResource(key, amount, action, Actor.EMPTY);
+    }
+
+    long extractResource(StorageResourceKey key, long amount, Action action, Actor actor) {
         if (amount <= 0 || conflicted || !isStorageAvailable()) return 0;
         long extracted = Math.min(amount, resourceLedger.amount(key));
         if (extracted <= 0 || !applyResourceTransaction(
-                Map.of(key, -extracted), action, Actor.EMPTY)) return 0;
+                Map.of(key, -extracted), action, actor)) return 0;
         return extracted;
     }
 

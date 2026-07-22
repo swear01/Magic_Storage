@@ -8,6 +8,11 @@ import com.swearprom.magicstorage.magic_storage.RecipeFamilyFactories;
 import com.swearprom.magicstorage.magic_storage.RecipePresentationKind;
 import com.swearprom.magicstorage.magic_storage.StorageResourceKind;
 import com.swearprom.magicstorage.magic_storage.StorageResourceKindApi;
+import com.swearprom.magicstorage.magic_storage.StorageResourceContainerApi;
+import com.swearprom.magicstorage.magic_storage.StorageResourceContainerStrategy;
+import com.swearprom.magicstorage.magic_storage.StorageResourceBlockApi;
+import com.swearprom.magicstorage.magic_storage.StorageResourceBlockStrategy;
+import com.swearprom.magicstorage.magic_storage.StorageResourceCapabilities;
 import com.swearprom.magicstorage.magic_storage.StorageResourceKey;
 import com.swearprom.magicstorage.magic_storage.TypedRecipeInput;
 import com.swearprom.magicstorage.magic_storage.TypedRecipeOutput;
@@ -17,11 +22,16 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.minecraft.world.level.block.Blocks;
 
 @Mod(FixtureMod.MODID)
 public final class FixtureMod {
@@ -29,6 +39,11 @@ public final class FixtureMod {
 
     private static final DeferredRegister<RecipeType<?>> RECIPE_TYPES =
             DeferredRegister.create(Registries.RECIPE_TYPE, MODID);
+    private static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MODID);
+    static final DeferredItem<Item> ENERGY_CELL = ITEMS.register(
+            "energy_cell", () -> new Item(new Item.Properties().stacksTo(1)));
+    static final DeferredItem<Item> MANA_CELL = ITEMS.register(
+            "mana_cell", () -> new Item(new Item.Properties().stacksTo(1)));
     static final DeferredHolder<RecipeType<?>, RecipeType<FixtureGrindingRecipe>> GRINDING_TYPE =
             RECIPE_TYPES.register("grinding", () -> new RecipeType<>() {
                 @Override
@@ -47,6 +62,10 @@ public final class FixtureMod {
             RecipeFamilyApi.createDeferredRegister(MODID);
     private static final DeferredRegister<StorageResourceKind> RESOURCE_KINDS =
             StorageResourceKindApi.createDeferredRegister(MODID);
+    private static final DeferredRegister<StorageResourceContainerStrategy> CONTAINER_STRATEGIES =
+            StorageResourceContainerApi.createDeferredRegister(MODID);
+    private static final DeferredRegister<StorageResourceBlockStrategy> BLOCK_STRATEGIES =
+            StorageResourceBlockApi.createDeferredRegister(MODID);
 
     static {
         RECIPE_FAMILIES.register("grinding", () -> RecipeFamilyFactories.singleItemToItem(
@@ -79,12 +98,43 @@ public final class FixtureMod {
         RESOURCE_KINDS.register("mana", () -> StorageResourceKind.variantAware(
                 () -> new net.minecraft.world.item.ItemStack(
                         net.minecraft.world.item.Items.AMETHYST_SHARD)));
+        CONTAINER_STRATEGIES.register("mana_cell", FixtureManaContainer::strategy);
+        BLOCK_STRATEGIES.register("mana", FixtureManaBlockStrategy::new);
     }
 
     public FixtureMod(IEventBus modEventBus) {
+        ITEMS.register(modEventBus);
         RECIPE_TYPES.register(modEventBus);
         RECIPE_FAMILIES.register(modEventBus);
         RESOURCE_KINDS.register(modEventBus);
+        CONTAINER_STRATEGIES.register(modEventBus);
+        BLOCK_STRATEGIES.register(modEventBus);
+        modEventBus.addListener(FixtureMod::registerCapabilities);
+    }
+
+    private static void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerBlock(
+                StorageResourceCapabilities.BLOCK,
+                (level, pos, state, blockEntity, side) -> side == null
+                        ? null
+                        : FixtureManaBlockStrategy.handler(level, pos),
+                Blocks.BLUE_GLAZED_TERRACOTTA);
+        event.registerItem(
+                Capabilities.EnergyStorage.ITEM,
+                (stack, context) -> new FixtureEnergyStorage(stack),
+                ENERGY_CELL.get());
+        event.registerBlock(
+                Capabilities.FluidHandler.BLOCK,
+                (level, pos, state, blockEntity, side) -> side == null
+                        ? null
+                        : FixtureNativeBlockStorage.fluid(level, pos),
+                Blocks.BLUE_GLAZED_TERRACOTTA);
+        event.registerBlock(
+                Capabilities.EnergyStorage.BLOCK,
+                (level, pos, state, blockEntity, side) -> side == null
+                        ? null
+                        : FixtureNativeBlockStorage.energy(level, pos),
+                Blocks.RED_GLAZED_TERRACOTTA);
     }
 
     private static StorageResourceKey item(

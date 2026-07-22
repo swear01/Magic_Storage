@@ -1632,7 +1632,7 @@ public class TerminalFlowTests {
     }
 
     @GameTest(template = "platform")
-    public static void import_bus_item_handler_is_available_on_all_sides_and_simulation_is_insert_only(
+    public static void import_bus_item_handler_is_available_on_enabled_sides_and_simulation_is_insert_only(
             GameTestHelper helper
     ) {
         var level = helper.getLevel();
@@ -1655,15 +1655,13 @@ public class TerminalFlowTests {
                     helper.fail("Import Bus must expose ItemHandler capability on side " + side);
                     return;
                 }
-                if (handler != null && handler != sided) {
-                    helper.fail("Import Bus must expose one stable all-side ItemHandler instance");
-                    return;
-                }
-                handler = sided;
+                if (side == Direction.UP) handler = sided;
             }
             IItemHandler unsided = level.getCapability(Capabilities.ItemHandler.BLOCK, busPos, null);
-            if (unsided != handler) {
-                helper.fail("Unsided Import Bus capability must use the same passive input handler");
+            if (unsided == null || handler == null
+                    || handler != level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, busPos, Direction.UP)) {
+                helper.fail("Import Bus capability must be stable per enabled side");
                 return;
             }
             if (handler.getSlots() != 1 || handler.getSlotLimit(0) < 64

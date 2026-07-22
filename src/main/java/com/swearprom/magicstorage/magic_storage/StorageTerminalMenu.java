@@ -361,6 +361,134 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         super.clicked(slotIndex, button, clickType, player);
     }
 
+    public boolean handleHeldContainerTransfer(
+            TerminalHeldContainerTransferPacket packet,
+            Player player
+    ) {
+        if (player.level().isClientSide()
+                || player.isSpectator()
+                || !stillValid(player)
+                || packet.containerId() != containerId
+                || packet.stateId() != getStateId()
+                || packet.expectedView() != resourceView
+                || resourceView == TerminalResourceView.ITEM
+                || packet.slotIndex() < 0
+                || packet.slotIndex() >= visibleRows * DISPLAY_COLS
+                || packet.slotIndex() >= DISPLAY_SLOTS
+                || getCarried().isEmpty()
+                || this instanceof CraftingTerminalMenu crafting
+                && crafting.getPage() != CraftingTerminalPage.STORAGE) return false;
+        if (packet.direction() == TerminalContainerTransferDirection.DEPOSIT) {
+            return depositHeldResourceContainer(player);
+        }
+        ItemStack displayStack = getSlot(packet.slotIndex()).getItem();
+        return fillHeldResourceContainer(displayStack, player);
+    }
+
+    private boolean fillHeldResourceContainer(ItemStack displayStack, Player player) {
+        ItemStack carried = getCarried();
+        if (carried.isEmpty()) return false;
+        StorageResourceKey key = TerminalResourceDisplay.key(displayStack).orElse(null);
+        if (key == null || !resourceView.matches(key)) return false;
+        StorageCoreBlockEntity core = getCore(player.level());
+        if (core == null) return false;
+
+        long stored = core.getResourceAmount(key);
+        if (stored <= 0) return false;
+        var transfer = StorageResourceContainerStrategies.find(key.kindId())
+                .flatMap(strategy -> strategy.planWithdraw(
+                        carried.copyWithCount(1), key, stored, player.level().registryAccess()))
+                .filter(candidate -> candidate.key().equals(key))
+                .orElse(null);
+        return transfer != null && commitContainerTransfer(core, transfer, false, player);
+    }
+
+    private boolean depositHeldResourceContainer(Player player) {
+        if (resourceView == TerminalResourceView.ITEM) return false;
+        ItemStack carried = getCarried();
+        if (carried.isEmpty()) return false;
+        StorageCoreBlockEntity core = getCore(player.level());
+        if (core == null) return false;
+        ItemStack singleContainer = carried.copyWithCount(1);
+        for (StorageResourceContainerStrategy strategy : StorageResourceContainerStrategies.all()) {
+            var transfer = strategy.planDeposit(
+                    singleContainer.copy(), player.level().registryAccess()).orElse(null);
+            if (transfer == null || !transfer.key().kindId().equals(strategy.kindId())
+                    || !resourceView.matches(transfer.key())) continue;
+            return commitContainerTransfer(core, transfer, true, player);
+        }
+        return false;
+    }
+
+    private boolean commitContainerTransfer(
+            StorageCoreBlockEntity core,
+            StorageResourceContainerStrategy.Transfer transfer,
+            boolean deposit,
+            Player player
+    ) {
+        if (!StorageResourceKinds.accepts(transfer.key())) return false;
+        ContainerResultPlacement placement = planContainerResultPlacement(
+                getCarried(), transfer.resultContainer(), player);
+        if (placement == null) return false;
+        long delta = deposit ? transfer.amount() : -transfer.amount();
+        StorageResourceTransaction transaction = StorageResourceTransaction.builder()
+                .add(transfer.key(), delta)
+                .build();
+        Actor actor = Actor.player(player);
+        if (!core.applyResourceTransaction(transaction, Action.SIMULATE, actor)) return false;
+
+        core.beginMutationBatch();
+        try {
+            if (!core.applyResourceTransaction(transaction, Action.EXECUTE, actor)) return false;
+            placement.apply(this, player);
+        } finally {
+            core.endMutationBatch();
+        }
+        refreshDisplayItemsFiltered(core, currentFilter);
+        broadcastChanges();
+        return true;
+    }
+
+    private ContainerResultPlacement planContainerResultPlacement(
+            ItemStack carried,
+            ItemStack result,
+            Player player
+    ) {
+        if (carried.isEmpty()) return null;
+        if (carried.getCount() == 1) {
+            return new ContainerResultPlacement(result.copy(), -1, ItemStack.EMPTY);
+        }
+        ItemStack remaining = carried.copyWithCount(carried.getCount() - 1);
+        if (result.isEmpty()) return new ContainerResultPlacement(remaining, -1, ItemStack.EMPTY);
+        for (int slot = 0; slot < player.getInventory().items.size(); slot++) {
+            ItemStack existing = player.getInventory().items.get(slot);
+            if (!existing.isEmpty() && ItemStack.isSameItemSameComponents(existing, result)
+                    && existing.getCount() + result.getCount() <= existing.getMaxStackSize()) {
+                ItemStack updated = existing.copyWithCount(existing.getCount() + result.getCount());
+                return new ContainerResultPlacement(remaining, slot, updated);
+            }
+        }
+        for (int slot = 0; slot < player.getInventory().items.size(); slot++) {
+            if (player.getInventory().items.get(slot).isEmpty()) {
+                return new ContainerResultPlacement(remaining, slot, result.copy());
+            }
+        }
+        return null;
+    }
+
+    private record ContainerResultPlacement(
+            ItemStack carried,
+            int inventorySlot,
+            ItemStack inventoryResult
+    ) {
+        private void apply(StorageTerminalMenu menu, Player player) {
+            menu.setCarried(carried.copy());
+            if (inventorySlot >= 0) {
+                player.getInventory().setItem(inventorySlot, inventoryResult.copy());
+            }
+        }
+    }
+
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         Slot slot = this.slots.get(index);

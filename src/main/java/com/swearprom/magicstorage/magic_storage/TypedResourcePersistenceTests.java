@@ -3,6 +3,7 @@ package com.swearprom.magicstorage.magic_storage;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -21,6 +22,93 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class TypedResourcePersistenceTests {
     private TypedResourcePersistenceTests() {
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void schema_two_unregistered_resource_filter_stays_unavailable_and_round_trips_raw_nbt(
+            GameTestHelper helper
+    ) {
+        ResourceLocation missingKind = ResourceLocation.fromNamespaceAndPath(
+                "missing_provider", "mana");
+        ResourceLocation resourceId = ResourceLocation.fromNamespaceAndPath(
+                "missing_provider", "blue");
+        if (MagicStorage.RESOURCE_KIND_REGISTRY.get(missingKind) != null) {
+            helper.fail("Test resource kind unexpectedly exists: " + missingKind);
+            return;
+        }
+
+        CompoundTag variant = new CompoundTag();
+        variant.putString("grade", "luminous");
+        CompoundTag nestedVariant = new CompoundTag();
+        nestedVariant.putLong("charge", 9_223_372_036L);
+        variant.put("properties", nestedVariant);
+
+        CompoundTag resource = new CompoundTag();
+        resource.putString("kind", missingKind.toString());
+        resource.putString("resourceId", resourceId.toString());
+        resource.put("variant", variant.copy());
+        CompoundTag rawRule = new CompoundTag();
+        rawRule.putString("type", "resource");
+        rawRule.put("resource", resource);
+        ListTag filterRules = new ListTag();
+        filterRules.add(rawRule.copy());
+
+        CompoundTag schemaTwo = new CompoundTag();
+        schemaTwo.putInt("schema", 2);
+        schemaTwo.putString("mode", "directional");
+        schemaTwo.putInt("sideMask", BusConfiguration.ALL_SIDES_MASK);
+        schemaTwo.putBoolean("unsidedAccess", false);
+        schemaTwo.putBoolean("automationEnabled", true);
+        schemaTwo.putString("filterMode", "allow");
+        schemaTwo.put("filterRules", filterRules);
+        schemaTwo.putLong("configRevision", 17);
+        CompoundTag root = new CompoundTag();
+        root.put(BusConfiguration.TAG_BUS_CONFIG, schemaTwo);
+
+        BusConfiguration loaded = BusConfiguration.load(
+                root, BusKind.EXPORT, helper.getLevel().registryAccess());
+        if (!loaded.supported() || loaded.schema() != 2 || loaded.filterRules().size() != 1) {
+            helper.fail("Schema-two Bus config with a missing resource kind did not load");
+            return;
+        }
+        BusFilterRule loadedRule = loaded.filterRules().getFirst();
+        if (loadedRule.type() != BusFilterRule.Type.UNAVAILABLE
+                || loadedRule.available()
+                || loadedRule.resourceKey().isPresent()) {
+            helper.fail("Missing resource kind did not become an unavailable filter rule");
+            return;
+        }
+
+        StorageResourceKey missingKey = StorageResourceKey.of(
+                missingKind, resourceId, variant);
+        StorageResourceKey knownKey = StorageResourceBridge.fluidKey(
+                new FluidStack(Fluids.WATER, 1), helper.getLevel().registryAccess());
+        BusFilterPolicy policy = BusFilterPolicy.compile(
+                loaded, helper.getLevel().registryAccess());
+        if (policy.allows(missingKey)
+                || policy.allows(knownKey)
+                || !policy.orderedResourceCandidates(
+                        java.util.List.of(missingKey, knownKey)).isEmpty()) {
+            helper.fail("Unavailable resource filter matched a StorageResourceKey");
+            return;
+        }
+
+        CompoundTag savedRoot = new CompoundTag();
+        loaded.save(savedRoot, helper.getLevel().registryAccess());
+        ListTag savedRules = savedRoot.getCompound(BusConfiguration.TAG_BUS_CONFIG)
+                .getList("filterRules", Tag.TAG_COMPOUND);
+        if (savedRules.size() != 1 || !savedRules.getCompound(0).equals(rawRule)) {
+            helper.fail("Unavailable resource filter did not preserve its raw NBT");
+            return;
+        }
+        CompoundTag savedResource = savedRules.getCompound(0).getCompound("resource");
+        if (!savedResource.getString("kind").equals(missingKind.toString())
+                || !savedResource.getString("resourceId").equals(resourceId.toString())
+                || !savedResource.getCompound("variant").equals(variant)) {
+            helper.fail("Unavailable resource kind, resource ID, or variant did not round-trip");
+            return;
+        }
+        helper.succeed();
     }
 
     @GameTest(template = "behavioraltests.platform")
@@ -271,6 +359,410 @@ public final class TypedResourcePersistenceTests {
             if (craftingMenu.clickMenuButton(
                     player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON)) {
                 helper.fail("Craftable page accepted a forged resource-view transition");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void terminal_fills_a_held_fluid_container_from_the_selected_resource(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new net.minecraft.core.BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey water = StorageResourceBridge.fluidKey(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (core.insertResource(water, 1_000, Action.EXECUTE) != 1_000) {
+                helper.fail("Could not seed terminal water");
+                return;
+            }
+
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            var menu = new StorageTerminalMenu(904, player.getInventory(), core);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            menu.setCarried(new ItemStack(Items.BUCKET));
+            menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                    menu.containerId,
+                    menu.getStateId(),
+                    0,
+                    TerminalResourceView.FLUID,
+                    TerminalContainerTransferDirection.WITHDRAW), player);
+
+            if (!menu.getCarried().is(Items.WATER_BUCKET)) {
+                helper.fail("Terminal did not fill the held bucket from the selected fluid");
+                return;
+            }
+            if (core.getResourceAmount(water) != 0) {
+                helper.fail("Terminal did not extract exactly the filled fluid amount");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void terminal_empties_a_held_fluid_container_into_an_empty_resource_view(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new net.minecraft.core.BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey water = StorageResourceBridge.fluidKey(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            var menu = new StorageTerminalMenu(905, player.getInventory(), core);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            menu.setCarried(new ItemStack(Items.WATER_BUCKET));
+            menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                    menu.containerId,
+                    menu.getStateId(),
+                    0,
+                    TerminalResourceView.FLUID,
+                    TerminalContainerTransferDirection.DEPOSIT), player);
+
+            if (!menu.getCarried().is(Items.BUCKET)) {
+                helper.fail("Terminal did not empty the held fluid container");
+                return;
+            }
+            if (core.getResourceAmount(water) != 1_000) {
+                helper.fail("Terminal did not insert exactly the drained fluid amount");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void crafting_terminal_storage_page_uses_the_shared_fluid_container_transfer(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new net.minecraft.core.BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey water = StorageResourceBridge.fluidKey(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (core.insertResource(water, 1_000, Action.EXECUTE) != 1_000) {
+                helper.fail("Could not seed Crafting Terminal water");
+                return;
+            }
+
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            var menu = new CraftingTerminalMenu(906, player.getInventory(), core);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            menu.setCarried(new ItemStack(Items.BUCKET));
+            menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                    menu.containerId,
+                    menu.getStateId(),
+                    0,
+                    TerminalResourceView.FLUID,
+                    TerminalContainerTransferDirection.WITHDRAW), player);
+
+            if (!menu.getCarried().is(Items.WATER_BUCKET)
+                    || core.getResourceAmount(water) != 0
+                    || !menu.getSelectedStack().isEmpty()) {
+                helper.fail("Crafting Terminal did not share Storage typed-container behavior");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void terminal_moves_one_result_to_inventory_for_stacked_fluid_containers(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new net.minecraft.core.BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey water = StorageResourceBridge.fluidKey(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (core.insertResource(water, 1_000, Action.EXECUTE) != 1_000) {
+                helper.fail("Could not seed stacked-container water");
+                return;
+            }
+
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            var menu = new StorageTerminalMenu(907, player.getInventory(), core);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            menu.setCarried(new ItemStack(Items.BUCKET, 2));
+            boolean[] listenerSawCompleteTransfer = {false};
+            core.addListener(new StorageListener() {
+                @Override
+                public void onChanged(ItemKey key, long delta, long newAmount, Actor actor) {
+                }
+
+                @Override
+                public void onResourceChanged(
+                        StorageResourceKey key,
+                        long delta,
+                        long newAmount,
+                        Actor actor
+                ) {
+                    int filledBuckets = 0;
+                    for (ItemStack stack : player.getInventory().items) {
+                        if (stack.is(Items.WATER_BUCKET)) filledBuckets += stack.getCount();
+                    }
+                    listenerSawCompleteTransfer[0] = core.getResourceAmount(water) == 0
+                            && menu.getCarried().is(Items.BUCKET)
+                            && menu.getCarried().getCount() == 1
+                            && filledBuckets == 1;
+                    throw new IllegalStateException("terminal container listener sentinel");
+                }
+            });
+            boolean listenerThrew = false;
+            try {
+                menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                        menu.containerId,
+                        menu.getStateId(),
+                        0,
+                        TerminalResourceView.FLUID,
+                        TerminalContainerTransferDirection.WITHDRAW), player);
+            } catch (IllegalStateException exception) {
+                if (!"terminal container listener sentinel".equals(exception.getMessage())) {
+                    throw exception;
+                }
+                listenerThrew = true;
+            }
+
+            int filledBuckets = 0;
+            for (ItemStack stack : player.getInventory().items) {
+                if (stack.is(Items.WATER_BUCKET)) filledBuckets += stack.getCount();
+            }
+            if (!menu.getCarried().is(Items.BUCKET)
+                    || menu.getCarried().getCount() != 1
+                    || filledBuckets != 1
+                    || core.getResourceAmount(water) != 0
+                    || !listenerThrew
+                    || !listenerSawCompleteTransfer[0]) {
+                helper.fail("Stacked transfer or listener observed a half-committed container transaction");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void terminal_keeps_stacked_container_and_resource_when_result_has_no_inventory_space(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new net.minecraft.core.BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey water = StorageResourceBridge.fluidKey(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (core.insertResource(water, 1_000, Action.EXECUTE) != 1_000) {
+                helper.fail("Could not seed full-inventory water");
+                return;
+            }
+
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            for (int slot = 0; slot < player.getInventory().items.size(); slot++) {
+                player.getInventory().items.set(slot, new ItemStack(Items.STONE, 64));
+            }
+            var menu = new StorageTerminalMenu(909, player.getInventory(), core);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            menu.setCarried(new ItemStack(Items.BUCKET, 2));
+            boolean transferred = menu.handleHeldContainerTransfer(
+                    new TerminalHeldContainerTransferPacket(
+                            menu.containerId,
+                            menu.getStateId(),
+                            0,
+                            TerminalResourceView.FLUID,
+                            TerminalContainerTransferDirection.WITHDRAW),
+                    player);
+
+            if (transferred
+                    || !menu.getCarried().is(Items.BUCKET)
+                    || menu.getCarried().getCount() != 2
+                    || core.getResourceAmount(water) != 1_000) {
+                helper.fail("Full inventory mutated the stacked container or stored resource");
+                return;
+            }
+            for (ItemStack stack : player.getInventory().items) {
+                if (!stack.is(Items.STONE) || stack.getCount() != 64) {
+                    helper.fail("Full inventory changed despite rejected container transfer");
+                    return;
+                }
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void terminal_container_packet_rejects_stale_state_wrong_view_and_hidden_slot(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new net.minecraft.core.BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey water = StorageResourceBridge.fluidKey(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (core.insertResource(water, 1_000, Action.EXECUTE) != 1_000) {
+                helper.fail("Could not seed packet-validation water");
+                return;
+            }
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            var menu = new StorageTerminalMenu(908, player.getInventory(), core);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            menu.setCarried(new ItemStack(Items.BUCKET));
+
+            boolean wrongView = menu.handleHeldContainerTransfer(
+                    new TerminalHeldContainerTransferPacket(
+                            menu.containerId,
+                            menu.getStateId(),
+                            0,
+                            TerminalResourceView.ENERGY,
+                            TerminalContainerTransferDirection.WITHDRAW),
+                    player);
+            boolean stale = menu.handleHeldContainerTransfer(
+                    new TerminalHeldContainerTransferPacket(
+                            menu.containerId,
+                            menu.getStateId() + 1,
+                            0,
+                            TerminalResourceView.FLUID,
+                            TerminalContainerTransferDirection.WITHDRAW),
+                    player);
+            boolean hidden = menu.handleHeldContainerTransfer(
+                    new TerminalHeldContainerTransferPacket(
+                            menu.containerId,
+                            menu.getStateId(),
+                            StorageTerminalMenu.DISPLAY_COLS * 6,
+                            TerminalResourceView.FLUID,
+                            TerminalContainerTransferDirection.WITHDRAW),
+                    player);
+            if (wrongView || stale || hidden
+                    || !menu.getCarried().is(Items.BUCKET)
+                    || core.getResourceAmount(water) != 1_000) {
+                helper.fail("Forged terminal container packet mutated cursor or Core");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void terminal_container_packet_rejects_spectator_and_out_of_range_player(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new net.minecraft.core.BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey water = StorageResourceBridge.fluidKey(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (core.insertResource(water, 2_000, Action.EXECUTE) != 2_000) {
+                helper.fail("Could not seed authorization-validation water");
+                return;
+            }
+
+            var spectator = helper.makeMockPlayer(GameType.SPECTATOR);
+            var spectatorMenu = new StorageTerminalMenu(
+                    909, spectator.getInventory(), core, corePos, true);
+            spectatorMenu.clickMenuButton(spectator, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            spectatorMenu.setCarried(new ItemStack(Items.BUCKET));
+            boolean spectatorAccepted = spectatorMenu.handleHeldContainerTransfer(
+                    new TerminalHeldContainerTransferPacket(
+                            spectatorMenu.containerId,
+                            spectatorMenu.getStateId(),
+                            0,
+                            TerminalResourceView.FLUID,
+                            TerminalContainerTransferDirection.WITHDRAW),
+                    spectator);
+
+            var distantPlayer = helper.makeMockPlayer(GameType.SURVIVAL);
+            distantPlayer.setPos(corePos.getX() + 100.0, corePos.getY(), corePos.getZ());
+            var distantMenu = new StorageTerminalMenu(
+                    910, distantPlayer.getInventory(), core, corePos, false);
+            distantMenu.clickMenuButton(distantPlayer, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            distantMenu.setCarried(new ItemStack(Items.BUCKET));
+            if (distantMenu.getCore(level) != core || distantMenu.stillValid(distantPlayer)) {
+                helper.fail("Out-of-range packet test did not isolate the menu validity gate");
+                return;
+            }
+            boolean distantAccepted = distantMenu.handleHeldContainerTransfer(
+                    new TerminalHeldContainerTransferPacket(
+                            distantMenu.containerId,
+                            distantMenu.getStateId(),
+                            0,
+                            TerminalResourceView.FLUID,
+                            TerminalContainerTransferDirection.WITHDRAW),
+                    distantPlayer);
+
+            if (spectatorAccepted || distantAccepted
+                    || !spectatorMenu.getCarried().is(Items.BUCKET)
+                    || !distantMenu.getCarried().is(Items.BUCKET)
+                    || core.getResourceAmount(water) != 2_000) {
+                helper.fail("Unauthorized terminal container packet mutated cursor or Core");
                 return;
             }
             helper.succeed();

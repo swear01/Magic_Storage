@@ -617,6 +617,27 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        TerminalResourceView visibleResourceView = displayedPreferences().resourceView();
+        if (isItemViewActive()
+                && (button == 0 || button == 1)
+                && hoveredSlot != null
+                && hoveredSlot.index >= 0
+                && hoveredSlot.index < visibleRows * StorageTerminalMenu.DISPLAY_COLS
+                && visibleResourceView != TerminalResourceView.ITEM
+                && !menu.getCarried().isEmpty()
+                && (button == 1 || TerminalResourceDisplay.isTyped(hoveredSlot.getItem()))) {
+            if (minecraft != null && minecraft.getConnection() != null) {
+                minecraft.getConnection().send(new TerminalHeldContainerTransferPacket(
+                        menu.containerId,
+                        menu.getStateId(),
+                        hoveredSlot.index,
+                        visibleResourceView,
+                        button == 0
+                                ? TerminalContainerTransferDirection.WITHDRAW
+                                : TerminalContainerTransferDirection.DEPOSIT));
+            }
+            return true;
+        }
         if (isItemViewActive() && isOverScrollBar(mouseX, mouseY) && button == 0) {
             isScrolling = true;
             lastRequestedScroll = Integer.MIN_VALUE;

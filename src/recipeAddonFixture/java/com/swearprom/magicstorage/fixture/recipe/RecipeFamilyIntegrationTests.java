@@ -2,6 +2,14 @@ package com.swearprom.magicstorage.fixture.recipe;
 
 import com.swearprom.magicstorage.magic_storage.CraftingDestination;
 import com.swearprom.magicstorage.magic_storage.CraftingTerminalMenu;
+import com.swearprom.magicstorage.magic_storage.BusConfiguration;
+import com.swearprom.magicstorage.magic_storage.BusFilterMode;
+import com.swearprom.magicstorage.magic_storage.BusFilterRule;
+import com.swearprom.magicstorage.magic_storage.BusMode;
+import com.swearprom.magicstorage.magic_storage.ExportBusBlock;
+import com.swearprom.magicstorage.magic_storage.ExportBusBlockEntity;
+import com.swearprom.magicstorage.magic_storage.ImportBusBlock;
+import com.swearprom.magicstorage.magic_storage.ImportBusBlockEntity;
 import com.swearprom.magicstorage.magic_storage.ItemKey;
 import com.swearprom.magicstorage.magic_storage.MagicStorage;
 import com.swearprom.magicstorage.magic_storage.RecipePresentation;
@@ -14,6 +22,8 @@ import com.swearprom.magicstorage.magic_storage.StorageTerminalMenu;
 import com.swearprom.magicstorage.magic_storage.TerminalDisplayStack;
 import com.swearprom.magicstorage.magic_storage.TerminalResourceDisplay;
 import com.swearprom.magicstorage.magic_storage.TerminalResourceView;
+import com.swearprom.magicstorage.magic_storage.TerminalContainerTransferDirection;
+import com.swearprom.magicstorage.magic_storage.TerminalHeldContainerTransferPacket;
 import com.swearprom.magicstorage.magic_storage.StorageResourceTransaction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -25,15 +35,23 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @GameTestHolder(FixtureMod.MODID)
 @PrefixGameTestTemplate(false)
@@ -232,6 +250,267 @@ public final class RecipeFamilyIntegrationTests {
     }
 
     @GameTest(template = "craftingtests.platform")
+    public static void registered_block_strategy_drives_directional_import_and_export(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(2, 3, 1));
+        BlockPos importPos = corePos.east();
+        BlockPos sourcePos = importPos.east();
+        BlockPos exportPos = corePos.west();
+        BlockPos targetPos = exportPos.west();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                Block.UPDATE_ALL);
+        level.setBlock(importPos, MagicStorage.IMPORT_BUS.get().defaultBlockState()
+                .setValue(ImportBusBlock.FACING, Direction.EAST), Block.UPDATE_ALL);
+        level.setBlock(exportPos, MagicStorage.EXPORT_BUS.get().defaultBlockState()
+                .setValue(ExportBusBlock.FACING, Direction.WEST), Block.UPDATE_ALL);
+        level.setBlock(sourcePos, Blocks.AMETHYST_BLOCK.defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(targetPos, Blocks.AMETHYST_BLOCK.defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !(level.getBlockEntity(importPos) instanceof ImportBusBlockEntity importer)
+                    || !(level.getBlockEntity(exportPos) instanceof ExportBusBlockEntity exporter)) {
+                helper.fail("Addon block-strategy Bus fixture is incomplete");
+                return;
+            }
+            core.rebuildNetwork(level);
+            StorageResourceKey mana = mana("blue");
+            StorageResourceKey blockedMana = mana("red");
+            var source = FixtureManaBlockStrategy.handler(level, sourcePos);
+            var target = FixtureManaBlockStrategy.handler(level, targetPos);
+            if (source.insert(mana, 2_500, false) != 2_500
+                    || source.insert(blockedMana, 500, false) != 500) {
+                helper.fail("Could not seed addon block strategy source");
+                return;
+            }
+            BusConfiguration exportConfig = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    false,
+                    true,
+                    BusFilterMode.ALLOW,
+                    List.of(BusFilterRule.resource(mana)),
+                    Optional.empty(),
+                    1);
+            BusConfiguration importConfig = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    true,
+                    true,
+                    BusFilterMode.ALLOW,
+                    List.of(BusFilterRule.resource(mana)),
+                    Optional.empty(),
+                    1);
+            CompoundTag tag = new CompoundTag();
+            exportConfig.save(tag, level.registryAccess());
+            ItemStack carrier = new ItemStack(MagicStorage.EXPORT_BUS_ITEM.get());
+            BlockItem.setBlockEntityData(carrier, MagicStorage.EXPORT_BUS_BE.get(), tag);
+            CompoundTag importTag = new CompoundTag();
+            importConfig.save(importTag, level.registryAccess());
+            ItemStack importCarrier = new ItemStack(MagicStorage.IMPORT_BUS_ITEM.get());
+            BlockItem.setBlockEntityData(importCarrier, MagicStorage.IMPORT_BUS_BE.get(), importTag);
+            if (!BlockItem.updateCustomBlockEntityTag(level, null, exportPos, carrier)
+                    || !BlockItem.updateCustomBlockEntityTag(
+                    level, null, importPos, importCarrier)) {
+                helper.fail("Could not configure addon typed Buses");
+                return;
+            }
+
+            importer.tick();
+            if (source.getAmount(mana) != 1_500
+                    || source.getAmount(blockedMana) != 500
+                    || core.getResourceAmount(mana) != 1_000
+                    || core.getResourceAmount(blockedMana) != 0) {
+                helper.fail("Directional Import did not move one addon resource batch: source="
+                        + source.getAmount(mana) + ", core=" + core.getResourceAmount(mana));
+                return;
+            }
+            exporter.tick();
+            if (core.getResourceAmount(mana) != 0 || target.getAmount(mana) != 1_000) {
+                helper.fail("Directional Export did not move the addon resource batch");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void directional_import_uses_native_fluid_and_energy_block_capabilities(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(2, 3, 1));
+        BlockPos fluidBusPos = corePos.east();
+        BlockPos fluidSourcePos = fluidBusPos.east();
+        BlockPos energyBusPos = corePos.west();
+        BlockPos energySourcePos = energyBusPos.west();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                Block.UPDATE_ALL);
+        level.setBlock(fluidBusPos, MagicStorage.IMPORT_BUS.get().defaultBlockState()
+                .setValue(ImportBusBlock.FACING, Direction.EAST), Block.UPDATE_ALL);
+        level.setBlock(energyBusPos, MagicStorage.IMPORT_BUS.get().defaultBlockState()
+                .setValue(ImportBusBlock.FACING, Direction.WEST), Block.UPDATE_ALL);
+        level.setBlock(fluidSourcePos, Blocks.BLUE_GLAZED_TERRACOTTA.defaultBlockState(),
+                Block.UPDATE_ALL);
+        level.setBlock(energySourcePos, Blocks.RED_GLAZED_TERRACOTTA.defaultBlockState(),
+                Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !(level.getBlockEntity(fluidBusPos) instanceof ImportBusBlockEntity fluidBus)
+                    || !(level.getBlockEntity(energyBusPos) instanceof ImportBusBlockEntity energyBus)) {
+                helper.fail("Native Import Bus fixture is incomplete");
+                return;
+            }
+            core.rebuildNetwork(level);
+            var fluidSource = FixtureNativeBlockStorage.fluid(level, fluidSourcePos);
+            var energySource = FixtureNativeBlockStorage.energy(level, energySourcePos);
+            if (level.getCapability(Capabilities.FluidHandler.BLOCK,
+                    fluidSourcePos, Direction.WEST) != fluidSource
+                    || level.getCapability(Capabilities.EnergyStorage.BLOCK,
+                    energySourcePos, Direction.EAST) != energySource) {
+                helper.fail("Native Import target capabilities were not registered on the queried sides");
+                return;
+            }
+            if (fluidSource.fill(new FluidStack(Fluids.WATER, 1_500),
+                    IFluidHandler.FluidAction.EXECUTE) != 1_500
+                    || energySource.receiveEnergy(1_500, false) != 1_500) {
+                helper.fail("Could not seed native Import Bus sources");
+                return;
+            }
+            BusConfiguration importConfig = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    true,
+                    true,
+                    BusFilterMode.DENY,
+                    List.of(),
+                    Optional.empty(),
+                    1);
+            if (!applyBusConfiguration(level, fluidBusPos, MagicStorage.IMPORT_BUS_BE.get(),
+                    MagicStorage.IMPORT_BUS_ITEM.get(), importConfig)
+                    || !applyBusConfiguration(level, energyBusPos,
+                    MagicStorage.IMPORT_BUS_BE.get(), MagicStorage.IMPORT_BUS_ITEM.get(),
+                    importConfig)) {
+                helper.fail("Could not reset native Import Bus transfer cooldowns");
+                return;
+            }
+            fluidBus.tick();
+            energyBus.tick();
+            StorageResourceKey water = StorageResourceKey.fluid(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (fluidSource.getFluidAmount() != 500
+                    || energySource.getEnergyStored() != 500
+                    || core.getResourceAmount(water) != 1_000
+                    || core.getResourceAmount(StorageResourceKey.neoforgeEnergy()) != 1_000) {
+                helper.fail("Directional Import did not use native fluid and energy capabilities: "
+                        + "fluidSource=" + fluidSource.getFluidAmount()
+                        + ", energySource=" + energySource.getEnergyStored()
+                        + ", coreFluid=" + core.getResourceAmount(water)
+                        + ", coreEnergy="
+                        + core.getResourceAmount(StorageResourceKey.neoforgeEnergy()));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void directional_export_uses_native_fluid_and_energy_block_capabilities(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        BlockPos corePos = helper.absolutePos(new BlockPos(2, 3, 1));
+        BlockPos fluidBusPos = corePos.east();
+        BlockPos fluidTargetPos = fluidBusPos.east();
+        BlockPos energyBusPos = corePos.west();
+        BlockPos energyTargetPos = energyBusPos.west();
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                Block.UPDATE_ALL);
+        level.setBlock(fluidBusPos, MagicStorage.EXPORT_BUS.get().defaultBlockState()
+                .setValue(ExportBusBlock.FACING, Direction.EAST), Block.UPDATE_ALL);
+        level.setBlock(energyBusPos, MagicStorage.EXPORT_BUS.get().defaultBlockState()
+                .setValue(ExportBusBlock.FACING, Direction.WEST), Block.UPDATE_ALL);
+        level.setBlock(fluidTargetPos, Blocks.BLUE_GLAZED_TERRACOTTA.defaultBlockState(),
+                Block.UPDATE_ALL);
+        level.setBlock(energyTargetPos, Blocks.RED_GLAZED_TERRACOTTA.defaultBlockState(),
+                Block.UPDATE_ALL);
+
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)
+                    || !(level.getBlockEntity(fluidBusPos) instanceof ExportBusBlockEntity fluidBus)
+                    || !(level.getBlockEntity(energyBusPos) instanceof ExportBusBlockEntity energyBus)) {
+                helper.fail("Native Export Bus fixture is incomplete");
+                return;
+            }
+            core.rebuildNetwork(level);
+            if (level.getCapability(Capabilities.FluidHandler.BLOCK,
+                    fluidTargetPos, Direction.WEST) == null
+                    || level.getCapability(Capabilities.EnergyStorage.BLOCK,
+                    energyTargetPos, Direction.EAST) == null) {
+                helper.fail("Native Export target capabilities were not registered on the queried sides");
+                return;
+            }
+            StorageResourceKey water = StorageResourceKey.fluid(
+                    new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            if (core.insertResource(water, 1_500, Action.EXECUTE) != 1_500
+                    || core.insertResource(StorageResourceKey.neoforgeEnergy(), 1_500,
+                    Action.EXECUTE) != 1_500) {
+                helper.fail("Could not seed native Export Bus resources");
+                return;
+            }
+            BusConfiguration fluidConfig = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    false,
+                    true,
+                    BusFilterMode.ALLOW,
+                    List.of(BusFilterRule.resource(water)),
+                    Optional.empty(),
+                    1);
+            BusConfiguration energyConfig = BusConfiguration.current(
+                    BusMode.DIRECTIONAL,
+                    BusConfiguration.ALL_SIDES_MASK,
+                    false,
+                    true,
+                    BusFilterMode.ALLOW,
+                    List.of(BusFilterRule.resource(StorageResourceKey.neoforgeEnergy())),
+                    Optional.empty(),
+                    1);
+            if (!applyBusConfiguration(level, fluidBusPos, MagicStorage.EXPORT_BUS_BE.get(),
+                    MagicStorage.EXPORT_BUS_ITEM.get(), fluidConfig)
+                    || !applyBusConfiguration(level, energyBusPos,
+                    MagicStorage.EXPORT_BUS_BE.get(), MagicStorage.EXPORT_BUS_ITEM.get(),
+                    energyConfig)) {
+                helper.fail("Could not configure native Export Bus typed filters");
+                return;
+            }
+            fluidBus.tick();
+            energyBus.tick();
+            var fluidTarget = FixtureNativeBlockStorage.fluid(level, fluidTargetPos);
+            var energyTarget = FixtureNativeBlockStorage.energy(level, energyTargetPos);
+            if (fluidTarget.getFluidAmount() != 1_000
+                    || energyTarget.getEnergyStored() != 1_000
+                    || core.getResourceAmount(water) != 500
+                    || core.getResourceAmount(StorageResourceKey.neoforgeEnergy()) != 500) {
+                helper.fail("Directional Export did not use native fluid and energy capabilities: "
+                        + "fluidTarget=" + fluidTarget.getFluidAmount()
+                        + ", energyTarget=" + energyTarget.getEnergyStored()
+                        + ", coreFluid=" + core.getResourceAmount(water)
+                        + ", coreEnergy="
+                        + core.getResourceAmount(StorageResourceKey.neoforgeEnergy()));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
     public static void typed_family_commits_multiple_inputs_outputs_and_retained_roles_atomically(
             GameTestHelper helper
     ) {
@@ -332,6 +611,117 @@ public final class RecipeFamilyIntegrationTests {
                     || context.core().getResourceAmount(red) != 5
                     || inventoryCount(context.player().getInventory(), new ItemStack(Items.GRAVEL)) != 0) {
                 helper.fail("Failed typed family commit partially mutated resources");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void terminal_fe_deposit_and_withdraw_use_the_item_capability(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            var menu = new StorageTerminalMenu(403, player.getInventory(), core);
+            menu.clickMenuButton(player, NEXT_RESOURCE_VIEW_BUTTON);
+            menu.clickMenuButton(player, NEXT_RESOURCE_VIEW_BUTTON);
+            ItemStack charged = new ItemStack(FixtureMod.ENERGY_CELL.get());
+            FixtureEnergyStorage.setEnergy(charged, 5_000);
+            menu.setCarried(charged);
+
+            if (!menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                    menu.containerId,
+                    menu.getStateId(),
+                    0,
+                    TerminalResourceView.ENERGY,
+                    TerminalContainerTransferDirection.DEPOSIT), player)) {
+                helper.fail("Energy container deposit was rejected");
+                return;
+            }
+            var emptyHandler = menu.getCarried().getCapability(Capabilities.EnergyStorage.ITEM);
+            if (emptyHandler == null || emptyHandler.getEnergyStored() != 0
+                    || core.getResourceAmount(StorageResourceKey.neoforgeEnergy()) != 5_000) {
+                helper.fail("Energy container deposit changed the wrong amount");
+                return;
+            }
+            if (!menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                    menu.containerId,
+                    menu.getStateId(),
+                    0,
+                    TerminalResourceView.ENERGY,
+                    TerminalContainerTransferDirection.WITHDRAW), player)) {
+                helper.fail("Energy container withdraw was rejected");
+                return;
+            }
+            var filledHandler = menu.getCarried().getCapability(Capabilities.EnergyStorage.ITEM);
+            if (filledHandler == null || filledHandler.getEnergyStored() != 5_000
+                    || core.getResourceAmount(StorageResourceKey.neoforgeEnergy()) != 0) {
+                helper.fail("Energy container withdraw changed the wrong amount");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void terminal_uses_a_registered_addon_container_strategy_in_other_view(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(),
+                Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(GameType.SURVIVAL);
+            player.setPos(corePos.getX() + 0.5, corePos.getY() + 0.5, corePos.getZ() + 0.5);
+            var menu = new StorageTerminalMenu(404, player.getInventory(), core);
+            for (int step = 0; step < 4; step++) {
+                menu.clickMenuButton(player, NEXT_RESOURCE_VIEW_BUTTON);
+            }
+            ItemStack filled = new ItemStack(FixtureMod.MANA_CELL.get());
+            FixtureManaContainer.set(filled, "blue", 300);
+            menu.setCarried(filled);
+            StorageResourceKey blue = mana("blue");
+
+            if (!menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                    menu.containerId,
+                    menu.getStateId(),
+                    0,
+                    TerminalResourceView.OTHER,
+                    TerminalContainerTransferDirection.DEPOSIT), player)
+                    || FixtureManaContainer.amount(menu.getCarried()) != 0
+                    || core.getResourceAmount(blue) != 300) {
+                helper.fail("Registered addon strategy did not deposit its exact resource");
+                return;
+            }
+            if (!menu.handleHeldContainerTransfer(new TerminalHeldContainerTransferPacket(
+                    menu.containerId,
+                    menu.getStateId(),
+                    0,
+                    TerminalResourceView.OTHER,
+                    TerminalContainerTransferDirection.WITHDRAW), player)
+                    || FixtureManaContainer.amount(menu.getCarried()) != 300
+                    || !FixtureManaContainer.variant(menu.getCarried()).equals("blue")
+                    || core.getResourceAmount(blue) != 0) {
+                helper.fail("Registered addon strategy did not withdraw its exact resource");
                 return;
             }
             helper.succeed();
@@ -440,6 +830,20 @@ public final class RecipeFamilyIntegrationTests {
         }
         context.menu().clickMenuButton(context.player(), STORAGE_PAGE_BUTTON);
         return installed;
+    }
+
+    private static boolean applyBusConfiguration(
+            net.minecraft.server.level.ServerLevel level,
+            BlockPos pos,
+            BlockEntityType<?> blockEntityType,
+            net.minecraft.world.item.Item blockItem,
+            BusConfiguration configuration
+    ) {
+        CompoundTag tag = new CompoundTag();
+        configuration.save(tag, level.registryAccess());
+        ItemStack carrier = new ItemStack(blockItem);
+        BlockItem.setBlockEntityData(carrier, blockEntityType, tag);
+        return BlockItem.updateCustomBlockEntityTag(level, null, pos, carrier);
     }
 
     private static int inventoryCount(net.minecraft.world.entity.player.Inventory inventory, ItemStack expected) {

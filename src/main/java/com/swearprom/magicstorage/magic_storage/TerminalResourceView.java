@@ -32,6 +32,13 @@ public enum TerminalResourceView {
         return id >= 0 && id < values().length ? values()[id] : ITEM;
     }
 
+    static TerminalResourceView requireById(int id) {
+        if (id < 0 || id >= values().length) {
+            throw new IllegalArgumentException("Unknown terminal resource view " + id);
+        }
+        return values()[id];
+    }
+
     private static boolean isBuiltIn(ResourceLocation kind) {
         return kind.equals(StorageResourceKindApi.ITEM_KIND)
                 || kind.equals(StorageResourceKindApi.FLUID_KIND)

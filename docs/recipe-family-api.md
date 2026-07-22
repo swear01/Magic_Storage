@@ -89,7 +89,7 @@ The resolver must be deterministic and side-effect free. Chance outputs, runtime
 
 ## Repository verification fixture
 
-`src/apiTest/` proves both factories and resource APIs compile from a different Java package. `src/recipeAddonFixture/` is a separately loaded NeoForge mod that proves the legacy single-item family plus typed multi-input/multi-output discovery, retained roles, exact counts, mixed item/addon/fluid commit, terminal listing, destination capacity rejection, and rollback.
+`src/apiTest/` proves both factories and the resource kind/handler/block/container APIs compile from a different Java package. `src/recipeAddonFixture/` is a separately loaded NeoForge mod with 14 GameTests covering the legacy single-item family, typed multi-input/multi-output discovery, retained roles, exact counts, mixed item/addon/fluid commit, terminal listing and held-container transfer, generic+native Bus discovery, persistent typed rollback escrow, Creative removal conservation, destination capacity rejection, and rollback. Public handler/strategy simulation and amount rules are authoritative in [`typed-resource-storage.md`](typed-resource-storage.md#public-handler-and-strategy-contract).
 
 ```bash
 ./gradlew compileApiTestJava

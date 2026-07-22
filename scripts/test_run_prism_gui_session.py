@@ -449,6 +449,44 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 mode_func=lambda: mod.DisplayMode(1920, 1200, 1920, 1200, 60, 24),
             )
 
+    def test_bus_configuration_scenario_generates_focused_fullscreen_checklist(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            minecraft_dir = root / "minecraft"
+            (minecraft_dir / "logs").mkdir(parents=True)
+            result = mod.run_session(
+                scenario_name="bus-configuration",
+                minecraft_dir=minecraft_dir,
+                instance_dir=root / "instances" / "dev",
+                run_root=root / "gui-runs",
+                prepare_world_func=self.fake_prepare,
+                configure_instance_func=lambda instance_dir: True,
+                no_launch=True,
+                timestamp_func=lambda: "20260722-010203",
+            )
+
+            self.assertTrue(result.manual_gui_required)
+            checklist = (result.run_dir / "checklist.md").read_text()
+            for expected in [
+                "fullscreen gate",
+                "hotbar `5`",
+                "hotbar `6`",
+                "Import Bus",
+                "Export Bus",
+                "Front",
+                "Pipes",
+                "Unsided access On",
+                "Automation",
+                "Allow",
+                "Deny",
+                "six side buttons",
+                "Filters",
+                "directionless block model",
+                "current run",
+            ]:
+                self.assertIn(expected, checklist)
+
     def test_crafting_fuel_page_scenario_generates_focused_fullscreen_checklist(self):
         mod = self.load_script()
         with tempfile.TemporaryDirectory() as tmp:

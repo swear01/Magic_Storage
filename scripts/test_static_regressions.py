@@ -755,8 +755,10 @@ class StaticRegressionTests(unittest.TestCase):
     def test_recipe_addon_gametest_gate_rejects_any_selftest_failure(self):
         build = self.read_required("build.gradle")
         self.assertIn("tasks.named('runGameTestServer').configure", build)
-        self.assertIn("All 337 required tests passed", build)
+        self.assertIn("All 371 required tests passed", build)
+        self.assertIn("All 14 required tests passed", build)
         self.assertIn("All 5 required tests passed", build)
+        self.assertIn("SelfTest: 224723 passed, 0 failed, 224723 total", build)
         self.assertIn("text.contains('TESTS FAILED!')", build)
         self.assertNotIn("SelfTest: 1 TESTS FAILED!", build)
 
@@ -792,7 +794,7 @@ class StaticRegressionTests(unittest.TestCase):
             "a weak-key map still leaks when each strongly held handler references its Core key",
         )
         self.assertIn("tasks.named('runMekanismGameTestServer').configure", build)
-        self.assertIn("All 2 required tests passed", build)
+        self.assertIn("All 5 required tests passed", build)
         self.assertIn('modId="mekanism"', fixture_metadata)
         self.assertIn('versionRange="[10.7,)"', fixture_metadata)
         self.assertNotRegex(fixture_metadata, r'versionRange="\[10\.7\.\d')
@@ -828,7 +830,10 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertRegex(
             entrypoint,
-            r"event\.enqueueWork\(\(\) -> \{\s*RecipeAdapters\.snapshot\(\);\s*SelfTest\.runAll\(\);\s*}\);",
+            r"event\.enqueueWork\(\(\) -> \{\s*RecipeAdapters\.snapshot\(\);\s*"
+            r"StorageResourceContainerStrategies\.snapshot\(\);\s*"
+            r"StorageResourceBlockStrategies\.snapshot\(\);\s*"
+            r"SelfTest\.runAll\(\);\s*}\);",
         )
 
     def test_recipe_renderer_boundary_keeps_emi_out_of_base_screen_and_native_path(self):
@@ -1040,9 +1045,16 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("buf.writeBoolean(true)", remote)
 
     def test_buses_and_menus_use_action_actor_storage_contract(self):
-        for relative_path in [
+        bus_paths = [
             "src/main/java/com/swearprom/magicstorage/magic_storage/ImportBusBlockEntity.java",
             "src/main/java/com/swearprom/magicstorage/magic_storage/ExportBusBlockEntity.java",
+        ]
+        for relative_path in bus_paths:
+            text = self.read_required(relative_path)
+            self.assertIn("Action.", text, relative_path)
+            self.assertIn("BusActor", text, relative_path)
+            self.assertIn("BusTransferGuard.run", text, relative_path)
+        for relative_path in [
             "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalMenu.java",
             "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalMenu.java",
         ]:
@@ -1072,11 +1084,100 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("FMLEnvironment.dist == Dist.CLIENT", magic_storage)
         self.assertIn("ClientSetup.register(modEventBus)", magic_storage)
 
+    def test_bus_configuration_screen_exposes_the_complete_concise_control_set(self):
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/BusConfigurationScreen.java"
+        )
+        client_setup = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/ClientSetup.java"
+        )
+        self.assertIn("extends AbstractContainerScreen<BusConfigurationMenu>", screen)
+        self.assertIn("MagicStorage.BUS_CONFIGURATION_MENU.get()", client_setup)
+        self.assertIn("BusConfigurationScreen::new", client_setup)
+        for control in [
+            "TOGGLE_MODE_BUTTON",
+            "TOGGLE_UNSIDED_BUTTON",
+            "TOGGLE_AUTOMATION_BUTTON",
+            "TOGGLE_FILTER_MODE_BUTTON",
+            "TOGGLE_SIDE_BUTTON_START",
+        ]:
+            self.assertIn(control, screen)
+        self.assertIn("handleInventoryButtonClick", screen)
+        self.assertIn("graphics.drawCenteredString", screen)
+        self.assertIn(
+            'Component.translatable("gui.magic_storage.bus.side.short." + direction.getName())',
+            screen,
+        )
+        self.assertNotIn("directionLabel", screen)
+        self.assertNotIn("BFS", screen)
+        self.assertNotIn("capability", screen.lower())
+
+        en_us = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/en_us.json"
+        ))
+        zh_tw = json.loads(self.read_required(
+            "src/main/resources/assets/magic_storage/lang/zh_tw.json"
+        ))
+        keys = {
+            "container.magic_storage.import_bus",
+            "container.magic_storage.export_bus",
+            "gui.magic_storage.bus.mode",
+            "gui.magic_storage.bus.directional",
+            "gui.magic_storage.bus.directionless",
+            "gui.magic_storage.bus.front_transfer",
+            "gui.magic_storage.bus.external_sides",
+            "gui.magic_storage.bus.automation",
+            "gui.magic_storage.bus.unsided",
+            "gui.magic_storage.bus.allow",
+            "gui.magic_storage.bus.deny",
+            "gui.magic_storage.bus.filters",
+            "gui.magic_storage.bus.read_only",
+            *{
+                f"gui.magic_storage.bus.side.short.{direction}"
+                for direction in ("down", "up", "north", "south", "west", "east")
+            },
+        }
+        self.assertTrue(keys.issubset(en_us))
+        self.assertTrue(keys.issubset(zh_tw))
+        for key in [
+            "gui.magic_storage.bus.directional",
+            "gui.magic_storage.bus.directionless",
+            "gui.magic_storage.bus.front_transfer",
+            "gui.magic_storage.bus.external_sides",
+        ]:
+            self.assertLessEqual(len(en_us[key]), 12, key)
+
     def test_directional_bus_mirror_avoids_deprecated_blockstate_rotate(self):
         for source in ["ImportBusBlock.java", "ExportBusBlock.java"]:
             text = self.read_required(f"src/main/java/com/swearprom/magicstorage/magic_storage/{source}")
             self.assertNotIn("state.rotate(", text, source)
             self.assertIn("state.setValue(FACING, mirror.mirror(state.getValue(FACING)))", text, source)
+
+    def test_every_blockstate_model_reference_resolves_to_a_model_file(self):
+        assets = ROOT / "src/main/resources/assets"
+        missing = []
+        for blockstate_path in assets.glob("*/blockstates/*.json"):
+            namespace = blockstate_path.parents[1].name
+            blockstate = json.loads(blockstate_path.read_text())
+            references = []
+            for variant in blockstate.get("variants", {}).values():
+                references.extend(variant if isinstance(variant, list) else [variant])
+            for part in blockstate.get("multipart", []):
+                apply = part.get("apply", {})
+                references.extend(apply if isinstance(apply, list) else [apply])
+            for reference in references:
+                model_id = reference.get("model") if isinstance(reference, dict) else None
+                if not model_id:
+                    continue
+                model_namespace, model_path = (
+                    model_id.split(":", 1) if ":" in model_id else (namespace, model_id)
+                )
+                candidate = assets / model_namespace / "models" / f"{model_path}.json"
+                if not candidate.is_file():
+                    missing.append(
+                        f"{blockstate_path.relative_to(ROOT)} -> {model_id}"
+                    )
+        self.assertEqual([], missing)
 
     def test_runtime_texture_family_is_complete_native_and_orphan_free(self):
         textures = ROOT / "src/main/resources/assets/magic_storage/textures"
@@ -2137,6 +2238,63 @@ class StaticRegressionTests(unittest.TestCase):
         )
         self.assertIn("level.hasChunkAt(pos)", entrypoint)
         self.assertIn("isValidNetworkPath", entrypoint)
+
+    def test_public_container_strategies_receive_isolated_stack_copies(self):
+        terminal = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalMenu.java"
+        )
+        bus_menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/BusConfigurationMenu.java"
+        )
+        self.assertRegex(
+            terminal,
+            r"strategy\.planDeposit\(\s*singleContainer\.copy\(\)",
+        )
+        self.assertRegex(
+            bus_menu,
+            r"strategy\.planDeposit\(\s*single\.copy\(\)",
+        )
+
+    def test_bus_open_payload_redacts_owner_identity(self):
+        menu = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/BusConfigurationMenu.java"
+        )
+        self.assertIn(
+            "host.getBusConfiguration().withoutOwner().save(root, buffer.registryAccess())",
+            menu,
+        )
+
+    def test_optional_mod_linkage_failures_are_reported_explicitly(self):
+        for path in [
+            "src/main/java/com/swearprom/magicstorage/magic_storage/OptionalModCapabilities.java",
+            "src/main/java/com/swearprom/magicstorage/magic_storage/OptionalModBlockStrategies.java",
+            "src/main/java/com/swearprom/magicstorage/magic_storage/OptionalModContainerStrategies.java",
+        ]:
+            text = self.read_required(path)
+            self.assertIn("catch (LinkageError error)", text, path)
+            self.assertIn("binary-incompatible", text, path)
+
+        capabilities = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/OptionalModCapabilities.java"
+        )
+        self.assertRegex(
+            capabilities,
+            r'(?s)if \(exception\.getCause\(\) instanceof LinkageError error\) \{\s*'
+            r'throw new IllegalStateException\(\s*"[^"]*binary-incompatible[^"]*", error\);\s*\}',
+            "InvocationTargetException must preserve binary-incompatible classification",
+        )
+        for path in [
+            "src/main/java/com/swearprom/magicstorage/magic_storage/OptionalModBlockStrategies.java",
+            "src/main/java/com/swearprom/magicstorage/magic_storage/OptionalModContainerStrategies.java",
+        ]:
+            text = self.read_required(path)
+            self.assertRegex(
+                text,
+                r'(?s)catch \(InvocationTargetException exception\) \{\s*'
+                r'if \(exception\.getCause\(\) instanceof LinkageError error\) \{\s*'
+                r'throw new IllegalStateException\(\s*"[^"]*binary-incompatible[^"]*", error\);\s*\}',
+                f"reflected LinkageError must remain binary-incompatible: {path}",
+            )
 
     def test_storage_unit_guide_matches_self_drop_and_capacity_contract(self):
         for tier in range(1, 7):

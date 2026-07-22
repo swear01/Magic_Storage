@@ -42,6 +42,8 @@ class SelfTest {
     static void runAll() {
         testItemKey();
         testStorageResourceLedger();
+        testBusResourceEscrow();
+        testResourceContainerTransferContract();
         testAxeSyntheticDiscovery();
         testAxeEnergyContract();
         testFuelTable();
@@ -189,6 +191,34 @@ class SelfTest {
             duplicateRejected = true;
         }
         assertTrue("duplicate persisted resource keys fail closed", duplicateRejected);
+    }
+
+    private static void testResourceContainerTransferContract() {
+        boolean rejectedMultipleResults = false;
+        try {
+            new StorageResourceContainerStrategy.Transfer(
+                    StorageResourceKey.neoforgeEnergy(),
+                    1,
+                    new ItemStack(Items.BUCKET, 2));
+        } catch (IllegalArgumentException expected) {
+            rejectedMultipleResults = true;
+        }
+        assertTrue("one consumed container cannot produce multiple result containers",
+                rejectedMultipleResults);
+    }
+
+    private static void testBusResourceEscrow() {
+        StorageResourceKey key = StorageResourceKey.neoforgeEnergy();
+        BusResourceEscrow escrow = BusResourceEscrow.empty();
+        escrow.add(key, Long.MAX_VALUE - 5);
+        boolean overflowRejected = false;
+        try {
+            escrow.add(key, 10);
+        } catch (IllegalStateException expected) {
+            overflowRejected = true;
+        }
+        assertTrue("typed Bus escrow rejects overflow without partial mutation",
+                overflowRejected && escrow.amount(key) == Long.MAX_VALUE - 5);
     }
 
     private static void testAxeSyntheticDiscovery() {
@@ -1091,6 +1121,14 @@ class SelfTest {
         assertTrue("invalid resource view wire id fails to item default",
                 TerminalResourceView.byId(-1) == TerminalResourceView.ITEM
                         && TerminalResourceView.byId(99) == TerminalResourceView.ITEM);
+        boolean rejectedInvalidPacketView = false;
+        try {
+            TerminalResourceView.requireById(99);
+        } catch (IllegalArgumentException expected) {
+            rejectedInvalidPacketView = true;
+        }
+        assertTrue("invalid resource view packet id is rejected",
+                rejectedInvalidPacketView);
     }
 
     private static void testTerminalSettingsPacketCodec() {

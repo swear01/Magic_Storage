@@ -32,6 +32,7 @@ public class ClientSetup {
         event.<CraftingTerminalMenu, CraftingTerminalScreen>register(
                 MagicStorage.CRAFTING_TERMINAL_MENU.get(),
                 (menu, inv, title) -> new CraftingTerminalScreen(menu, inv, title));
+        event.register(MagicStorage.BUS_CONFIGURATION_MENU.get(), BusConfigurationScreen::new);
     }
 
     private static void addFusionConnectedCasingPack(AddPackFindersEvent event) {
