@@ -37,11 +37,11 @@ This is the selected design. A descriptor is the stable logical family. It owns 
 
 `MachineVariant` contains:
 
-- one exact representative `ItemStack` identity;
+- one representative `ItemStack`, matched by exact item identity; station-stack components are intentionally not part of variant identity;
 - a normalized positive `MachineWorkRate(numerator, denominator)` for PROCESS descriptors;
 - zero work for INSTANT descriptors.
 
-An installable descriptor exposes 1..64 active variants. Duplicate exact stack identities, empty stacks, non-positive PROCESS rates, nonzero INSTANT rates, and oversized lists fail explicitly. The existing fixed-rate factory remains a convenience wrapper around one variant.
+An installable descriptor exposes 1..64 active variants. Duplicate item identities, empty stacks, non-positive PROCESS rates, nonzero INSTANT rates, and oversized lists fail explicitly. The existing fixed-rate factory remains a convenience wrapper around one variant.
 
 Variant suppliers are evaluated only after mod discovery/config loading and are materialized into the server menu snapshot. Client descriptors contain only the materialized variant list; they never execute addon callbacks.
 
@@ -57,7 +57,7 @@ wholeWork      = totalNumerator / rate.denominator
 newRemainder   = totalNumerator % rate.denominator
 ```
 
-The remainder record includes descriptor ID, exact installed stack identity, numerator, and denominator. It survives save/reload. Replacing the installed variant or changing the live configured rate resets only that descriptor's incompatible remainder before applying the new rate. Addition saturates at `Long.MAX_VALUE`; arithmetic overflow is rejected or saturated at the same boundary as the existing energy path.
+The remainder record includes descriptor ID, installed item ID, numerator, and denominator. It survives save/reload. Replacing the installed variant or changing the live configured rate resets only that descriptor's incompatible remainder before applying the new rate. Addition saturates at `Long.MAX_VALUE`; arithmetic overflow is rejected or saturated at the same boundary as the existing energy path.
 
 Built-in furnace descriptors keep their existing `EnergyType` pools for save compatibility. New third-party PROCESS descriptors use descriptor-keyed station-work pools, so adding future mods does not expand a fixed enum. Recipe costs can require station work, optional existing Fuel, and typed resources in one simulate-then-commit plan.
 
@@ -89,7 +89,7 @@ The family consumes all 1..6 recipe ingredients. If `getOutputContainer()` is no
 
 The initial item families are Crushing, Enriching, Smelting, and Combining. Sized item predicates and exact counts come from Mekanism's public ingredient API rather than `Recipe#getIngredients()` guesses.
 
-Pressurized Reaction is supported only when its deterministic output includes an item, because current terminal recipe selection is item-primary. Its item, fluid, and chemical inputs and optional chemical co-output use one typed transaction; `duration` becomes station work and `energyRequired` consumes stored NeoForge Energy. Chemical-only Reaction and pure fluid/chemical-output families remain visible roadmap work until terminal selection allows non-item primary outputs.
+Pressurized Reaction is supported only when its deterministic output includes an item, because current terminal recipe selection is item-primary. Its item, fluid, and chemical inputs and optional chemical co-output use one typed transaction; `duration` becomes station work and `energyRequired × duration` consumes stored NeoForge Energy because Mekanism applies that recipe value per processing tick. Chemical-only Reaction and pure fluid/chemical-output families remain visible roadmap work until terminal selection allows non-item primary outputs.
 
 Chance outputs, per-tick chemical-use families, Cutting Board fortune/chance behavior, factories/upgrades encoded outside the installable item, and external-machine send-and-wait remain unsupported.
 
@@ -97,7 +97,7 @@ Chance outputs, per-tick chemical-use families, Cutting Board fortune/chance beh
 
 RED-first coverage must include:
 
-- rate normalization, bounds, duplicate variants, exact component identity, snapshot parity;
+- rate normalization, bounds, duplicate item variants, item-identity matching, snapshot parity;
 - fractional carry, save/reload, replacement/rate change reset, count multiplication, saturation;
 - absent optional mods on the base dedicated server;
 - Iron Furnaces variant discovery and live config-derived rates;

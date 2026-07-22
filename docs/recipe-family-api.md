@@ -37,7 +37,7 @@ The first public factory is intentionally narrow:
 - exact recipe class and exact `RecipeType` identity;
 - one non-empty `Ingredient`, consumed once per craft;
 - one deterministic output stack; item components and count are preserved exactly;
-- free cost or an existing Magic Storage `EnergyCost` through `RecipeFamilyCost.energy(...)`; amounts must be non-negative, at least one amount must be positive, and the two positive amounts cannot target the same pool (`free()` represents zero cost);
+- free cost, an existing Magic Storage `EnergyCost`, descriptor-keyed station work, or station work plus Fuel through `RecipeFamilyCost.energy(...)`, `stationWork(...)`, or `stationWorkAndEnergy(...)`; amounts must be non-negative, required work must be positive, at least one energy amount must be positive, and two positive energy amounts cannot target the same pool (`free()` represents zero cost);
 - one existing `RecipePresentationKind`;
 - no crafting remainder, chance output, source-dependent output, fluid, player/world/event callback, or arbitrary mutation hook.
 
@@ -54,7 +54,7 @@ Use `RecipeFamilyFactories.deterministicResources(...)` when one exact recipe re
 - any additional item, fluid, power, chemical, or registered addon outputs;
 - a non-empty exact presentation output and a `1..3 × 1..3` layout that fits all inputs.
 
-Input roles are explicit. `consume` removes `amount × crafts`; `catalyst` and `tool` require the declared amount but retain it, so one retained resource may serve the whole batch. Output roles are `primary` and `remainder`. Primary items follow Player/Storage delivery, item remainders follow the existing remainder policy, and non-item outputs return to Core. Duplicate input keys or duplicate output keys are rejected. Checked multiplication, retained-resource checks, item delivery, type capacity, and all Core item/non-item deltas are validated before one atomic ledger commit.
+Input roles are explicit. `consume` removes `amount × crafts`; `catalyst` and `tool` require the declared amount but retain it, so one retained resource may serve the whole batch. Each input may declare ordered exact alternatives with `consumeAny`/`catalystAny`/`toolAny`; consumed alternatives may additionally map each chosen key to its own remainder through `consumeAnyWithRemainders`. Overlapping CONSUME alternatives are jointly allocated by a deterministic bounded max-flow plan, so one resource cannot satisfy two requirements. Retained roles may not overlap another role because no deterministic split is defined. Output roles are `primary` and `remainder`. Primary items follow Player/Storage delivery, item remainders follow the existing remainder policy, and non-item outputs return to Core. Duplicate output keys are rejected. Checked multiplication, retained-resource checks, station work/Fuel, item delivery, type capacity, and all Core item/non-item deltas are validated before one atomic ledger commit.
 
 Use `StorageResourceKey.item(stack, registries)`, `fluid(stack, registries)`, and `neoforgeEnergy()` for canonical built-in keys. `itemStack(...)` and `fluidStack(...)` decode exact built-in keys without dropping components. Custom kinds use their registered kind ID, stable resource ID, and canonical variant compound.
 
@@ -80,6 +80,16 @@ RECIPE_FAMILIES.register("infusion", () -> RecipeFamilyFactories.deterministicRe
 
 The resolver must be deterministic and side-effect free. Chance outputs, runtime machine polling, arbitrary Core/player/world callbacks, and external-machine send-and-wait are rejected by design. Multi-step planning remains a separate future server graph; EMI is presentation and selection only.
 
+The overload without an eligibility predicate retains the global fail-closed rule for `Recipe#isSpecial()`. Some third-party public exact recipe classes report `isSpecial()` despite exposing a complete deterministic contract. Only the overload with an explicit `Predicate<R> eligibility` may opt that exact class/type into special-recipe support; the predicate must reject unsupported output shapes, overflow, chance/per-tick semantics, or any other non-deterministic member. This does not relax special handling for any other family.
+
+## Current optional integrations
+
+- **Iron Furnaces:** contributes concrete Furnace station variants; recipes remain the existing exact smelting family while rate comes from live configured cook time.
+- **Farmer's Delight:** Cooking Pot plans include 1–6 ingredients, exact serving container, alternative-specific container remainders, `cookTime` station work, matching Furnace Fuel, and one fixed item output.
+- **Mekanism:** Crushing, Enriching, and Smelting use sized one-item inputs; Combining uses two sized item inputs; item-output Pressurized Reaction uses sized item/fluid/chemical inputs, checked `energyRequired × duration` FE, duration station work, and optional chemical co-output. Chemical-only output, chance, or unsupported per-tick-use families remain fail closed.
+
+All three compatibility classes load only after `ModList` confirms the target mod. One representative artifact per mod is used in CI without restricting player metadata to that exact version.
+
 ## Lifecycle and sides
 
 - Register on the mod event bus before NeoForge registries freeze. Magic Storage freezes and validates its immutable adapter snapshot at common setup; runtime hot registration is unsupported.
@@ -89,9 +99,12 @@ The resolver must be deterministic and side-effect free. Chance outputs, runtime
 
 ## Repository verification fixture
 
-`src/apiTest/` proves both factories and the resource kind/handler/block/container APIs compile from a different Java package. `src/recipeAddonFixture/` is a separately loaded NeoForge mod with 14 GameTests covering the legacy single-item family, typed multi-input/multi-output discovery, retained roles, exact counts, mixed item/addon/fluid commit, terminal listing and held-container transfer, generic+native Bus discovery, persistent typed rollback escrow, Creative removal conservation, destination capacity rejection, and rollback. Public handler/strategy simulation and amount rules are authoritative in [`typed-resource-storage.md`](typed-resource-storage.md#public-handler-and-strategy-contract).
+`src/apiTest/` proves both factories, the explicit-eligibility overload, and the resource kind/handler/block/container APIs compile from a different Java package. `src/recipeAddonFixture/` is a separately loaded NeoForge mod with 17 GameTests covering the legacy single-item family, polymorphic/fractional station work and installed-first preview cycling, typed overlapping alternatives and alternative-specific remainders, retained roles, exact counts, mixed item/addon/fluid commit, terminal listing and held-container transfer, generic+native Bus discovery, persistent typed rollback escrow, Creative removal conservation, destination capacity rejection, and rollback. Public handler/strategy simulation and amount rules are authoritative in [`typed-resource-storage.md`](typed-resource-storage.md#public-handler-and-strategy-contract).
 
 ```bash
 ./gradlew compileApiTestJava
 ./gradlew runRecipeAddonGameTestServer
+./gradlew runMekanismGameTestServer
+./gradlew runIronFurnacesGameTestServer
+./gradlew runFarmersDelightGameTestServer
 ```

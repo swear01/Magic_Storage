@@ -91,7 +91,9 @@ Escrow is saved in the Bus BlockEntity and owner-stripped Bus drop. Each live Bu
 
 ## Recipe-family relationship
 
-`RecipeFamilyFactories.deterministicResources(...)` resolves a `TypedRecipePlan` from the current exact recipe holder and server registries. A plan declares one to nine exact inputs, multiple exact outputs, a selectable primary item output, layout, and explicit roles. `CONSUME` multiplies by craft count; `CATALYST` and `TOOL` are retained and reusable across a batch; `PRIMARY` item outputs follow the selected Player/Storage destination, while non-item outputs and typed remainders return to Core. Checked multiplication, destination capacity, every consumed item/non-item, and every Core output are simulated and committed as one ledger transaction.
+`RecipeFamilyFactories.deterministicResources(...)` resolves a `TypedRecipePlan` from the current exact recipe holder and server registries. A plan declares one to nine exact inputs, multiple exact outputs, a selectable primary item output, layout, and explicit roles. Inputs may have ordered exact alternatives; overlapping `CONSUME` alternatives use one deterministic max-flow allocation, and each chosen alternative may return its own exact remainder. `CONSUME` multiplies by craft count; `CATALYST` and `TOOL` are retained and reusable across a batch; `PRIMARY` item outputs follow the selected Player/Storage destination, while non-item outputs and typed remainders return to Core. Checked multiplication, descriptor station work/Fuel, destination capacity, every consumed item/non-item, and every Core output are simulated and committed as one ledger transaction.
+
+Current built-in optional recipe bridges are Farmer's Delight Cooking Pot and Mekanism Crushing, Enriching, Smelting, Combining, plus deterministic item-output Pressurized Reaction. Pressurized Reaction consumes exact item/fluid/chemical keys, total recipe-specific FE (`energyRequired × duration`), and descriptor station work in one plan and may return a chemical co-output. Chemical-only terminal outputs and chance/per-tick-use families remain unsupported.
 
 Chance, dynamic world/player callbacks, arbitrary mutation callbacks, and external-machine send-and-wait remain unsupported. Multi-step graph planning is still future work under GitHub [#1](https://github.com/swear01/Magic_Storage/issues/1).
 
@@ -116,6 +118,8 @@ Every phase starts RED-first. The final phase gate remains:
 ./gradlew runGameTestServer
 ./gradlew runRecipeAddonGameTestServer
 ./gradlew runMekanismGameTestServer
+./gradlew runIronFurnacesGameTestServer
+./gradlew runFarmersDelightGameTestServer
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts
 ./gradlew runData
 ```
