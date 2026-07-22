@@ -799,30 +799,24 @@ class RunPrismGuiSessionTests(unittest.TestCase):
 
             return run
 
-        with self.assertRaisesRegex(RuntimeError, r"11\.0\.3 or newer.*11\.0\.2"):
-            mod.verify_prism_version(
-                "/Applications/Prism Launcher.app", run_func=run_with("11.0.2")
-            )
+        with tempfile.TemporaryDirectory() as tmp:
+            prism_app = Path(tmp) / "Prism Launcher.app"
+            binary = prism_app / "Contents" / "MacOS" / "prismlauncher"
+            binary.parent.mkdir(parents=True)
+            binary.touch()
 
-        self.assertEqual(
-            "11.0.3",
-            mod.verify_prism_version(
-                "/Applications/Prism Launcher.app", run_func=run_with("11.0.3")
-            ),
-        )
-        self.assertEqual(
-            "12.0.0",
-            mod.verify_prism_version(
-                "/Applications/Prism Launcher.app", run_func=run_with("12.0.0")
-            ),
-        )
-        self.assertEqual(
-            [
-                "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher",
-                "--version",
-            ],
-            calls[0][0],
-        )
+            with self.assertRaisesRegex(RuntimeError, r"11\.0\.3 or newer.*11\.0\.2"):
+                mod.verify_prism_version(str(prism_app), run_func=run_with("11.0.2"))
+
+            self.assertEqual(
+                "11.0.3",
+                mod.verify_prism_version(str(prism_app), run_func=run_with("11.0.3")),
+            )
+            self.assertEqual(
+                "12.0.0",
+                mod.verify_prism_version(str(prism_app), run_func=run_with("12.0.0")),
+            )
+            self.assertEqual([str(binary.resolve()), "--version"], calls[0][0])
 
     def test_run_session_rejects_old_prism_before_cleanup(self):
         mod = self.load_script()
