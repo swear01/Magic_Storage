@@ -152,7 +152,10 @@ class PreparePrismGuiWorldTests(unittest.TestCase):
             self.assertIn("User confirms the entire Minecraft frame is visible", manifest["fullscreen_gate"]["verify"])
             self.assertIn("macOS desktop display mode remains unchanged", manifest["fullscreen_gate"]["verify"])
             self.assertFalse(any("Computer Use" in check for check in manifest["fullscreen_gate"]["verify"]))
-            self.assertIn("-o MagicStorageBot", manifest["launch_command"])
+            self.assertEqual(
+                '"/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher" -l dev -w "MagicStorageGuiTest" -o MagicStorageBot',
+                manifest["launch_command"],
+            )
 
             datapack = world_dir / "datapacks/magic_storage_gui_test"
             self.assertTrue((datapack / "data/minecraft/tags/function/load.json").exists())

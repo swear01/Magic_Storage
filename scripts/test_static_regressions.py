@@ -133,6 +133,59 @@ class StaticRegressionTests(unittest.TestCase):
                     return text[opening + 1:index]
         self.fail(f"unterminated body for {description}")
 
+    def test_terminal_preferences_use_rs2_style_client_global_persistence(self):
+        mod = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java"
+        )
+        config = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/TerminalClientPreferences.java"
+        )
+        screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/StorageTerminalScreen.java"
+        )
+        crafting_screen = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/CraftingTerminalScreen.java"
+        )
+
+        self.assertRegex(mod, r"MagicStorage\(IEventBus modEventBus,\s*ModContainer modContainer\)")
+        self.assertIn(
+            "modContainer.registerConfig(ModConfig.Type.CLIENT, TerminalClientPreferences.SPEC)",
+            mod,
+        )
+        self.assertIn("TerminalClientPreferences.load()", screen)
+        self.assertIn("TerminalClientPreferences.save(preferences)", screen)
+        self.assertIn("TerminalPreferenceSession", screen)
+        self.assertIn(
+            "preferenceSession.presentation(menu.getTerminalPreferences())", screen
+        )
+        self.assertIn("displayedPreferences().page()", crafting_screen)
+        self.assertIn("displayedPreferences().fuelTarget()", crafting_screen)
+        self.assertIn("preferences.usePlayerInventory()", crafting_screen)
+        self.assertIn("preferences.outputDestination()", crafting_screen)
+        for stale_read in (
+            "menu.getPage()",
+            "menu.getSelectedFuelTarget()",
+            "menu.isUsePlayerInventory()",
+            "menu.getOutputDestination()",
+        ):
+            self.assertNotIn(stale_read, crafting_screen)
+        for stale_read in (
+            "menu.getSortMode()",
+            "menu.getSortOrder()",
+            "menu.getSearchMode()",
+            "menu.getResourceView()",
+        ):
+            self.assertNotIn(stale_read, screen)
+        self.assertIn("SPEC.save()", config)
+        self.assertNotIn("search query", config.lower())
+
+    def test_terminal_preference_wire_change_bumps_network_protocol(self):
+        mod = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java"
+        )
+
+        self.assertIn('event.registrar(MODID).versioned("1.1")', mod)
+
     def nested_java_classes(self, text: str) -> list[tuple[str, str]]:
         classes = []
         declaration = re.compile(
@@ -242,6 +295,19 @@ class StaticRegressionTests(unittest.TestCase):
             )
         for control in ["sortOrderBtn", "sortModeBtn", "searchModeBtn"]:
             self.assertIn(f"{control} = addCycleButton(", storage)
+        self.assertIn("resourceViewBtn = addItemCycleButton(", storage)
+        self.assertIn("NEXT_RESOURCE_VIEW_BUTTON", storage)
+        self.assertNotIn("NEXT_RESOURCE_VIEW_BUTTON", crafting)
+        self.assertIn("isResourceViewControlActive()", crafting)
+
+        emi = self.read_required(
+            "src/main/java/com/swearprom/magicstorage/magic_storage/compat/MagicStorageEmiPlugin.java"
+        )
+        self.assertIn(
+            "!TerminalResourceDisplay.isTyped(slot.getItem())",
+            emi,
+            "typed resource representatives must not become EMI item inputs",
+        )
         for button_id in [11, 12, 13]:
             self.assertIsNone(
                 re.search(rf"clickMenuButton\(\s*{button_id}\s*\)", crafting),
@@ -633,7 +699,7 @@ class StaticRegressionTests(unittest.TestCase):
 
         self.assertRegex(
             build,
-            r'compileOnly\s+"dev\.emi:emi-neoforge:\$\{emi_version\}:api"',
+            r'compileOnly\s+"maven\.modrinth:emi:\$\{emi_runtime_version\}"',
         )
         self.assertRegex(
             build,
@@ -661,8 +727,8 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("emi_version_range=[1.1.24,2)", properties)
         self.assertNotRegex(
             build,
-            r'(?m)^\s*(?:fusionRuntimeRuntimeOnly|emiRuntime)\s+"dev\.emi:',
-            "TerraformersMC must supply only the dedicated compile API artifact",
+            r'dev\.emi:emi-neoforge|maven\.terraformersmc\.com',
+            "all EMI compile and runtime artifacts must come from Modrinth",
         )
         self.assertIn("clientSmokePatchouli", build)
         self.assertIn("clientSmokeFusion", build)
@@ -689,7 +755,7 @@ class StaticRegressionTests(unittest.TestCase):
     def test_recipe_addon_gametest_gate_rejects_any_selftest_failure(self):
         build = self.read_required("build.gradle")
         self.assertIn("tasks.named('runGameTestServer').configure", build)
-        self.assertIn("All 335 required tests passed", build)
+        self.assertIn("All 337 required tests passed", build)
         self.assertIn("All 5 required tests passed", build)
         self.assertIn("text.contains('TESTS FAILED!')", build)
         self.assertNotIn("SelfTest: 1 TESTS FAILED!", build)
@@ -959,7 +1025,7 @@ class StaticRegressionTests(unittest.TestCase):
             "src/main/java/com/swearprom/magicstorage/magic_storage/MagicStorage.java"
         )
         self.assertIn("menu.applyFilter(core, packet.filter())", entrypoint)
-        self.assertIn("menu.applySettings(packet)", entrypoint)
+        self.assertIn("menu.applySettings(packet, player)", entrypoint)
         self.assertNotIn("menu.refreshDisplayItemsFiltered(core, packet.filter())", entrypoint)
 
     def test_terminal_open_buffers_use_core_access_remote_contract(self):
@@ -1306,7 +1372,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("selectAdjacentFuelTarget", screen)
         self.assertIn("TerminalCycleDirection.NEXT", screen)
         self.assertIn("fuelTargetOptions()", screen)
-        self.assertIn("menu.getSelectedFuelTarget()", screen)
+        self.assertIn("displayedPreferences().fuelTarget()", screen)
         self.assertIn("CraftingTerminalMenu.AUTO_FUEL_TARGET_BUTTON", screen)
         self.assertIn("CraftingTerminalMenu.fuelTargetButtonId", screen)
         self.assertIn("geometry.fuelTargetListButton()", screen)
@@ -1330,7 +1396,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("option.icon()", render_popup)
         self.assertIn("option.label()", render_popup)
         self.assertIn(
-            "Objects.equals(option.target(), menu.getSelectedFuelTarget())",
+            "Objects.equals(option.target(), displayedPreferences().fuelTarget())",
             render_popup,
         )
         self.assertIn("gui.magic_storage.fuel_target_list", en_us)
@@ -1532,7 +1598,7 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("type.representativeStack()", fuel_panel)
         self.assertNotIn("drawEnergyIcon", fuel_panel)
         self.assertNotIn("nextFuelTargetBtn", crafting)
-        self.assertIn("menu.getPage() == CraftingTerminalPage.FUEL", crafting)
+        self.assertIn("displayedPreferences().page() == CraftingTerminalPage.FUEL", crafting)
         self.assertIn("renderFuelTypeCapacity", crafting)
         self.assertIn("geometry.fuelStatus()", crafting)
         flow_amount = self.java_block(
@@ -2355,7 +2421,7 @@ class StaticRegressionTests(unittest.TestCase):
             r"\bprivate\s+void\s+renderSideRail\s*\(",
             "CraftingTerminalScreen.renderSideRail",
         )
-        self.assertIn("menu.isUsePlayerInventory()", side_rail)
+        self.assertIn("preferences.usePlayerInventory()", side_rail)
         self.assertNotIn("menu.getOutputDestination()", side_rail)
         self.assertNotIn("outputDestinationIndex", side_rail)
 

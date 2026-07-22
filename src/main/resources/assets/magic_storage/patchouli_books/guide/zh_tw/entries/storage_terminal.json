@@ -7,7 +7,7 @@
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:storage_terminal",
-      "text": "儲存終端機是直接管理物品的介面。視窗變高時網格會增加，顯示種類超出空間時可捲動瀏覽。"
+      "text": "儲存終端機是直接管理資源的介面。視窗變高時網格會增加，所選資源群組超出空間時可捲動瀏覽。"
     },
     {
       "type": "patchouli:text",
@@ -15,7 +15,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "左鍵點網路物品可取一疊，右鍵取一半，Shift 點擊可移到背包。捲動網格或拖曳捲軸可瀏覽；Shift 點擊背包中的物品可將整疊送入網路。"
+      "text": "用左側資源選擇器切換物品、流體、能量、氣體或其他已註冊的 addon 種類。物品頁可正常取出與從背包放入；其他頁只顯示代表物，不會把圖示物品交給玩家。"
     },
     {
       "type": "patchouli:text",
@@ -23,7 +23,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "可依名稱、數量、模組或 ID 排序，並選擇遞增或遞減。屬性不同的變體會保持分開。要使用配方與燃料分頁，請升級為$(l:magic_storage:crafting_terminal)合成終端機$()。"
+      "text": "可依名稱、數量、模組或 ID 排序，並選擇遞增或遞減。屬性不同的變體會保持分開；中鍵點資源選擇器會回到物品。要使用配方與燃料分頁，請升級為$(l:magic_storage:crafting_terminal)合成終端機$()。"
     }
   ]
 }

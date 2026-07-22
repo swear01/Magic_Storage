@@ -381,8 +381,8 @@ public class TerminalFlowTests {
             core.rebuildNetwork(level);
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new StorageTerminalMenu(2, player.getInventory(), core);
-            var packet = new TerminalSettingsPacket(0, 9);
-            menu.applySettings(packet);
+            var packet = new TerminalSettingsPacket(0, 9, TerminalPreferences.defaults());
+            menu.applySettings(packet, player);
             if (menu.getVisibleRows() != 9) helper.fail("visibleRows should be 9, got " + menu.getVisibleRows());
             helper.succeed();
         });
@@ -401,11 +401,11 @@ public class TerminalFlowTests {
             core.rebuildNetwork(level);
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new StorageTerminalMenu(3, player.getInventory(), core);
-            var packet = new TerminalSettingsPacket(0, 1);
-            menu.applySettings(packet);
+            var packet = new TerminalSettingsPacket(0, 1, TerminalPreferences.defaults());
+            menu.applySettings(packet, player);
             if (menu.getVisibleRows() != 3) helper.fail("visibleRows under 3 clamp to 3, got " + menu.getVisibleRows());
-            var packetMax = new TerminalSettingsPacket(0, 20);
-            menu.applySettings(packetMax);
+            var packetMax = new TerminalSettingsPacket(0, 20, TerminalPreferences.defaults());
+            menu.applySettings(packetMax, player);
             if (menu.getVisibleRows() < 3) helper.fail("visibleRows should stay >= 3, got " + menu.getVisibleRows());
             helper.succeed();
         });
@@ -428,13 +428,13 @@ public class TerminalFlowTests {
             core.insertItem(new ItemStack(Items.APPLE, 64));
             var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             var menu = new StorageTerminalMenu(4, player.getInventory(), core);
-            var packet = new TerminalSettingsPacket(0, 1);
-            menu.applySettings(packet);
+            var packet = new TerminalSettingsPacket(0, 1, TerminalPreferences.defaults());
+            menu.applySettings(packet, player);
             menu.refreshDisplayItems(core);
             if (!menu.getSlot(0).hasItem()) helper.fail("Slot 0 should have item with visibleRows=1");
             if (menu.getSlot(9).hasItem()) helper.fail("Slot 9 should be empty beyond row 0 with visibleRows=1");
-            var packet3 = new TerminalSettingsPacket(0, 3);
-            menu.applySettings(packet3);
+            var packet3 = new TerminalSettingsPacket(0, 3, TerminalPreferences.defaults());
+            menu.applySettings(packet3, player);
             menu.refreshDisplayItems(core);
             int filled = 0;
             for (int i = 0; i < 27; i++) {
@@ -496,10 +496,96 @@ public class TerminalFlowTests {
             menu.refreshDisplayItems(core);
             if (!menu.getSlot(0).getItem().is(Items.STONE))
                 helper.fail("QUANTITY asc: slot 0 should be Stone (fewest), got " + menu.getSlot(0).getItem());
-            menu.applySettings(new TerminalSettingsPacket(0, 9)); // resize must NOT reset sort
+            var persisted = menu.getTerminalPreferences();
+            menu.applySettings(new TerminalSettingsPacket(0, 9, persisted), player);
             menu.refreshDisplayItems(core);
             if (!menu.getSlot(0).getItem().is(Items.STONE))
                 helper.fail("applySettings must preserve QUANTITY sort: slot 0 should still be Stone, got " + menu.getSlot(0).getItem());
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void rs2_style_preferences_restore_across_storage_terminals(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core BE not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var preferences = new TerminalPreferences(
+                    SortMode.MOD,
+                    SortOrder.DESCENDING,
+                    SearchMode.TAG,
+                    TerminalResourceView.FLUID,
+                    CraftingTerminalPage.STORAGE,
+                    false,
+                    TerminalOutputDestination.PLAYER,
+                    null);
+            var packet = new TerminalSettingsPacket(41, 8, preferences);
+            var first = new StorageTerminalMenu(41, player.getInventory(), core);
+            if (!first.applySettings(packet, player)) {
+                helper.fail("First terminal should accept persisted preferences");
+                return;
+            }
+            var second = new StorageTerminalMenu(42, player.getInventory(), core);
+            if (!second.applySettings(new TerminalSettingsPacket(42, 8, preferences), player)) {
+                helper.fail("Second terminal should accept the same client-global preferences");
+                return;
+            }
+            if (!first.getTerminalPreferences().matchesCommon(preferences)
+                    || !second.getTerminalPreferences().matchesCommon(preferences)
+                    || second.getVisibleRows() != 8) {
+                helper.fail("Storage terminals did not restore the shared preferences");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
+    public static void crafting_terminal_applies_persisted_crafting_preferences(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core BE not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(43, player.getInventory(), core);
+            var preferences = new TerminalPreferences(
+                    SortMode.QUANTITY,
+                    SortOrder.DESCENDING,
+                    SearchMode.MOD,
+                    TerminalResourceView.GAS,
+                    CraftingTerminalPage.CRAFTABLE,
+                    true,
+                    TerminalOutputDestination.STORAGE,
+                    EnergyType.BLAZE_FUEL);
+            if (!menu.applySettings(new TerminalSettingsPacket(43, 9, preferences), player)) {
+                helper.fail("Crafting terminal should accept persisted preferences");
+                return;
+            }
+            if (!menu.getTerminalPreferences().equals(preferences)
+                    || menu.getVisibleRows() != 9
+                    || menu.getPage() != CraftingTerminalPage.CRAFTABLE
+                    || !menu.isUsePlayerInventory()
+                    || menu.getOutputDestination() != TerminalOutputDestination.STORAGE
+                    || menu.getSelectedFuelTarget() != EnergyType.BLAZE_FUEL) {
+                helper.fail("Crafting-only preferences were not restored atomically");
+                return;
+            }
             helper.succeed();
         });
     }
@@ -520,6 +606,7 @@ public class TerminalFlowTests {
             if (menu.getSortMode() != SortMode.NAME) helper.fail("default sortMode should be NAME, got " + menu.getSortMode());
             if (menu.getSortOrder() != SortOrder.ASCENDING) helper.fail("default sortOrder should be ASCENDING, got " + menu.getSortOrder());
             if (menu.getSearchMode() != SearchMode.NORMAL) helper.fail("default searchMode should be NORMAL, got " + menu.getSearchMode());
+            if (menu.getResourceView() != TerminalResourceView.ITEM) helper.fail("default resource view should be ITEM, got " + menu.getResourceView());
             menu.clickMenuButton(player, StorageTerminalMenu.NEXT_SORT_MODE_BUTTON);
             if (menu.getSortMode() != SortMode.QUANTITY)
                 helper.fail("clickMenuButton(12) should sync sortMode=QUANTITY, got " + menu.getSortMode());
@@ -541,13 +628,24 @@ public class TerminalFlowTests {
             menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON);
             if (menu.getSearchMode() != SearchMode.MOD)
                 helper.fail("previous search button should wrap NORMAL to MOD, got " + menu.getSearchMode());
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            if (menu.getResourceView() != TerminalResourceView.FLUID)
+                helper.fail("next resource button should sync FLUID, got " + menu.getResourceView());
+            menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_RESOURCE_VIEW_BUTTON);
+            if (menu.getResourceView() != TerminalResourceView.ITEM)
+                helper.fail("previous resource button should sync ITEM, got " + menu.getResourceView());
+            menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_RESOURCE_VIEW_BUTTON);
+            if (menu.getResourceView() != TerminalResourceView.OTHER)
+                helper.fail("previous resource button should wrap ITEM to OTHER, got " + menu.getResourceView());
             menu.clickMenuButton(player, StorageTerminalMenu.RESET_SORT_ORDER_BUTTON);
             menu.clickMenuButton(player, StorageTerminalMenu.RESET_SORT_MODE_BUTTON);
             menu.clickMenuButton(player, StorageTerminalMenu.RESET_SEARCH_MODE_BUTTON);
+            menu.clickMenuButton(player, StorageTerminalMenu.RESET_RESOURCE_VIEW_BUTTON);
             if (menu.getSortOrder() != SortOrder.ASCENDING
                     || menu.getSortMode() != SortMode.NAME
-                    || menu.getSearchMode() != SearchMode.NORMAL) {
-                helper.fail("Middle-reset actions must restore Ascending, Name, and Normal defaults");
+                    || menu.getSearchMode() != SearchMode.NORMAL
+                    || menu.getResourceView() != TerminalResourceView.ITEM) {
+                helper.fail("Middle-reset actions must restore Ascending, Name, Normal, and Item defaults");
                 return;
             }
             helper.succeed();
@@ -592,8 +690,8 @@ public class TerminalFlowTests {
             int bufCount = dataSlotCount(bufMenu);
             if (serverCount != bufCount)
                 helper.fail("data-slot count mismatch: server=" + serverCount + " buf=" + bufCount);
-            if (serverCount != 12)
-                helper.fail("expected exactly 12 synced data slots (wide counts + view settings + wide scroll metadata + unlimited capacity), got " + serverCount);
+            if (serverCount != 13)
+                helper.fail("expected exactly 13 synced data slots (wide counts + view settings + wide scroll metadata + unlimited capacity + resource view), got " + serverCount);
             helper.succeed();
         });
     }
@@ -652,8 +750,8 @@ public class TerminalFlowTests {
                 helper.fail("data-slot count mismatch: server=" + serverData.size() + " client=" + clientData.size());
                 return;
             }
-            if (serverData.size() != 12) {
-                helper.fail("storage menu should sync exactly 12 data slots, got " + serverData.size());
+            if (serverData.size() != 13) {
+                helper.fail("storage menu should sync exactly 13 data slots, got " + serverData.size());
                 return;
             }
             for (int i = 0; i < serverData.size(); i++) {
@@ -670,6 +768,12 @@ public class TerminalFlowTests {
             }
             if (clientMenu.getScrollOffset() != StorageTerminalMenu.DISPLAY_COLS) {
                 helper.fail("Client did not receive scroll offset, got " + clientMenu.getScrollOffset());
+                return;
+            }
+            serverMenu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            clientData.get(12).set(serverData.get(12).get());
+            if (clientMenu.getResourceView() != TerminalResourceView.FLUID) {
+                helper.fail("Client did not receive the server-owned resource view");
                 return;
             }
             helper.succeed();
@@ -716,8 +820,8 @@ public class TerminalFlowTests {
 
             var serverData = dataSlots(serverMenu);
             var clientData = dataSlots(clientMenu);
-            if (serverData.size() != 12 || clientData.size() != 12) {
-                helper.fail("Wide storage metadata plus unlimited capacity requires exact 12-slot parity, server="
+            if (serverData.size() != 13 || clientData.size() != 13) {
+                helper.fail("Wide storage metadata plus unlimited capacity and resource view requires exact 13-slot parity, server="
                         + serverData.size() + " client=" + clientData.size());
                 return;
             }
@@ -855,8 +959,10 @@ public class TerminalFlowTests {
             }
 
             boolean unchangedRows = menu.applySettings(
-                    new TerminalSettingsPacket(menu.containerId, menu.getVisibleRows()));
-            boolean changedRows = menu.applySettings(new TerminalSettingsPacket(menu.containerId, 9));
+                    new TerminalSettingsPacket(menu.containerId, menu.getVisibleRows(),
+                            menu.getTerminalPreferences()), player);
+            boolean changedRows = menu.applySettings(new TerminalSettingsPacket(
+                    menu.containerId, 9, menu.getTerminalPreferences()), player);
             if (unchangedRows || !changedRows) {
                 helper.fail("Layout requests must report whether visible rows actually changed");
                 return;
@@ -2553,7 +2659,7 @@ public class TerminalFlowTests {
             int serverCount = serverData.size();
             int bufCount = clientData.size();
             if (serverCount != bufCount) { helper.fail("crafting data-slot count mismatch: server=" + serverCount + " buf=" + bufCount); return; }
-            if (serverCount != 101) { helper.fail("crafting menu should sync base 12 + crafting/fuel/resource/output/Axe Energy 89 data slots, got " + serverCount); return; }
+            if (serverCount != 102) { helper.fail("crafting menu should sync base 13 + crafting/fuel/resource/output/Axe Energy 89 data slots, got " + serverCount); return; }
             for (int i = 0; i < serverData.size(); i++) {
                 var wire = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
                 var packet = new net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket(

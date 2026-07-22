@@ -93,6 +93,8 @@ public enum MatchMode { EXACT, IGNORE_NBT, IGNORE_DAMAGE }
 
 #### Task 4: Sync sort/search/match state via data slots (A5a + fixes bug #7)
 
+> 2026-07-22 extension complete：沿RS2 grid config模式新增physical-client全域持久化。Common四項與Crafting四項在開啟時送server套用，等data-slot acknowledgement後才保存後續變更；query/scroll/selection/layout仍不持久化。
+
 **Files:** Modify `StorageTerminalMenu.java` (add sortMode/sortOrder/searchMode/matchMode data slots in `addTypeDataSlots` — keep client/server parity!), `StorageTerminalScreen.java` (read synced state; button label/tooltip reflect it). Test: `.../gametest/TerminalFlowTests.java`.
 
 - [ ] **Step 1: failing test** — toggle sort via `clickMenuButton(12)`, then a fresh client-style menu reads the synced sort mode (via the data slot getter); assert it matches. Also `data-slot parity` test (server vs buf ctor counts equal — extend existing).

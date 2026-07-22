@@ -10,7 +10,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "Reset defaults are Name sort, Ascending order, normal name search, $(thing)Auto target$(), and Player craft output. Use Player Inventory is a separate on/off choice for recipe ingredients and returns to its usual default when reset."
+      "text": "Reset defaults are Name sort, Ascending order, normal name search, Items resource view, $(thing)Auto target$(), and Player craft output. Use Player Inventory is a separate on/off choice for recipe ingredients and returns to its usual default when reset."
     },
     {
       "type": "patchouli:text",
@@ -18,7 +18,11 @@
     },
     {
       "type": "patchouli:text",
-      "text": "A colored light means a true on/off control such as Use Player Inventory. Sort, search, Fuel Target, and Craft Output are selected values, so they use labels or icons instead. The active page uses a neutral selected-tab frame."
+      "text": "A colored light means a true on/off control such as Use Player Inventory. Resource view, sort, search, Fuel Target, and Craft Output are selected values, so they use labels or icons instead. The active page uses a neutral selected-tab frame."
+    },
+    {
+      "type": "patchouli:text",
+      "text": "Your sort, order, search mode, resource view, Crafting tab, ingredient source, output destination, and Fuel Target are remembered for every terminal on this Minecraft client. Search text, scroll position, and selected recipes reset when the screen closes."
     }
   ]
 }

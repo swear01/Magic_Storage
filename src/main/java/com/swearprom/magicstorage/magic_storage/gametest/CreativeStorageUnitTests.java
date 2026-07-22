@@ -396,7 +396,7 @@ public final class CreativeStorageUnitTests {
             var storageBuffer = menuBuffer(level, corePos, false);
             var storageClient = new StorageTerminalMenu(
                     MagicStorage.STORAGE_TERMINAL_MENU.get(), 210, player.getInventory(), storageBuffer);
-            if (!syncMenuData(storageServer, storageClient, 12)) {
+            if (!syncMenuData(storageServer, storageClient, 13)) {
                 helper.fail("Storage menu data-slot parity must include explicit unlimited capacity");
                 return;
             }
@@ -404,7 +404,7 @@ public final class CreativeStorageUnitTests {
             var craftingServer = new CraftingTerminalMenu(211, player.getInventory(), core);
             var craftingBuffer = menuBuffer(level, corePos, true);
             var craftingClient = new CraftingTerminalMenu(212, player.getInventory(), craftingBuffer);
-            if (!syncMenuData(craftingServer, craftingClient, 101)) {
+            if (!syncMenuData(craftingServer, craftingClient, 102)) {
                 helper.fail("Crafting menu data-slot parity must include explicit unlimited capacity");
                 return;
             }

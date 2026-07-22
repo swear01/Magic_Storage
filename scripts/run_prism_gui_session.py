@@ -28,6 +28,17 @@ DEFAULT_TIMEOUT_SECONDS = 300
 DEFAULT_PROCESS_TERMINATION_TIMEOUT_SECONDS = 5
 DEFAULT_SHUTDOWN_STALL_TIMEOUT_SECONDS = 5
 DEFAULT_OFFLINE_PLAYER = "MagicStorageBot"
+DEFAULT_PRISM_APP = "/Applications/Prism Launcher.app"
+MINIMUM_PRISM_VERSION = (11, 0, 3)
+PRISM_AUTH_FORBIDDEN_PATTERNS = (
+    "AuthFlow:",
+    "login.microsoftonline.com",
+    "user.auth.xboxlive.com",
+    "xsts.auth.xboxlive.com",
+    "api.minecraftservices.com/launcher/login",
+    "api.minecraftservices.com/entitlements",
+)
+PRISM_LAUNCH_ENV_KEYS = ("HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "USER", "LOGNAME", "SHELL")
 DEFAULT_REQUIRED_PATTERNS = ["SelfTest:", "MS_GUI_TEST_READY"]
 DEFAULT_FORBIDDEN_PATTERNS = ["advanced_container_set_data", "ERROR", "FATAL", "Caused by"]
 MANUAL_HANDOFF_MESSAGE = "Minecraft is ready in the fixed test world. Please take over for the fullscreen visual checks; close with F11, wait for the normal window, then Command-Q."
@@ -56,6 +67,11 @@ SCENARIOS = {
             "Pass the fullscreen gate before pressing hotbar/use/click/scroll.",
             "hotbar `1`, then `u`: Storage Terminal opens with left-side view buttons and no clipping.",
             "hotbar `2`, then `u`: Crafting Terminal opens with left-side view buttons and no EMI overlap.",
+            "On each Storage view, cycle the single resource selector through Items, Fluids, Energy, Gases, and Other; confirm the grid changes group, right-click goes backward, and middle-click resets it to Items.",
+            "On the Crafting Terminal, confirm Craftable and Fuel hide the resource selector while returning to Storage restores it without moving the shared rail.",
+            "In Storage Terminal choose non-default sort order, sort mode, search mode, and resource view; close and reopen Storage Terminal, then open Crafting Terminal and confirm those four common choices are shared.",
+            "In Crafting Terminal choose non-default Crafting-only page, source, output, and Fuel Target values; close and reopen it and confirm those choices return without changing the common Storage choices.",
+            "Safely close and restart the client, reopen Storage Terminal and Crafting Terminal, and confirm both the common choices and Crafting-only page, source, output, and Fuel Target choices survived on disk; search text, scroll, and item/recipe selection must start as session state instead of returning.",
             CURRENT_RUN_LOG_CHECK,
         ],
     },
@@ -69,6 +85,7 @@ SCENARIOS = {
             "hotbar `1`, then `u`: open the Storage Terminal and confirm the active Creative Storage Unit makes the capacity line show localized unlimited type capacity rather than a large finite sentinel.",
             "hotbar `2`, then `u`: open the Crafting Terminal; confirm the frame and left rail are centered as one group, retain visible outer margins, and use the side-by-side layout without clipping at this fullscreen size.",
             "On the Storage tab, confirm only stored stacks appear and the recipe panel, player inventory, scrollbar, and slot grid are aligned to one geometry; the EMI overlay covers neither the frame nor left rail.",
+            "Cycle the resource selector through Items, Fluids, Energy, Gases, and Other; confirm each group has one clear semantic icon, right-click goes backward, middle-click resets to Items, and Craftable/Fuel hide the selector.",
             "Confirm the first three page tabs are Storage, Craftable, and Fuel, followed by a clear visual gap before the item-page sorting/search controls; every rail icon occupies the same visual size inside identical buttons.",
             "Cycle search mode and confirm Name uses a magnifier, Tag uses #, and Mod uses @; none may look like a crosshair or an overlay inside the magnifier.",
             "Click a left-rail toggle, then click empty panel space: no white focus border may remain on the button.",
@@ -209,12 +226,77 @@ def wait_for_log_patterns(
         sleep_func(poll_seconds)
 
 
+def verify_prism_version(prism_app: str, run_func=subprocess.run) -> str:
+    binary = Path(prism_app).expanduser().resolve() / "Contents/MacOS/prismlauncher"
+    if not binary.is_file():
+        raise RuntimeError(f"Prism Launcher executable not found: {binary}")
+    result = run_func(
+        [str(binary), "--version"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    match = re.fullmatch(r"PrismLauncher\s+(\d+)\.(\d+)\.(\d+)\s*", result.stdout)
+    if match is None:
+        raise RuntimeError(f"Unable to parse Prism Launcher version: {result.stdout.strip()}")
+    version = tuple(int(part) for part in match.groups())
+    version_text = ".".join(match.groups())
+    if version < MINIMUM_PRISM_VERSION:
+        raise RuntimeError(
+            "Prism Launcher 11.0.3 or newer is required for the offline CLI launch; "
+            f"found {version_text}"
+        )
+    return version_text
+
+
+def verify_no_prism_auth_refresh(text: str) -> None:
+    lower_text = text.lower()
+    for pattern in PRISM_AUTH_FORBIDDEN_PATTERNS:
+        if pattern.lower() in lower_text:
+            raise RuntimeError(
+                f"Prism authentication activity detected in current launcher log: {pattern}"
+            )
+
+
+def sanitize_prism_launcher_log(text: str) -> str:
+    sanitized = []
+    skip_environment_values = False
+    for line in text.splitlines(keepends=True):
+        if "Process environment:" in line or "Native environment:" in line:
+            skip_environment_values = True
+            continue
+        if skip_environment_values and "QList(" in line:
+            skip_environment_values = False
+            continue
+        skip_environment_values = False
+        sanitized.append(line)
+    return "".join(sanitized)
+
+
 def build_launch_command(prism_app: str, instance: str, world: str) -> list[str]:
-    return ["open", "-a", prism_app, "--args", "-l", instance, "-w", world, "-o", DEFAULT_OFFLINE_PLAYER]
+    binary = Path(prism_app).expanduser().resolve() / "Contents/MacOS/prismlauncher"
+    return [
+        str(binary),
+        "-l",
+        instance,
+        "-w",
+        world,
+        "-o",
+        DEFAULT_OFFLINE_PLAYER,
+    ]
 
 
-def default_launcher(command: list[str]) -> None:
-    subprocess.run(command, check=True)
+def default_launcher(command: list[str], popen_func=subprocess.Popen, environ=os.environ) -> None:
+    launch_environment = {key: environ[key] for key in PRISM_LAUNCH_ENV_KEYS if key in environ}
+    popen_func(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=launch_environment,
+        start_new_session=True,
+        close_fds=True,
+    )
 
 
 def snapshot_processes(run_func=subprocess.run) -> dict[int, tuple[int, str]]:
@@ -238,6 +320,24 @@ def snapshot_processes(run_func=subprocess.run) -> dict[int, tuple[int, str]]:
             raise RuntimeError(f"unable to parse process ids on snapshot line {line_number}: {line}") from exc
         processes[pid] = (parent_pid, fields[2])
     return processes
+
+
+def is_prism_launcher_command(command: str) -> bool:
+    lower_command = command.lower()
+    return "prismlauncher" in lower_command or "/prism launcher.app/" in lower_command
+
+
+def require_running_normal_prism(snapshot_func=None) -> None:
+    snapshot_func = snapshot_processes if snapshot_func is None else snapshot_func
+    for _, command in snapshot_func().values():
+        if not is_prism_launcher_command(command):
+            continue
+        if re.search(r"(?:^|\s)(?:-d|--dir)(?:=|\s)", command) is None:
+            return
+    raise RuntimeError(
+        "Open the normal Prism Launcher once and wait for account initialization to finish, then leave it running and rerun this GUI scenario. "
+        "The runner refuses to start a new launcher process because Prism refreshes Microsoft/Xbox ownership on every cold start even when -o is used."
+    )
 
 
 def process_is_alive(pid: int) -> bool:
@@ -301,12 +401,8 @@ def runner_started_process_ids(
     new_processes = {pid: process for pid, process in current.items() if pid not in baseline}
     targets = set()
 
-    def is_prism_command(command: str) -> bool:
-        lower_command = command.lower()
-        return "prismlauncher" in lower_command or "/prism launcher.app/" in lower_command
-
     for pid, (_, command) in new_processes.items():
-        is_runner_prism = is_prism_command(command) and all(
+        is_runner_prism = is_prism_launcher_command(command) and all(
             marker in command
             for marker in [f"-l {instance}", f"-w {world}", f"-o {DEFAULT_OFFLINE_PLAYER}"]
         )
@@ -321,7 +417,7 @@ def runner_started_process_ids(
             if parent_pid in seen:
                 raise RuntimeError(f"cycle detected in process tree at pid {parent_pid}")
             seen.add(parent_pid)
-            if is_prism_command(new_processes[parent_pid][1]):
+            if is_prism_launcher_command(new_processes[parent_pid][1]):
                 targets.add(parent_pid)
             parent_pid = new_processes[parent_pid][0]
 
@@ -372,9 +468,20 @@ def cleanup_existing_session(
     snapshot_func = snapshot_processes if snapshot_func is None else snapshot_func
     terminate_func = terminate_processes if terminate_func is None else terminate_func
     current = snapshot_func()
-    targets = runner_started_process_ids({}, current, instance_dir, minecraft_dir, instance, world)
+    targets = {
+        pid
+        for pid, (_, command) in current.items()
+        if is_instance_java_command(command, instance_dir, minecraft_dir)
+    }
+    changed = True
+    while changed:
+        changed = False
+        for pid, (parent_pid, _) in current.items():
+            if pid not in targets and parent_pid in targets:
+                targets.add(pid)
+                changed = True
     if targets:
-        terminate_func(targets)
+        terminate_func(sorted(targets, reverse=True))
 
 
 def supervise_shutdown(
@@ -669,6 +776,7 @@ def session_to_json(result: SessionResult, instance_cfg_changed: bool, log_path:
         "manifest": result.manifest,
         "launch_profile": {
             "offline_player": DEFAULT_OFFLINE_PLAYER,
+            "uses_existing_prism_root": True,
             "computer_use_wrapper_disabled": True,
             "error_console_disabled": True,
             "fullscreen_mode": fullscreen_gate["accepted_methods"][0],
@@ -692,7 +800,7 @@ def run_session(
     run_root: Path = DEFAULT_RUN_ROOT,
     source_world: str = DEFAULT_SOURCE_WORLD,
     world: str = DEFAULT_WORLD_NAME,
-    prism_app: str = "Prism Launcher",
+    prism_app: str = DEFAULT_PRISM_APP,
     instance: str = "dev",
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     poll_seconds: float = 0.25,
@@ -700,6 +808,7 @@ def run_session(
     prepare_world_func=prepare_world,
     cleanup_existing_func=cleanup_existing_session,
     configure_instance_func=configure_instance_for_manual_handoff,
+    auth_verifier=None,
     launcher=default_launcher,
     wait_for_log_func=wait_for_log_patterns,
     display_mode_verifier=None,
@@ -709,11 +818,14 @@ def run_session(
     if scenario_name not in SCENARIOS:
         raise RuntimeError(f"unknown GUI scenario: {scenario_name}")
     scenario = SCENARIOS[scenario_name]
+    if not no_launch:
+        verify_prism_version(prism_app)
     minecraft_dir = minecraft_dir.expanduser().resolve()
     instance_dir = instance_dir.expanduser().resolve()
     run_root = run_root.expanduser().resolve()
 
     if not no_launch:
+        require_running_normal_prism()
         verify_deployed_magic_storage_jar(DEFAULT_PROJECT_DIR, minecraft_dir)
         verify_deployed_fusion_jar(minecraft_dir)
         cleanup_existing_func(instance_dir, minecraft_dir, instance, world)
@@ -721,10 +833,12 @@ def run_session(
     manifest = prepare_world_func(minecraft_dir, source_world, world)
     log_path = minecraft_dir / "logs" / "latest.log"
     offset = log_cursor(log_path)
-    launch_command = build_launch_command(prism_app, instance, world)
 
     run_dir = run_root / f"{timestamp_func()}-{scenario_name}"
     run_dir.mkdir(parents=True, exist_ok=False)
+    prism_log_path = instance_dir.parent.parent / "logs" / "PrismLauncher-0.log"
+    prism_log_offset = log_cursor(prism_log_path)
+    launch_command = build_launch_command(prism_app, instance, world)
     write_json(run_dir / "manifest.json", manifest)
     write_checklist(run_dir / "checklist.md", scenario_name, scenario, manifest, launch_command, log_path)
 
@@ -743,6 +857,12 @@ def run_session(
                 timeout_seconds=timeout_seconds,
                 poll_seconds=poll_seconds,
             )
+            if not prism_log_path.is_file():
+                raise RuntimeError(f"Prism launcher log not found: {prism_log_path}")
+            prism_log_text = read_log_since(prism_log_path, prism_log_offset)
+            verify_auth = verify_no_prism_auth_refresh if auth_verifier is None else auth_verifier
+            verify_auth(prism_log_text)
+            (run_dir / "prism-launcher.log").write_text(sanitize_prism_launcher_log(prism_log_text))
             verifier = verify_desktop_display_mode if display_mode_verifier is None else display_mode_verifier
             verifier(manifest)
         (run_dir / "log-excerpt.log").write_text(log_excerpt)
@@ -805,7 +925,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
     parser.add_argument("--source-world", default=DEFAULT_SOURCE_WORLD)
     parser.add_argument("--world", default=DEFAULT_WORLD_NAME)
-    parser.add_argument("--prism-app", default="Prism Launcher")
+    parser.add_argument("--prism-app", default=DEFAULT_PRISM_APP)
     parser.add_argument("--instance", default="dev")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--poll", type=float, default=0.25)

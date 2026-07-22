@@ -7,7 +7,7 @@
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:crafting_terminal",
-      "text": "The Crafting Terminal combines item access with three workspaces: the $(thing)Storage tab$() for stored items, the $(thing)Craftable tab$() for recipes ready now, and the $(thing)Fuel tab$() for resources and stations."
+      "text": "The Crafting Terminal combines resource access with three workspaces: the $(thing)Storage tab$() for stored items, fluids, energy, gases, or addon kinds, the item-only $(thing)Craftable tab$() for recipes ready now, and the $(thing)Fuel tab$() for resources and stations."
     },
     {
       "type": "patchouli:text",

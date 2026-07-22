@@ -24,6 +24,8 @@ class ResolveEmiRuntimeTests(unittest.TestCase):
             {
                 "id": "wrong-loader",
                 "version_number": "1.1.24+1.21.1+fabric",
+                "version_type": "release",
+                "status": "listed",
                 "loaders": ["fabric"],
                 "game_versions": ["1.21.1"],
                 "files": [{"filename": "emi-fabric.jar", "primary": True, "size": 10}],
@@ -31,6 +33,8 @@ class ResolveEmiRuntimeTests(unittest.TestCase):
             {
                 "id": "5sIPA1To",
                 "version_number": "1.1.24+1.21.1+neoforge",
+                "version_type": "release",
+                "status": "listed",
                 "loaders": ["neoforge"],
                 "game_versions": ["1.21.1"],
                 "files": [
@@ -53,6 +57,8 @@ class ResolveEmiRuntimeTests(unittest.TestCase):
         exact = {
             "id": "first",
             "version_number": "1.1.24+1.21.1+neoforge",
+            "version_type": "release",
+            "status": "listed",
             "loaders": ["neoforge"],
             "game_versions": ["1.21.1"],
             "files": [{"filename": "emi.jar", "primary": True, "size": 10}],
@@ -72,6 +78,8 @@ class ResolveEmiRuntimeTests(unittest.TestCase):
         base = {
             "id": "bad-file",
             "version_number": "1.1.24+1.21.1+neoforge",
+            "version_type": "release",
+            "status": "listed",
             "loaders": ["neoforge"],
             "game_versions": ["1.21.1"],
         }
@@ -87,6 +95,30 @@ class ResolveEmiRuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "one valid primary runtime jar"):
                     resolver.resolve_runtime_version_id(
                         [base | {"files": files}],
+                        "1.1.24+1.21.1",
+                        "1.21.1",
+                    )
+
+    def test_rejects_non_release_or_unlisted_exact_runtime(self):
+        resolver = load_resolver(self)
+        exact = {
+            "id": "invalid-channel",
+            "version_number": "1.1.24+1.21.1+neoforge",
+            "version_type": "release",
+            "status": "listed",
+            "loaders": ["neoforge"],
+            "game_versions": ["1.21.1"],
+            "files": [{"filename": "emi.jar", "primary": True, "size": 10}],
+        }
+
+        for version in [
+            exact | {"version_type": "beta"},
+            exact | {"status": "archived"},
+        ]:
+            with self.subTest(version=version):
+                with self.assertRaisesRegex(ValueError, "no exact Modrinth EMI runtime"):
+                    resolver.resolve_runtime_version_id(
+                        [version],
                         "1.1.24+1.21.1",
                         "1.21.1",
                     )

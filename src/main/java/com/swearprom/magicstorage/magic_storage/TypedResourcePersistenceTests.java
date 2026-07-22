@@ -177,10 +177,14 @@ public final class TypedResourcePersistenceTests {
             core.rebuildNetwork(level);
             StorageResourceKey water = StorageResourceBridge.fluidKey(
                     new FluidStack(Fluids.WATER, 1), level.registryAccess());
+            StorageResourceKey oxygen = StorageResourceKey.of(
+                    StorageResourceKindApi.CHEMICAL_KIND,
+                    ResourceLocation.fromNamespaceAndPath("mekanism", "oxygen"),
+                    new CompoundTag());
             if (core.insertItem(new ItemStack(Items.STONE)) != 1
                     || core.insertResource(water, 1_000, Action.EXECUTE) != 1_000
-                    || core.insertResource(
-                    StorageResourceBridge.ENERGY_KEY, 2_000, Action.EXECUTE) != 2_000) {
+                    || core.insertResource(StorageResourceBridge.ENERGY_KEY, 2_000, Action.EXECUTE) != 2_000
+                    || core.insertResource(oxygen, 300, Action.EXECUTE) != 300) {
                 helper.fail("Could not seed terminal typed resources");
                 return;
             }
@@ -198,38 +202,75 @@ public final class TypedResourcePersistenceTests {
             }
             var player = helper.makeMockPlayer(GameType.SURVIVAL);
             var menu = new StorageTerminalMenu(902, player.getInventory(), core);
-            if (menu.getTotalItemTypes() != 3) {
-                helper.fail("Terminal did not list item, fluid, and power entries");
+            if (menu.getTotalItemTypes() != 1 || !menu.getSlot(0).getItem().is(Items.STONE)) {
+                helper.fail("Default Item view did not isolate stored items");
                 return;
             }
-            int waterSlot = -1;
-            int typedEntries = 0;
-            for (int slot = 0; slot < StorageTerminalMenu.DISPLAY_SLOTS; slot++) {
-                ItemStack display = menu.getSlot(slot).getItem();
-                if (!TerminalResourceDisplay.isTyped(display)) continue;
-                typedEntries++;
-                if (TerminalResourceDisplay.key(display).orElseThrow().equals(water)) {
-                    waterSlot = slot;
-                }
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            ItemStack displayedWater = menu.getSlot(0).getItem();
+            if (menu.getResourceView() != TerminalResourceView.FLUID
+                    || menu.getTotalItemTypes() != 1
+                    || !TerminalResourceDisplay.key(displayedWater).orElseThrow().equals(water)) {
+                helper.fail("Fluid view did not isolate the stored fluid");
+                return;
             }
-            if (typedEntries != 2 || waterSlot < 0) {
-                helper.fail("Terminal typed display metadata was incomplete");
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            if (menu.getResourceView() != TerminalResourceView.ENERGY
+                    || menu.getTotalItemTypes() != 1
+                    || !TerminalResourceDisplay.key(menu.getSlot(0).getItem()).orElseThrow()
+                    .equals(StorageResourceBridge.ENERGY_KEY)) {
+                helper.fail("Energy view did not isolate stored power");
+                return;
+            }
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            if (menu.getResourceView() != TerminalResourceView.GAS
+                    || menu.getTotalItemTypes() != 1
+                    || !TerminalResourceDisplay.key(menu.getSlot(0).getItem()).orElseThrow().equals(oxygen)) {
+                helper.fail("Gas view did not isolate stored chemicals");
+                return;
+            }
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            if (menu.getResourceView() != TerminalResourceView.OTHER
+                    || menu.getTotalItemTypes() != 0) {
+                helper.fail("Other view must omit unresolved resource providers");
                 return;
             }
 
+            menu.clickMenuButton(player, StorageTerminalMenu.RESET_RESOURCE_VIEW_BUTTON);
+            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
             if (core.insertResource(water, 250, Action.EXECUTE) != 250) {
                 helper.fail("Could not update displayed fluid amount");
                 return;
             }
             menu.broadcastChanges();
-            ItemStack updatedWater = menu.getSlot(waterSlot).getItem();
+            ItemStack updatedWater = menu.getSlot(0).getItem();
             if (TerminalDisplayStack.amount(updatedWater) != 1_250) {
                 helper.fail("Open terminal did not refresh a typed resource mutation");
                 return;
             }
-            menu.clicked(waterSlot, 0, ClickType.PICKUP, player);
+            menu.clicked(0, 0, ClickType.PICKUP, player);
             if (!menu.getCarried().isEmpty() || core.getResourceAmount(water) != 1_250) {
                 helper.fail("Typed display entry was incorrectly extracted as its icon item");
+                return;
+            }
+
+            var craftingMenu = new CraftingTerminalMenu(903, player.getInventory(), core);
+            craftingMenu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
+            if (craftingMenu.getResourceView() != TerminalResourceView.FLUID
+                    || craftingMenu.getTotalItemTypes() != 1) {
+                helper.fail("Crafting Terminal Storage page did not share the fluid view");
+                return;
+            }
+            craftingMenu.clicked(0, 0, ClickType.PICKUP, player);
+            if (!craftingMenu.getSelectedStack().isEmpty()
+                    || !craftingMenu.getCarried().isEmpty()) {
+                helper.fail("Crafting Terminal treated a typed representative as an item recipe");
+                return;
+            }
+            craftingMenu.clickMenuButton(player, CraftingTerminalMenu.CRAFTABLE_PAGE_BUTTON);
+            if (craftingMenu.clickMenuButton(
+                    player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON)) {
+                helper.fail("Craftable page accepted a forged resource-view transition");
                 return;
             }
             helper.succeed();

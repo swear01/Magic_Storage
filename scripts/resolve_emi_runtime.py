@@ -19,6 +19,8 @@ def resolve_runtime_version_id(
         version
         for version in versions
         if version.get("version_number") == expected_version
+        and version.get("version_type") == "release"
+        and version.get("status") == "listed"
         and "neoforge" in version.get("loaders", [])
         and minecraft_version in version.get("game_versions", [])
     ]

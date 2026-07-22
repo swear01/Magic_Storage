@@ -1,5 +1,6 @@
 package com.swearprom.magicstorage.magic_storage;
 
+import com.electronwill.nightconfig.core.CommentedConfig;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponents;
@@ -61,8 +62,10 @@ class SelfTest {
         testSortMode();
         testSortOrder();
         testSearchMode();
+        testTerminalPreferences();
         testTerminalSettingsPacketCodec();
         testSearchModeApply();
+        testTerminalResourceView();
         testTerminalProfilesAndCycleDirection();
         testTerminalAmountFormatter();
         testTerminalDisplayStack();
@@ -1023,16 +1026,16 @@ class SelfTest {
         assertTrue("Storage profile is the reduced terminal",
                 !TerminalProfile.STORAGE.supports(TerminalProfile.Capability.PAGES)
                         && !TerminalProfile.STORAGE.supports(TerminalProfile.Capability.RECIPE_WORKSPACE)
-                        && TerminalProfile.STORAGE.itemRailGroups().equals(List.of(3)));
+                        && TerminalProfile.STORAGE.itemRailGroups().equals(List.of(4)));
         assertTrue("Crafting profile composes page, recipe, Fuel, source, and output capabilities",
                 TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.PAGES)
                         && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.RECIPE_WORKSPACE)
                         && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.FUEL)
                         && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.PLAYER_INVENTORY_SOURCE)
                         && TerminalProfile.CRAFTING.supports(TerminalProfile.Capability.OUTPUT_DESTINATION)
-                        && TerminalProfile.CRAFTING.playerInventorySourceIndex() == 6
-                        && TerminalProfile.CRAFTING.outputDestinationIndex() == 7
-                        && TerminalProfile.CRAFTING.itemRailGroups().equals(List.of(3, 3, 2))
+                        && TerminalProfile.CRAFTING.playerInventorySourceIndex() == 7
+                        && TerminalProfile.CRAFTING.outputDestinationIndex() == 8
+                        && TerminalProfile.CRAFTING.itemRailGroups().equals(List.of(3, 4, 2))
                         && TerminalProfile.CRAFTING.fuelRailGroups().equals(List.of(3)));
         assertTrue("terminal controls use an 18px hit box and 16px icon canvas",
                 TerminalLayout.CONTROL_SIZE == 18 && TerminalLayout.ICON_CANVAS_SIZE == 16);
@@ -1046,23 +1049,175 @@ class SelfTest {
                 TerminalCycleDirection.fromScroll(1.0) == TerminalCycleDirection.PREVIOUS);
     }
 
+    private static void testTerminalResourceView() {
+        assertTrue("TerminalResourceView has five explicit groups",
+                TerminalResourceView.values().length == 5);
+        assertTrue("resource view cycle keeps stable item-fluid-energy-gas-other order",
+                TerminalResourceView.ITEM.next() == TerminalResourceView.FLUID
+                        && TerminalResourceView.FLUID.next() == TerminalResourceView.ENERGY
+                        && TerminalResourceView.ENERGY.next() == TerminalResourceView.GAS
+                        && TerminalResourceView.GAS.next() == TerminalResourceView.OTHER
+                        && TerminalResourceView.OTHER.next() == TerminalResourceView.ITEM);
+        assertTrue("resource view previous wraps from item to other",
+                TerminalResourceView.ITEM.previous() == TerminalResourceView.OTHER);
+        StorageResourceKey item = StorageResourceKey.of(
+                StorageResourceKindApi.ITEM_KIND,
+                ResourceLocation.fromNamespaceAndPath("minecraft", "stone"),
+                new net.minecraft.nbt.CompoundTag());
+        StorageResourceKey fluid = StorageResourceKey.of(
+                StorageResourceKindApi.FLUID_KIND,
+                ResourceLocation.fromNamespaceAndPath("minecraft", "water"),
+                new net.minecraft.nbt.CompoundTag());
+        StorageResourceKey energy = StorageResourceKey.neoforgeEnergy();
+        StorageResourceKey gas = StorageResourceKey.of(
+                StorageResourceKindApi.CHEMICAL_KIND,
+                ResourceLocation.fromNamespaceAndPath("mekanism", "oxygen"),
+                new net.minecraft.nbt.CompoundTag());
+        StorageResourceKey addon = StorageResourceKey.of(
+                ResourceLocation.fromNamespaceAndPath("example", "mana"),
+                ResourceLocation.fromNamespaceAndPath("example", "blue"),
+                new net.minecraft.nbt.CompoundTag());
+        assertTrue("built-in resource kinds have one exact terminal view",
+                TerminalResourceView.ITEM.matches(item)
+                        && TerminalResourceView.FLUID.matches(fluid)
+                        && TerminalResourceView.ENERGY.matches(energy)
+                        && TerminalResourceView.GAS.matches(gas));
+        assertTrue("other view is reserved for addon kinds",
+                TerminalResourceView.OTHER.matches(addon)
+                        && !TerminalResourceView.OTHER.matches(item)
+                        && !TerminalResourceView.OTHER.matches(fluid)
+                        && !TerminalResourceView.OTHER.matches(energy)
+                        && !TerminalResourceView.OTHER.matches(gas));
+        assertTrue("invalid resource view wire id fails to item default",
+                TerminalResourceView.byId(-1) == TerminalResourceView.ITEM
+                        && TerminalResourceView.byId(99) == TerminalResourceView.ITEM);
+    }
+
     private static void testTerminalSettingsPacketCodec() {
-        var original = new TerminalSettingsPacket(123, 6);
+        var preferences = new TerminalPreferences(
+                SortMode.MOD,
+                SortOrder.DESCENDING,
+                SearchMode.TAG,
+                TerminalResourceView.FLUID,
+                CraftingTerminalPage.CRAFTABLE,
+                true,
+                TerminalOutputDestination.STORAGE,
+                EnergyType.BLAZE_FUEL);
+        var original = new TerminalSettingsPacket(123, 6, preferences);
         assertTrue("packet containerId 123", original.containerId() == 123);
         assertTrue("packet visibleRows 6", original.visibleRows() == 6);
+        assertTrue("packet carries terminal preferences", original.preferences().equals(preferences));
 
         var buf = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
-        buf.writeVarInt(original.containerId());
-        buf.writeVarInt(original.visibleRows());
-        assertTrue("codec encode order containerId", buf.readVarInt() == 123);
-        assertTrue("codec encode order visibleRows", buf.readVarInt() == 6);
+        original.write(buf);
+        var decoded = TerminalSettingsPacket.read(buf);
+        assertTrue("terminal settings wire round trip", decoded.equals(original));
 
-        var extreme = new TerminalSettingsPacket(42, 9);
+        var extreme = new TerminalSettingsPacket(42, 9, TerminalPreferences.defaults());
         var buf2 = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
-        buf2.writeVarInt(extreme.containerId());
-        buf2.writeVarInt(extreme.visibleRows());
-        assertTrue("extreme encode containerId", buf2.readVarInt() == 42);
-        assertTrue("extreme encode visibleRows", buf2.readVarInt() == 9);
+        extreme.write(buf2);
+        assertTrue("default terminal settings wire round trip",
+                TerminalSettingsPacket.read(buf2).equals(extreme));
+    }
+
+    private static void testTerminalPreferences() {
+        var emptyConfig = CommentedConfig.inMemory();
+        TerminalClientPreferences.SPEC.correct(emptyConfig);
+        assertTrue("terminal client config corrects an empty first-run file",
+                "auto".equals(emptyConfig.get("terminal.fuelTarget")));
+
+        var defaults = TerminalPreferences.defaults();
+        assertTrue("terminal preference defaults match first-open controls",
+                defaults.sortMode() == SortMode.NAME
+                        && defaults.sortOrder() == SortOrder.ASCENDING
+                        && defaults.searchMode() == SearchMode.NORMAL
+                        && defaults.resourceView() == TerminalResourceView.ITEM
+                        && defaults.page() == CraftingTerminalPage.STORAGE
+                        && !defaults.usePlayerInventory()
+                        && defaults.outputDestination() == TerminalOutputDestination.PLAYER
+                        && defaults.fuelTarget() == null);
+
+        var crafting = new TerminalPreferences(
+                SortMode.QUANTITY,
+                SortOrder.DESCENDING,
+                SearchMode.MOD,
+                TerminalResourceView.GAS,
+                CraftingTerminalPage.FUEL,
+                true,
+                TerminalOutputDestination.STORAGE,
+                EnergyType.BLAZE_FUEL);
+        var storageChange = new TerminalPreferences(
+                SortMode.ID,
+                SortOrder.ASCENDING,
+                SearchMode.TAG,
+                TerminalResourceView.OTHER,
+                CraftingTerminalPage.STORAGE,
+                false,
+                TerminalOutputDestination.PLAYER,
+                null);
+        var merged = crafting.mergeCommon(storageChange);
+        assertTrue("storage terminals update only shared RS2-style preferences",
+                merged.sortMode() == SortMode.ID
+                        && merged.sortOrder() == SortOrder.ASCENDING
+                        && merged.searchMode() == SearchMode.TAG
+                        && merged.resourceView() == TerminalResourceView.OTHER
+                        && merged.page() == CraftingTerminalPage.FUEL
+                        && merged.usePlayerInventory()
+                        && merged.outputDestination() == TerminalOutputDestination.STORAGE
+                        && merged.fuelTarget() == EnergyType.BLAZE_FUEL);
+        assertTrue("common preference comparison ignores crafting-only controls",
+                merged.matchesCommon(storageChange));
+
+        var session = new TerminalPreferenceSession(
+                crafting, TerminalPreferenceSession.Scope.CRAFTING);
+        assertTrue("preference session presents persisted crafting settings before acknowledgement",
+                session.presentation(defaults).equals(crafting));
+        assertTrue("preference session does not save server defaults before initial acknowledgement",
+                session.observe(defaults).isEmpty());
+        assertTrue("unacknowledged server defaults do not replace presented crafting settings",
+                session.presentation(defaults).equals(crafting));
+        assertTrue("initial acknowledgement does not rewrite the config",
+                session.observe(crafting).isEmpty());
+        var changed = new TerminalPreferences(
+                SortMode.NAME,
+                SortOrder.DESCENDING,
+                SearchMode.MOD,
+                TerminalResourceView.GAS,
+                CraftingTerminalPage.FUEL,
+                true,
+                TerminalOutputDestination.STORAGE,
+                EnergyType.BLAZE_FUEL);
+        assertTrue("server-confirmed control changes are offered for persistence",
+                session.observe(changed).orElseThrow().equals(changed));
+        assertTrue("acknowledged sessions present current server settings",
+                session.presentation(changed).equals(changed));
+        assertTrue("unchanged server state is not saved twice", session.observe(changed).isEmpty());
+
+        var storageSession = new TerminalPreferenceSession(
+                crafting, TerminalPreferenceSession.Scope.STORAGE);
+        var commonAcknowledgement = storageChange.mergeCommon(crafting);
+        assertTrue("storage terminals present persisted common settings before acknowledgement",
+                storageSession.presentation(defaults).matchesCommon(crafting));
+        assertTrue("storage acknowledgement accepts matching common settings",
+                storageSession.observe(commonAcknowledgement).isEmpty());
+        assertTrue("acknowledged storage sessions present current server settings",
+                storageSession.presentation(storageChange).equals(storageChange));
+
+        boolean rejected = false;
+        try {
+            new TerminalPreferences(
+                    SortMode.NAME,
+                    SortOrder.ASCENDING,
+                    SearchMode.NORMAL,
+                    TerminalResourceView.ITEM,
+                    CraftingTerminalPage.STORAGE,
+                    false,
+                    TerminalOutputDestination.PLAYER,
+                    EnergyType.SMELTING_ENERGY);
+        } catch (IllegalArgumentException expected) {
+            rejected = true;
+        }
+        assertTrue("non-fuel energy cannot become a persisted fuel target", rejected);
     }
 
     private static void testSearchModeApply() {

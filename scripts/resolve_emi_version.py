@@ -1,12 +1,14 @@
+import json
 from pathlib import Path
 import re
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parents[1]
-METADATA_URL = "https://maven.terraformersmc.com/releases/dev/emi/emi-neoforge/maven-metadata.xml"
+VERSIONS_URL = "https://api.modrinth.com/v2/project/emi/version"
 ARTIFACT_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)\+(.+)$")
+MODRINTH_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)\+(.+)\+neoforge$")
 
 
 def numeric_version(value: str) -> tuple[int, int, int]:
@@ -53,21 +55,46 @@ def validate_baseline(
 
 
 def latest_compatible_version(
-    metadata: str,
+    versions: list[dict],
     minecraft_version: str,
     minimum: tuple[int, int, int],
     upper_exclusive: tuple[int, int, int],
 ) -> str:
-    root = ElementTree.fromstring(metadata)
     candidates = []
-    for element in root.findall("./versioning/versions/version"):
-        artifact = (element.text or "").strip()
-        parsed = parse_artifact_version(artifact)
-        if parsed is None:
+    for release in versions:
+        if not isinstance(release, dict):
             continue
-        version, artifact_minecraft_version = parsed
-        if artifact_minecraft_version == minecraft_version and minimum <= version < upper_exclusive:
-            candidates.append((version, artifact))
+        if release.get("version_type") != "release" or release.get("status") != "listed":
+            continue
+        if "neoforge" not in release.get("loaders", []):
+            continue
+        if minecraft_version not in release.get("game_versions", []):
+            continue
+        version_number = release.get("version_number")
+        if not isinstance(version_number, str):
+            continue
+        match = MODRINTH_VERSION.fullmatch(version_number)
+        if match is None:
+            continue
+        version = tuple(int(match.group(index)) for index in range(1, 4))
+        artifact_minecraft_version = match.group(4)
+        if artifact_minecraft_version != minecraft_version:
+            continue
+        primary_jars = [
+            file
+            for file in release.get("files", [])
+            if isinstance(file, dict)
+            and file.get("primary") is True
+            and isinstance(file.get("filename"), str)
+            and file["filename"].endswith(".jar")
+            and not file["filename"].endswith("-api.jar")
+            and isinstance(file.get("size"), int)
+            and file["size"] > 0
+        ]
+        if len(primary_jars) != 1:
+            continue
+        if minimum <= version < upper_exclusive:
+            candidates.append((version, f"{version[0]}.{version[1]}.{version[2]}+{minecraft_version}"))
     if not candidates:
         raise ValueError(
             f"no compatible EMI release for Minecraft {minecraft_version} in the configured range"
@@ -86,10 +113,21 @@ def read_properties(path: Path) -> dict[str, str]:
     return properties
 
 
-def fetch_metadata(url: str = METADATA_URL) -> str:
-    request = Request(url, headers={"User-Agent": "Magic-Storage-EMI-compatibility-check"})
-    with urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8")
+def fetch_versions(minecraft_version: str, opener=urlopen) -> list[dict]:
+    query = urlencode({
+        "loaders": json.dumps(["neoforge"], separators=(",", ":")),
+        "game_versions": json.dumps([minecraft_version], separators=(",", ":")),
+        "include_changelog": "false",
+    })
+    request = Request(
+        f"{VERSIONS_URL}?{query}",
+        headers={"User-Agent": "Magic-Storage-EMI-compatibility-check"},
+    )
+    with opener(request, timeout=30) as response:
+        payload = json.loads(response.read())
+    if not isinstance(payload, list):
+        raise ValueError("Modrinth EMI versions response must be a list")
+    return payload
 
 
 def main() -> None:
@@ -100,7 +138,7 @@ def main() -> None:
     validate_baseline(baseline, minecraft_version, minimum, upper_exclusive)
     print(
         latest_compatible_version(
-            fetch_metadata(),
+            fetch_versions(minecraft_version),
             minecraft_version,
             minimum,
             upper_exclusive,

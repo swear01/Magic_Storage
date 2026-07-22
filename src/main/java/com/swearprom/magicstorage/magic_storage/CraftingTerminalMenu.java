@@ -595,6 +595,20 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         return selectedFuelTarget;
     }
 
+    @Override
+    public TerminalPreferences getTerminalPreferences() {
+        TerminalPreferences common = super.getTerminalPreferences();
+        return new TerminalPreferences(
+                common.sortMode(),
+                common.sortOrder(),
+                common.searchMode(),
+                common.resourceView(),
+                page,
+                usePlayerInventory,
+                outputDestination,
+                selectedFuelTarget);
+    }
+
     public long getEnergyAmount(EnergyType type) {
         return energyAmounts[type.ordinal()];
     }
@@ -766,6 +780,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             if (!player.level().isClientSide()) {
                 Slot slot = getSlot(slotIndex);
                 ItemStack displayStack = slot.getItem();
+                if (TerminalResourceDisplay.isTyped(displayStack)) return;
                 if (!displayStack.isEmpty() && getCarried().isEmpty()) {
                     selectItem(player.level(), displayStack);
                     StorageCoreBlockEntity core = getCore(player.level());
@@ -2390,6 +2405,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 return true;
             }
             if (page == CraftingTerminalPage.FUEL) return false;
+            if (page != CraftingTerminalPage.STORAGE
+                    && (buttonId == NEXT_RESOURCE_VIEW_BUTTON
+                    || buttonId == PREVIOUS_RESOURCE_VIEW_BUTTON
+                    || buttonId == RESET_RESOURCE_VIEW_BUTTON)) {
+                return false;
+            }
             StorageCoreBlockEntity core = getCore(player.level());
             switch (buttonId) {
                 case 0, 1,
@@ -2400,7 +2421,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                      PREVIOUS_SEARCH_MODE_BUTTON,
                      RESET_SORT_ORDER_BUTTON,
                      RESET_SORT_MODE_BUTTON,
-                     RESET_SEARCH_MODE_BUTTON -> {
+                     RESET_SEARCH_MODE_BUTTON,
+                     NEXT_RESOURCE_VIEW_BUTTON,
+                     PREVIOUS_RESOURCE_VIEW_BUTTON,
+                     RESET_RESOURCE_VIEW_BUTTON -> {
                     if (core != null) {
                         return super.clickMenuButton(player, buttonId);
                     }
@@ -2423,6 +2447,29 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             }
         }
         return true;
+    }
+
+    @Override
+    public boolean applySettings(TerminalSettingsPacket packet, Player player) {
+        boolean changed = super.applySettings(packet, player);
+        TerminalPreferences preferences = packet.preferences();
+        if (usePlayerInventory != preferences.usePlayerInventory()) {
+            usePlayerInventory = preferences.usePlayerInventory();
+            changed = true;
+        }
+        if (outputDestination != preferences.outputDestination()) {
+            outputDestination = preferences.outputDestination();
+            changed = true;
+        }
+        if (selectedFuelTarget != preferences.fuelTarget()) {
+            selectedFuelTarget = preferences.fuelTarget();
+            changed = true;
+        }
+        if (page != preferences.page()) {
+            switchPage(player, preferences.page());
+            changed = true;
+        }
+        return changed;
     }
 
     private boolean switchPage(Player player, CraftingTerminalPage nextPage) {
@@ -2482,8 +2529,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             displayStacks = buildCraftableDisplayStacks(core, player);
             sortCraftableDisplayStacks(displayStacks);
         } else {
-            displayStacks = new ArrayList<>(core.getDisplayStacks(
-                    currentFilter, getSortMode(), getSortOrder()));
+            displayStacks = new ArrayList<>(core.getTerminalDisplayStacks(
+                    currentFilter, getSortMode(), getSortOrder(), getResourceView()));
         }
 
         totalItemTypes = displayStacks.size();

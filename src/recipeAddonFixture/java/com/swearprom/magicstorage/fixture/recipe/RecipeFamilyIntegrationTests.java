@@ -13,6 +13,7 @@ import com.swearprom.magicstorage.magic_storage.StorageResourceCapabilities;
 import com.swearprom.magicstorage.magic_storage.StorageTerminalMenu;
 import com.swearprom.magicstorage.magic_storage.TerminalDisplayStack;
 import com.swearprom.magicstorage.magic_storage.TerminalResourceDisplay;
+import com.swearprom.magicstorage.magic_storage.TerminalResourceView;
 import com.swearprom.magicstorage.magic_storage.StorageResourceTransaction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -39,6 +40,7 @@ import java.util.List;
 public final class RecipeFamilyIntegrationTests {
     private static final int STORAGE_PAGE_BUTTON = 14;
     private static final int FUEL_PAGE_BUTTON = 15;
+    private static final int NEXT_RESOURCE_VIEW_BUTTON = 26;
     private static final ResourceLocation RECIPE_ID = ResourceLocation.fromNamespaceAndPath(
             FixtureMod.MODID, "grinding_cobblestone");
     private static final ResourceLocation TYPED_RECIPE_ID = ResourceLocation.fromNamespaceAndPath(
@@ -185,6 +187,16 @@ public final class RecipeFamilyIntegrationTests {
             }
             var player = helper.makeMockPlayer(GameType.SURVIVAL);
             var terminal = new StorageTerminalMenu(402, player.getInventory(), core);
+            for (int step = 0; step < 4; step++) {
+                if (!terminal.clickMenuButton(player, NEXT_RESOURCE_VIEW_BUTTON)) {
+                    helper.fail("Could not select the Other resource view");
+                    return;
+                }
+            }
+            if (terminal.getResourceView() != TerminalResourceView.OTHER) {
+                helper.fail("Terminal resource selector did not reach Other");
+                return;
+            }
             boolean terminalEntry = false;
             for (int slot = 0; slot < StorageTerminalMenu.DISPLAY_SLOTS; slot++) {
                 ItemStack display = terminal.getSlot(slot).getItem();

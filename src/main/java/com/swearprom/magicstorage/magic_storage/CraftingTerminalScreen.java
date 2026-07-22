@@ -102,7 +102,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     @Override
     protected boolean isItemViewActive() {
-        return menu.getPage().isItemPage();
+        return displayedPreferences().page().isItemPage();
+    }
+
+    @Override
+    protected boolean isResourceViewControlActive() {
+        return displayedPreferences().page() == CraftingTerminalPage.STORAGE;
     }
 
     @Override
@@ -138,7 +143,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 RecipeAmountSegment.LAST);
 
         TerminalLayout.Rect targetBounds = geometry.fuelTargetSelector();
-        FuelTargetOption initialTarget = new FuelTargetOption(menu.getSelectedFuelTarget());
+        FuelTargetOption initialTarget = new FuelTargetOption(displayedPreferences().fuelTarget());
         fuelTargetSelector = addTextCycleButton(
                 initialTarget.label(), targetBounds, this::selectAdjacentFuelTarget,
                 () -> clickMenuButton(CraftingTerminalMenu.AUTO_FUEL_TARGET_BUTTON));
@@ -295,7 +300,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     private void selectAdjacentFuelTarget(TerminalCycleDirection direction) {
         List<FuelTargetOption> options = fuelTargetOptions();
-        int current = options.indexOf(new FuelTargetOption(menu.getSelectedFuelTarget()));
+        int current = options.indexOf(new FuelTargetOption(displayedPreferences().fuelTarget()));
         if (current < 0) throw new IllegalStateException("Current Fuel target is not server-approved");
         int offset = direction == TerminalCycleDirection.NEXT ? 1 : -1;
         FuelTargetOption option = options.get(Math.floorMod(current + offset, options.size()));
@@ -309,7 +314,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             closeFuelTargetPopup();
             return;
         }
-        int selected = fuelTargetOptions().indexOf(new FuelTargetOption(menu.getSelectedFuelTarget()));
+        int selected = fuelTargetOptions().indexOf(new FuelTargetOption(displayedPreferences().fuelTarget()));
         if (selected < 0) throw new IllegalStateException("Current Fuel target is not server-approved");
         fuelTargetPopup.reveal(selected);
         fuelTargetPopup.visible = true;
@@ -332,8 +337,9 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     }
 
     private void updatePageWidgets() {
-        CraftingTerminalPage page = menu.getPage();
-        EnergyType target = menu.getSelectedFuelTarget();
+        TerminalPreferences preferences = displayedPreferences();
+        CraftingTerminalPage page = preferences.page();
+        EnergyType target = preferences.fuelTarget();
         boolean itemPage = page.isItemPage();
         setItemViewControlsVisible(itemPage);
 
@@ -367,18 +373,19 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     }
 
     private void updateSidebarState() {
+        TerminalPreferences preferences = displayedPreferences();
         storagePageBtn.setTooltip(Tooltip.create(Component.translatable("gui.magic_storage.page_storage")));
         craftablePageBtn.setTooltip(Tooltip.create(Component.translatable("gui.magic_storage.page_craftable")));
         fuelPageBtn.setTooltip(Tooltip.create(Component.translatable("gui.magic_storage.page_fuel")));
         fuelTargetListBtn.setTooltip(Tooltip.create(Component.translatable("gui.magic_storage.fuel_target_list")));
 
         updateToggleButton(playerInventoryRailBtn, "gui.magic_storage.use_player_inv",
-                menu.isUsePlayerInventory());
-        Component outputDestination = switch (menu.getOutputDestination()) {
+                preferences.usePlayerInventory());
+        Component outputDestination = switch (preferences.outputDestination()) {
             case PLAYER -> Component.translatable("gui.magic_storage.output_destination.player");
             case STORAGE -> Component.translatable("gui.magic_storage.output_destination.storage");
         };
-        outputDestinationRailBtn.setItemIcon(switch (menu.getOutputDestination()) {
+        outputDestinationRailBtn.setItemIcon(switch (preferences.outputDestination()) {
             case PLAYER -> Items.PLAYER_HEAD.getDefaultInstance();
             case STORAGE -> MagicStorage.STORAGE_CORE_ITEM.get().getDefaultInstance();
         });
@@ -412,7 +419,8 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     @Override
     protected void containerTick() {
         super.containerTick();
-        if (lastPage != menu.getPage() || lastFuelTarget != menu.getSelectedFuelTarget()) {
+        TerminalPreferences preferences = displayedPreferences();
+        if (lastPage != preferences.page() || lastFuelTarget != preferences.fuelTarget()) {
             updatePageWidgets();
         }
         updateCraftButtonState();
@@ -421,7 +429,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
-        if (menu.getPage() == CraftingTerminalPage.FUEL) {
+        if (displayedPreferences().page() == CraftingTerminalPage.FUEL) {
             renderFuelPage(graphics);
         } else {
             super.renderBg(graphics, partialTick, mouseX, mouseY);
@@ -444,12 +452,13 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
     }
 
     private void renderSideRail(GuiGraphics graphics) {
-        boolean itemPage = menu.getPage().isItemPage();
-        boolean fuelPage = menu.getPage() == CraftingTerminalPage.FUEL;
+        TerminalPreferences preferences = displayedPreferences();
+        boolean itemPage = preferences.page().isItemPage();
+        boolean fuelPage = preferences.page() == CraftingTerminalPage.FUEL;
         if (fuelPage) {
             drawRaisedPanel(graphics, leftPos, topPos, geometry.fuelRailPanel());
         }
-        if (itemPage && menu.isUsePlayerInventory()) {
+        if (itemPage && preferences.usePlayerInventory()) {
             drawRailMarker(graphics, terminalProfile().playerInventorySourceIndex(), false, 0xFF2E7D32);
         }
     }
@@ -844,7 +853,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         if (fuelTargetPopup != null && fuelTargetPopup.visible
                 && fuelTargetPopup.isMouseOver(mouseX, mouseY)) return;
         super.renderTooltip(graphics, mouseX, mouseY);
-        if (menu.getPage().isItemPage()) {
+        if (displayedPreferences().page().isItemPage()) {
             RecipePresentation presentation = menu.getRecipePresentation();
             if (presentation.isEmpty()) return;
             TerminalLayout.Rect station = geometry.recipeStation();
@@ -1117,7 +1126,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
                 FuelTargetOption option = options.get(scrollOffset + rowIndex);
                 TerminalLayout.Rect row = rows.get(rowIndex);
-                boolean selected = Objects.equals(option.target(), menu.getSelectedFuelTarget());
+                boolean selected = Objects.equals(option.target(), displayedPreferences().fuelTarget());
                 int left = leftPos + row.x();
                 int top = topPos + row.y();
                 int right = left + row.width();
@@ -1201,7 +1210,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 return true;
             }
         }
-        if (menu.getPage().isItemPage()) {
+        if (displayedPreferences().page().isItemPage()) {
             RecipePresentation presentation = menu.getRecipePresentation();
             if (!presentation.isEmpty() && geometry.recipeStation().contains(
                     (int) mouseX - leftPos, (int) mouseY - topPos)) {
@@ -1228,7 +1237,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             closeFuelTargetPopup();
             return true;
         }
-        if (menu.getPage().isItemPage()) {
+        if (displayedPreferences().page().isItemPage()) {
             RecipePresentation presentation = menu.getRecipePresentation();
             if (!presentation.isEmpty()
                     && activeRecipeDiagramRenderer(presentation).keyPressed(
@@ -1249,7 +1258,7 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (menu.getPage() == CraftingTerminalPage.FUEL && scrollY != 0) {
+        if (displayedPreferences().page() == CraftingTerminalPage.FUEL && scrollY != 0) {
             if (fuelTargetPopup.visible && fuelTargetPopup.isMouseOver(mouseX, mouseY)) {
                 return fuelTargetPopup.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
             }

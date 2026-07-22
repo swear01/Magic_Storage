@@ -715,7 +715,7 @@ def build_manifest(world_dir: Path) -> dict:
         "hotbar_views": HOTBAR_VIEWS,
         "fullscreen_gate": FULLSCREEN_GATE,
         "open_key": "key.keyboard.u",
-        "launch_command": f'open -a "Prism Launcher" --args -l dev -w "{world_dir.name}" -o {DEFAULT_OFFLINE_PLAYER}',
+        "launch_command": f'"/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher" -l dev -w "{world_dir.name}" -o {DEFAULT_OFFLINE_PLAYER}',
     }
 
 

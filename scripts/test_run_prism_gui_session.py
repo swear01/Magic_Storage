@@ -13,12 +13,23 @@ SCRIPT_PATH = ROOT / "scripts" / "run_prism_gui_session.py"
 
 
 class RunPrismGuiSessionTests(unittest.TestCase):
-    def load_script(self):
+    def load_script(
+        self,
+        stub_prism_version: bool = True,
+        stub_prism_root: bool = True,
+        stub_running_prism: bool = True,
+    ):
         self.assertTrue(SCRIPT_PATH.exists(), "missing scripts/run_prism_gui_session.py")
         spec = importlib.util.spec_from_file_location("run_prism_gui_session", SCRIPT_PATH)
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
+        if stub_prism_version and hasattr(module, "verify_prism_version"):
+            module.verify_prism_version = lambda prism_app: "11.0.3"
+        if stub_prism_root and hasattr(module, "verify_no_prism_auth_refresh"):
+            module.verify_no_prism_auth_refresh = lambda *args, **kwargs: None
+        if stub_running_prism and hasattr(module, "require_running_normal_prism"):
+            module.require_running_normal_prism = lambda: None
         return module
 
     def fake_prepare(self, minecraft_dir: Path, source_world: str, target_world: str):
@@ -64,6 +75,8 @@ class RunPrismGuiSessionTests(unittest.TestCase):
         project_dir = root / "project"
         (project_dir / "build" / "libs").mkdir(parents=True)
         (minecraft_dir / "mods").mkdir(parents=True, exist_ok=True)
+        (root / "logs").mkdir(exist_ok=True)
+        (root / "logs" / "PrismLauncher-0.log").write_text("")
         (project_dir / "gradle.properties").write_text("mod_version=0.1.7\n")
         jar_bytes = b"matching build"
         (project_dir / "build" / "libs" / "magic_storage-0.1.7.jar").write_bytes(jar_bytes)
@@ -129,13 +142,30 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "Minecraft is ready in the fixed test world. Please take over for the fullscreen visual checks; close with F11, wait for the normal window, then Command-Q.",
                 result.manual_handoff_message,
             )
-            self.assertEqual(["open", "-a", "Prism Launcher", "--args", "-l", "dev", "-w", "MagicStorageGuiTest", "-o", "MagicStorageBot"], launched[0])
+            self.assertEqual(
+                [
+                    "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher",
+                    "-l",
+                    "dev",
+                    "-w",
+                    "MagicStorageGuiTest",
+                    "-o",
+                    "MagicStorageBot",
+                ],
+                launched[0],
+            )
             self.assertTrue(result.run_dir.name.endswith("terminal-left-rail"))
             checklist = (result.run_dir / "checklist.md").read_text()
             self.assertIn("-o MagicStorageBot", checklist)
             self.assertIn("fullscreen gate", checklist)
             self.assertIn("hotbar `1`", checklist)
             self.assertIn("hotbar `2`", checklist)
+            self.assertIn("Items, Fluids, Energy, Gases, and Other", checklist)
+            self.assertIn("middle-click resets it to Items", checklist)
+            self.assertIn("Craftable and Fuel hide the resource selector", checklist)
+            self.assertIn("reopen Storage Terminal", checklist)
+            self.assertIn("restart the client", checklist)
+            self.assertIn("Crafting-only page, source, output, and Fuel Target", checklist)
             self.assertIn("Manual GUI required: yes", checklist)
             self.assertIn("Visual verification owner: user", checklist)
             self.assertIn("automatically starts in borderless Minecraft F11 fullscreen", checklist)
@@ -591,12 +621,236 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 cfg.read_text().splitlines(),
             )
 
-    def test_launch_command_uses_prism_offline_player_to_skip_account_refresh(self):
+    def test_launch_command_uses_existing_prism_root_instance_and_offline_player(self):
         mod = self.load_script()
         self.assertEqual(
-            ["open", "-a", "Prism Launcher", "--args", "-l", "dev", "-w", "MagicStorageGuiTest", "-o", "MagicStorageBot"],
-            mod.build_launch_command("Prism Launcher", "dev", "MagicStorageGuiTest"),
+            [
+                "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher",
+                "-l",
+                "dev",
+                "-w",
+                "MagicStorageGuiTest",
+                "-o",
+                "MagicStorageBot",
+            ],
+            mod.build_launch_command(
+                "/Applications/Prism Launcher.app",
+                "dev",
+                "MagicStorageGuiTest",
+            ),
         )
+
+    def test_gui_runner_requires_an_already_running_normal_root_prism(self):
+        mod = self.load_script(stub_running_prism=False)
+        normal = {
+            100: (1, "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher"),
+        }
+        isolated = {
+            200: (
+                1,
+                "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher -d /tmp/prism-root",
+            ),
+        }
+
+        mod.require_running_normal_prism(snapshot_func=lambda: normal)
+        with self.assertRaisesRegex(RuntimeError, "Open the normal Prism Launcher once"):
+            mod.require_running_normal_prism(snapshot_func=lambda: {})
+        with self.assertRaisesRegex(RuntimeError, "Open the normal Prism Launcher once"):
+            mod.require_running_normal_prism(snapshot_func=lambda: isolated)
+
+    def test_default_launcher_detaches_with_sanitized_environment(self):
+        mod = self.load_script()
+        calls = []
+
+        mod.default_launcher(
+            ["/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher", "-l", "dev"],
+            popen_func=lambda command, **kwargs: calls.append((command, kwargs)),
+            environ={
+                "HOME": "/Users/test",
+                "PATH": "/usr/bin:/bin",
+                "TMPDIR": "/tmp/",
+                "LANG": "en_US.UTF-8",
+                "SECRET_API_KEY": "must-not-reach-prism",
+            },
+        )
+
+        self.assertEqual(1, len(calls))
+        command, kwargs = calls[0]
+        self.assertEqual(
+            ["/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher", "-l", "dev"],
+            command,
+        )
+        self.assertEqual(
+            {
+                "HOME": "/Users/test",
+                "PATH": "/usr/bin:/bin",
+                "TMPDIR": "/tmp/",
+                "LANG": "en_US.UTF-8",
+            },
+            kwargs["env"],
+        )
+        self.assertIs(subprocess.DEVNULL, kwargs["stdin"])
+        self.assertIs(subprocess.DEVNULL, kwargs["stdout"])
+        self.assertIs(subprocess.DEVNULL, kwargs["stderr"])
+        self.assertTrue(kwargs["start_new_session"])
+        self.assertTrue(kwargs["close_fds"])
+
+    def test_prism_launcher_artifact_removes_process_environment(self):
+        mod = self.load_script()
+        raw = (
+            'Starting Prism Launcher\n'
+            'Process environment:\n'
+            'QList("HOME=/Users/test", "SECRET_API_KEY=must-not-persist")\n'
+            'Launching with world "MagicStorageGuiTest"\n'
+            'Native environment:\n'
+            'QList("PATH=/usr/bin", "TOKEN=must-not-persist")\n'
+            'Instance started\n'
+        )
+
+        sanitized = mod.sanitize_prism_launcher_log(raw)
+
+        self.assertEqual(
+            'Starting Prism Launcher\n'
+            'Launching with world "MagicStorageGuiTest"\n'
+            'Instance started\n',
+            sanitized,
+        )
+        self.assertNotIn("must-not-persist", sanitized)
+
+    def test_prism_launcher_log_rejects_account_auth_but_allows_offline_flow(self):
+        mod = self.load_script(stub_prism_root=False)
+        accepted = (
+            'Loading accounts...\n'
+            'Task "AuthFlow(0x1)" starting for the first time\n'
+            'Task "AuthFlow(0x1)" succeeded\n'
+            'RefreshSchedule: Background account refresh succeeded\n'
+            'RefreshSchedule: Processing account "MagicStorageBot"\n'
+            'Launching with account "MagicStorageBot"\n'
+        )
+        mod.verify_no_prism_auth_refresh(accepted)
+
+        rejected = [
+            'AuthFlow: "Logging in with Microsoft account."',
+            'Running "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"',
+            'Running "https://user.auth.xboxlive.com/user/authenticate"',
+            'Running "https://xsts.auth.xboxlive.com/xsts/authorize"',
+            'Running "https://api.minecraftservices.com/launcher/login"',
+            'Running "https://api.minecraftservices.com/entitlements/license"',
+        ]
+        for text in rejected:
+            with self.subTest(text=text):
+                with self.assertRaisesRegex(RuntimeError, "authentication activity"):
+                    mod.verify_no_prism_auth_refresh(text)
+
+    def test_run_session_uses_existing_prism_root_and_verifies_only_current_launcher_log(self):
+        mod = self.load_script(stub_prism_root=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            minecraft_dir = root / "instances" / "dev" / "minecraft"
+            (minecraft_dir / "logs").mkdir(parents=True)
+            prism_log = root / "logs" / "PrismLauncher-0.log"
+            prism_log.parent.mkdir()
+            prism_log.write_text("old launcher log\n")
+            self.configure_matching_deployment(mod, root, minecraft_dir)
+            mod.snapshot_processes = lambda: {}
+            events = []
+            launched = []
+
+            def wait_for_log(**kwargs):
+                prism_log.write_text(prism_log.read_text() + "current offline launcher log\n")
+                return "SelfTest: 104 passed\nMS_GUI_TEST_READY\n"
+
+            result = mod.run_session(
+                scenario_name="terminal-left-rail",
+                minecraft_dir=minecraft_dir,
+                instance_dir=root / "instances" / "dev",
+                run_root=root / "gui-runs",
+                prepare_world_func=self.fake_prepare,
+                cleanup_existing_func=lambda *args: None,
+                configure_instance_func=lambda instance_dir: True,
+                auth_verifier=lambda text: events.append(("verify-auth", text)),
+                launcher=lambda command: launched.append(command),
+                wait_for_log_func=wait_for_log,
+                display_mode_verifier=lambda manifest: None,
+                timestamp_func=lambda: "20260722-010203",
+            )
+
+            self.assertEqual([("verify-auth", "current offline launcher log\n")], events)
+            self.assertNotIn("-d", launched[0])
+            self.assertFalse((result.run_dir / "prism-root").exists())
+            self.assertEqual(
+                "current offline launcher log\n",
+                (result.run_dir / "prism-launcher.log").read_text(),
+            )
+
+    def test_prism_11_0_3_is_minimum_for_offline_cli_launch(self):
+        mod = self.load_script(stub_prism_version=False)
+
+        class Result:
+            def __init__(self, stdout: str):
+                self.stdout = stdout
+
+        calls = []
+
+        def run_with(version: str):
+            def run(command, **kwargs):
+                calls.append((command, kwargs))
+                return Result(f"PrismLauncher {version}\n")
+
+            return run
+
+        with self.assertRaisesRegex(RuntimeError, r"11\.0\.3 or newer.*11\.0\.2"):
+            mod.verify_prism_version(
+                "/Applications/Prism Launcher.app", run_func=run_with("11.0.2")
+            )
+
+        self.assertEqual(
+            "11.0.3",
+            mod.verify_prism_version(
+                "/Applications/Prism Launcher.app", run_func=run_with("11.0.3")
+            ),
+        )
+        self.assertEqual(
+            "12.0.0",
+            mod.verify_prism_version(
+                "/Applications/Prism Launcher.app", run_func=run_with("12.0.0")
+            ),
+        )
+        self.assertEqual(
+            [
+                "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher",
+                "--version",
+            ],
+            calls[0][0],
+        )
+
+    def test_run_session_rejects_old_prism_before_cleanup(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            minecraft_dir = root / "minecraft"
+            (minecraft_dir / "logs").mkdir(parents=True)
+            self.configure_matching_deployment(mod, root, minecraft_dir)
+            events = []
+            mod.verify_prism_version = lambda prism_app: (_ for _ in ()).throw(
+                RuntimeError("Prism Launcher 11.0.3 or newer is required; found 11.0.2")
+            )
+
+            with self.assertRaisesRegex(RuntimeError, r"11\.0\.3 or newer"):
+                mod.run_session(
+                    scenario_name="boot-smoke",
+                    minecraft_dir=minecraft_dir,
+                    instance_dir=root / "instances" / "dev",
+                    run_root=root / "gui-runs",
+                    prepare_world_func=self.fake_prepare,
+                    cleanup_existing_func=lambda *args: events.append("cleanup"),
+                    configure_instance_func=lambda instance_dir: events.append("configure") or True,
+                    launcher=lambda command: events.append("launch"),
+                    wait_for_log_func=lambda **kwargs: "SelfTest: 104 passed\nMS_GUI_TEST_READY\n",
+                    timestamp_func=lambda: "20260722-010203",
+                )
+
+            self.assertEqual([], events)
 
     def test_snapshot_processes_parses_pid_parent_and_full_command(self):
         mod = self.load_script()
@@ -665,7 +919,32 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 terminate_func=lambda pids: terminated.append(pids),
             )
 
-            self.assertEqual([[201, 200]], terminated)
+            self.assertEqual([[201]], terminated)
+
+    def test_cleanup_existing_session_preserves_warm_prism_without_test_java(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            instance_dir = root / "instances" / "dev"
+            minecraft_dir = instance_dir / "minecraft"
+            current = {
+                200: (
+                    1,
+                    "/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher -l dev -w MagicStorageGuiTest -o MagicStorageBot",
+                ),
+            }
+            terminated = []
+
+            mod.cleanup_existing_session(
+                instance_dir,
+                minecraft_dir,
+                "dev",
+                "MagicStorageGuiTest",
+                snapshot_func=lambda: current,
+                terminate_func=lambda pids: terminated.append(pids),
+            )
+
+            self.assertEqual([], terminated)
 
     def test_supervise_shutdown_forces_only_same_java_after_stopping_timeout(self):
         mod = self.load_script()

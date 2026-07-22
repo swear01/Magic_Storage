@@ -25,6 +25,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     static final int RESET_SORT_ORDER_BUTTON = 21;
     static final int RESET_SORT_MODE_BUTTON = 22;
     static final int RESET_SEARCH_MODE_BUTTON = 23;
+    static final int NEXT_RESOURCE_VIEW_BUTTON = 26;
+    static final int PREVIOUS_RESOURCE_VIEW_BUTTON = 27;
+    static final int RESET_RESOURCE_VIEW_BUTTON = 28;
 
     public static final int MAX_DISPLAY_ROWS = 9;
     public static final int DISPLAY_COLS = 9;
@@ -47,6 +50,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     private SortMode sortMode = SortMode.NAME;
     private SortOrder sortOrder = SortOrder.ASCENDING;
     private SearchMode searchMode = SearchMode.NORMAL;
+    private TerminalResourceView resourceView = TerminalResourceView.ITEM;
     private StorageCoreBlockEntity observedCore;
     private long observedTopologyRevision;
     private boolean storageDirty;
@@ -82,7 +86,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     }
 
     private void addTypeDataSlots() {
-        addDataSlots(new net.minecraft.world.inventory.SimpleContainerData(12) {
+        addDataSlots(new net.minecraft.world.inventory.SimpleContainerData(13) {
             @Override public int get(int i) {
                 return switch (i) {
                     case 0 -> getIntWord(displayTypeCount, 0);
@@ -96,7 +100,8 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case 8 -> getIntWord(totalItemTypes, 1);
                     case 9 -> getIntWord(scrollOffset, 0);
                     case 10 -> getIntWord(scrollOffset, 1);
-                    default -> displayUnlimitedTypeCapacity ? 1 : 0;
+                    case 11 -> displayUnlimitedTypeCapacity ? 1 : 0;
+                    default -> resourceView.ordinal();
                 };
             }
             @Override public void set(int i, int v) {
@@ -112,10 +117,11 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case 8 -> totalItemTypes = setIntWord(totalItemTypes, 1, v);
                     case 9 -> scrollOffset = setIntWord(scrollOffset, 0, v);
                     case 10 -> scrollOffset = setIntWord(scrollOffset, 1, v);
-                    default -> displayUnlimitedTypeCapacity = v != 0;
+                    case 11 -> displayUnlimitedTypeCapacity = v != 0;
+                    default -> resourceView = TerminalResourceView.byId(v);
                 }
             }
-            @Override public int getCount() { return 12; }
+            @Override public int getCount() { return 13; }
         });
     }
 
@@ -135,6 +141,19 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     public SortMode getSortMode() { return sortMode; }
     public SortOrder getSortOrder() { return sortOrder; }
     public SearchMode getSearchMode() { return searchMode; }
+    public TerminalResourceView getResourceView() { return resourceView; }
+
+    public TerminalPreferences getTerminalPreferences() {
+        return new TerminalPreferences(
+                sortMode,
+                sortOrder,
+                searchMode,
+                resourceView,
+                CraftingTerminalPage.STORAGE,
+                false,
+                TerminalOutputDestination.PLAYER,
+                null);
+    }
 
     StorageTerminalMenu(MenuType<?> menuType, int containerId, Inventory playerInv, StorageCoreBlockEntity core) {
         this(menuType, containerId, playerInv, core, core.getBlockPos(), false);
@@ -255,7 +274,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         displayInventory.clearContent();
         if (core == null) { totalItemTypes = 0; return; }
         java.util.List<ItemStack> stacks = core.getTerminalDisplayStacks(
-                currentFilter, sortMode, sortOrder);
+                currentFilter, sortMode, sortOrder, resourceView);
         totalItemTypes = stacks.size();
         displayTypeCount = core.getTypeCount();
         displayMaxTypes = core.getTotalTypeSlots();
@@ -409,7 +428,10 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                 && buttonId != PREVIOUS_SEARCH_MODE_BUTTON
                 && buttonId != RESET_SORT_ORDER_BUTTON
                 && buttonId != RESET_SORT_MODE_BUTTON
-                && buttonId != RESET_SEARCH_MODE_BUTTON) {
+                && buttonId != RESET_SEARCH_MODE_BUTTON
+                && buttonId != NEXT_RESOURCE_VIEW_BUTTON
+                && buttonId != PREVIOUS_RESOURCE_VIEW_BUTTON
+                && buttonId != RESET_RESOURCE_VIEW_BUTTON) {
             return false;
         }
         if (!player.level().isClientSide()) {
@@ -426,6 +448,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case RESET_SORT_ORDER_BUTTON -> sortOrder = SortOrder.ASCENDING;
                     case RESET_SORT_MODE_BUTTON -> sortMode = SortMode.NAME;
                     case RESET_SEARCH_MODE_BUTTON -> searchMode = SearchMode.NORMAL;
+                    case NEXT_RESOURCE_VIEW_BUTTON -> resourceView = resourceView.next();
+                    case PREVIOUS_RESOURCE_VIEW_BUTTON -> resourceView = resourceView.previous();
+                    case RESET_RESOURCE_VIEW_BUTTON -> resourceView = TerminalResourceView.ITEM;
                 }
                 refreshDisplayItems(core);
             }
@@ -433,11 +458,20 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
         return true;
     }
 
-    public boolean applySettings(TerminalSettingsPacket packet) {
+    public boolean applySettings(TerminalSettingsPacket packet, Player player) {
         int rows = Math.clamp(packet.visibleRows(), 3, MAX_DISPLAY_ROWS);
-        if (rows == visibleRows) return false;
+        TerminalPreferences preferences = packet.preferences();
+        boolean changed = rows != visibleRows
+                || sortMode != preferences.sortMode()
+                || sortOrder != preferences.sortOrder()
+                || searchMode != preferences.searchMode()
+                || resourceView != preferences.resourceView();
         visibleRows = rows;
-        return true;
+        sortMode = preferences.sortMode();
+        sortOrder = preferences.sortOrder();
+        searchMode = preferences.searchMode();
+        resourceView = preferences.resourceView();
+        return changed;
     }
 
     public int getVisibleRows() {

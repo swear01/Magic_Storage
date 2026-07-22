@@ -7,7 +7,7 @@
     {
       "type": "patchouli:spotlight",
       "item": "magic_storage:crafting_terminal",
-      "text": "合成終端機把物品存取與三個工作區合在一起：$(thing)儲存分頁$()查看現有物品、$(thing)可合成分頁$()查看目前能執行的配方、$(thing)燃料分頁$()管理資源與工作站。"
+      "text": "合成終端機把資源存取與三個工作區合在一起：$(thing)儲存分頁$()可切換現有物品、流體、能量、氣體或addon種類；$(thing)可合成分頁$()只顯示目前能執行的物品配方；$(thing)燃料分頁$()管理資源與工作站。"
     },
     {
       "type": "patchouli:text",

@@ -24,7 +24,9 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
@@ -213,7 +215,8 @@ public class MagicStorage {
                                 output.accept(EXPORT_BUS_ITEM.get());
                             }).build());
 
-    public MagicStorage(IEventBus modEventBus) {
+    public MagicStorage(IEventBus modEventBus, ModContainer modContainer) {
+        modContainer.registerConfig(ModConfig.Type.CLIENT, TerminalClientPreferences.SPEC);
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
         BLOCK_ENTITIES.register(modEventBus);
@@ -232,7 +235,7 @@ public class MagicStorage {
             ClientSetup.register(modEventBus);
         }
         modEventBus.addListener((net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent event) -> {
-            var registrar = event.registrar(MODID).versioned("1.0");
+            var registrar = event.registrar(MODID).versioned("1.1");
             registrar.playToServer(SearchFilterPacket.TYPE, SearchFilterPacket.STREAM_CODEC, this::handleSearchFilter);
             registrar.playToServer(TerminalSettingsPacket.TYPE, TerminalSettingsPacket.STREAM_CODEC, this::handleTerminalSettings);
             registrar.playToServer(TerminalScrollPacket.TYPE, TerminalScrollPacket.STREAM_CODEC, this::handleTerminalScroll);
@@ -355,7 +358,7 @@ public class MagicStorage {
             var player = ctx.player();
             if (player == null || !(player.containerMenu instanceof StorageTerminalMenu menu)
                     || menu.containerId != packet.containerId()) return;
-            if (menu.applySettings(packet)) {
+            if (menu.applySettings(packet, player)) {
                 StorageCoreBlockEntity core = menu.getCore(player.level());
                 if (core != null) {
                     menu.refreshDisplayItems(core);

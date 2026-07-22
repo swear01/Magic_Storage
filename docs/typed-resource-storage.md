@@ -1,6 +1,6 @@
 # Typed Resource Storage Architecture
 
-> Status: implemented foundation under GitHub [#9](https://github.com/swear01/Magic_Storage/issues/9). Item, fluid, NeoForge Energy, optional Mekanism chemical, and registered addon kinds now share one live ledger and transaction domain. Terminal listing, passive Bus capabilities, Creative unlimited type capacity, the public resource-kind API, and deterministic typed recipe families are connected.
+> Status: implemented foundation under GitHub [#9](https://github.com/swear01/Magic_Storage/issues/9). Item, fluid, NeoForge Energy, optional Mekanism chemical, and registered addon kinds now share one live ledger and transaction domain. Terminal listing and its resource selector, passive Bus capabilities, Creative unlimited type capacity, the public resource-kind API, and deterministic typed recipe families are connected.
 
 ## Product boundary
 
@@ -65,7 +65,7 @@ Variant data is part of identity. Item and fluid components cannot be discarded 
 
 Registration does not grant Core/player mutation callbacks. `StorageResourceHandler` exposes bounded list/amount/insert/extract operations; `StorageResourceTransaction` is the only public multi-key mutation request. Magic Storage still owns validation, capacity, persistence, synchronization, and all-or-nothing commit. Missing providers remain raw on disk and are omitted from terminal presentation until their kind is registered again; new live mutations reject unregistered kinds instead of guessing or fabricating a representative.
 
-Terminal entries carry the exact key and long amount in display-only metadata. Clicking a non-item representative never extracts its icon. Import and Export Buses expose the generic resource capability plus native fluid/energy and optional chemical wrappers: Import is insert-only and Export is extract-only. Existing item filters are not reinterpreted as typed filters, so non-item resources pass only under `DENY` policy; active front scanning remains item-only. Creative Storage makes the same shared type domain unlimited, not only items.
+Terminal entries carry the exact key and long amount in display-only metadata. A server-owned menu value selects exactly one presentation group: Item, Fluid, NeoForge Energy, Mekanism Chemical/Gas, or Other. Other contains registered addon kinds not promoted to a built-in group; missing providers remain omitted. The selector appears on Storage views in both terminal types, resets to Item, and is hidden/rejected on Craftable and Fuel. Clicking a non-item representative never extracts its icon or selects an item recipe, and EMI excludes those representatives from item inputs. Import and Export Buses expose the generic resource capability plus native fluid/energy and optional chemical wrappers: Import is insert-only and Export is extract-only. Existing item filters are not reinterpreted as typed filters, so non-item resources pass only under `DENY` policy; active front scanning remains item-only. Creative Storage makes the same shared type domain unlimited, not only items.
 
 ## Recipe-family relationship
 

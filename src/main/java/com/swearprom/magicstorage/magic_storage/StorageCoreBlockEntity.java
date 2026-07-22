@@ -676,13 +676,17 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public List<ItemStack> getTerminalDisplayStacks(
             String filter,
             SortMode mode,
-            SortOrder order
+            SortOrder order,
+            TerminalResourceView resourceView
     ) {
-        List<ItemStack> result = new ArrayList<>(getDisplayStacks(filter));
+        if (resourceView == TerminalResourceView.ITEM) {
+            return getDisplayStacks(filter, mode, order);
+        }
+        List<ItemStack> result = new ArrayList<>();
         if (level == null) return result;
         for (Map.Entry<StorageResourceKey, Long> entry : resourceLedger.snapshot().entrySet()) {
             StorageResourceKey key = entry.getKey();
-            if (key.kindId().equals(StorageResourceBridge.ITEM_KIND)) continue;
+            if (!resourceView.matches(key)) continue;
             if (!StorageResourceKinds.isRegistered(key)) continue;
             ItemStack representative = StorageResourceKinds.representative(
                     key, level.registryAccess());

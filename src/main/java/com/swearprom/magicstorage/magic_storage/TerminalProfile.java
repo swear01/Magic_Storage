@@ -23,7 +23,7 @@ final class TerminalProfile {
             Capability.OUTPUT_DESTINATION);
 
     private static final int PAGE_CONTROL_COUNT = 3;
-    private static final int VIEW_CONTROL_COUNT = 3;
+    private static final int VIEW_CONTROL_COUNT = 4;
 
     private final Set<Capability> capabilities;
 

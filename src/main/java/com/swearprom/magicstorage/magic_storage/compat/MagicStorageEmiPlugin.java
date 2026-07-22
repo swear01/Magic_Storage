@@ -8,6 +8,7 @@ import com.swearprom.magicstorage.magic_storage.CraftingTerminalScreen;
 import com.swearprom.magicstorage.magic_storage.MagicStorage;
 import com.swearprom.magicstorage.magic_storage.StorageTerminalMenu;
 import com.swearprom.magicstorage.magic_storage.TerminalDisplayStack;
+import com.swearprom.magicstorage.magic_storage.TerminalResourceDisplay;
 import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
 import dev.emi.emi.api.EmiRegistry;
@@ -50,7 +51,9 @@ public class MagicStorageEmiPlugin implements EmiPlugin {
             int lastSlot = handler.isUsePlayerInventory()
                     ? StorageTerminalMenu.DISPLAY_SLOTS + PLAYER_INVENTORY_SLOTS
                     : StorageTerminalMenu.DISPLAY_SLOTS;
-            return handler.slots.subList(firstSlot, Math.min(handler.slots.size(), lastSlot));
+            return handler.slots.subList(firstSlot, Math.min(handler.slots.size(), lastSlot)).stream()
+                    .filter(slot -> !TerminalResourceDisplay.isTyped(slot.getItem()))
+                    .toList();
         }
 
         @Override

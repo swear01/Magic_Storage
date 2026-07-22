@@ -99,7 +99,7 @@ ENTRIES = {
         "terminals",
         2,
         "minecraft:redstone",
-        ("patchouli:text",) * 4,
+        ("patchouli:text",) * 5,
     ),
     "energy_overview": (
         "energy",

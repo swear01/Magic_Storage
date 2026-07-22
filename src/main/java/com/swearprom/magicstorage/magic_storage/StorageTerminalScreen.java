@@ -15,6 +15,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     private static final int SCROLLER_UV_X = 232;
 
     private final List<Slot> semanticSlots;
+    private final TerminalPreferenceSession preferenceSession;
     private EditBox searchBox;
     private boolean isScrolling;
     private int lastRequestedScroll = Integer.MIN_VALUE;
@@ -45,14 +47,22 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     private SearchMode lastSeenSearchMode = SearchMode.NORMAL;
     private SortMode lastSeenSortMode = SortMode.NAME;
     private SortOrder lastSeenSortOrder = SortOrder.ASCENDING;
+    private TerminalResourceView lastSeenResourceView = TerminalResourceView.ITEM;
 
     private TerminalCycleButton sortOrderBtn;
     private TerminalCycleButton sortModeBtn;
     private TerminalCycleButton searchModeBtn;
+    private TerminalCycleButton resourceViewBtn;
 
     public StorageTerminalScreen(T menu, Inventory playerInv, Component title) {
         super(menu, playerInv, title);
         this.semanticSlots = List.copyOf(menu.slots);
+        TerminalPreferences preferences = TerminalClientPreferences.load();
+        this.preferenceSession = new TerminalPreferenceSession(
+                preferences,
+                menu instanceof CraftingTerminalMenu
+                        ? TerminalPreferenceSession.Scope.CRAFTING
+                        : TerminalPreferenceSession.Scope.STORAGE);
     }
 
     protected TerminalLayout.Geometry createGeometry() {
@@ -73,6 +83,10 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     protected boolean isItemViewActive() {
         return true;
+    }
+
+    protected final TerminalPreferences displayedPreferences() {
+        return preferenceSession.presentation(menu.getTerminalPreferences());
     }
 
     protected int playerInvLocalTop() {
@@ -138,6 +152,14 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
                         ? StorageTerminalMenu.NEXT_SEARCH_MODE_BUTTON
                         : StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON),
                 () -> sendButton(StorageTerminalMenu.RESET_SEARCH_MODE_BUTTON));
+        resourceViewBtn = addItemCycleButton(
+                Items.CHEST.getDefaultInstance(),
+                Component.translatable("tooltip.magic_storage.resource_view"),
+                railButton(viewStart + 3),
+                direction -> sendButton(direction == TerminalCycleDirection.NEXT
+                        ? StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON
+                        : StorageTerminalMenu.PREVIOUS_RESOURCE_VIEW_BUTTON),
+                () -> sendButton(StorageTerminalMenu.RESET_RESOURCE_VIEW_BUTTON));
 
         updateViewSettingButtons();
         setItemViewControlsVisible(isItemViewActive());
@@ -166,6 +188,11 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         setWidgetVisible(sortOrderBtn, visible);
         setWidgetVisible(sortModeBtn, visible);
         setWidgetVisible(searchModeBtn, visible);
+        setWidgetVisible(resourceViewBtn, visible && isResourceViewControlActive());
+    }
+
+    protected boolean isResourceViewControlActive() {
+        return isItemViewActive();
     }
 
     private static void setWidgetVisible(Button button, boolean visible) {
@@ -333,7 +360,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     private Component searchModeLabel() {
-        return switch (menu.getSearchMode()) {
+        return switch (displayedPreferences().searchMode()) {
             case NORMAL -> Component.translatable("gui.magic_storage.search_mode.name");
             case TAG -> Component.translatable("gui.magic_storage.search_mode.tag");
             case MOD -> Component.translatable("gui.magic_storage.search_mode.mod");
@@ -341,7 +368,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     private Component sortModeLabel() {
-        return switch (menu.getSortMode()) {
+        return switch (displayedPreferences().sortMode()) {
             case NAME -> Component.translatable("gui.magic_storage.sort_mode.name");
             case QUANTITY -> Component.translatable("gui.magic_storage.sort_mode.quantity");
             case MOD -> Component.translatable("gui.magic_storage.sort_mode.mod");
@@ -350,32 +377,52 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     private Component sortOrderLabel() {
-        return menu.getSortOrder() == SortOrder.ASCENDING
+        return displayedPreferences().sortOrder() == SortOrder.ASCENDING
                 ? Component.translatable("gui.magic_storage.sort_order.ascending")
                 : Component.translatable("gui.magic_storage.sort_order.descending");
     }
 
+    private Component resourceViewLabel() {
+        return Component.translatable("gui.magic_storage.resource_view."
+                + displayedPreferences().resourceView().name().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private ItemStack resourceViewIcon() {
+        return switch (displayedPreferences().resourceView()) {
+            case ITEM -> Items.CHEST.getDefaultInstance();
+            case FLUID -> Items.WATER_BUCKET.getDefaultInstance();
+            case ENERGY -> Items.REDSTONE.getDefaultInstance();
+            case GAS -> Items.BREWING_STAND.getDefaultInstance();
+            case OTHER -> Items.AMETHYST_SHARD.getDefaultInstance();
+        };
+    }
+
     private void updateViewSettingButtons() {
-        if (sortOrderBtn == null || sortModeBtn == null || searchModeBtn == null) return;
-        lastSeenSortOrder = menu.getSortOrder();
-        lastSeenSortMode = menu.getSortMode();
-        lastSeenSearchMode = menu.getSearchMode();
-        sortOrderBtn.setIcon(menu.getSortOrder() == SortOrder.ASCENDING
+        if (sortOrderBtn == null || sortModeBtn == null || searchModeBtn == null
+                || resourceViewBtn == null) return;
+        TerminalPreferences preferences = displayedPreferences();
+        lastSeenSortOrder = preferences.sortOrder();
+        lastSeenSortMode = preferences.sortMode();
+        lastSeenSearchMode = preferences.searchMode();
+        lastSeenResourceView = preferences.resourceView();
+        sortOrderBtn.setIcon(preferences.sortOrder() == SortOrder.ASCENDING
                 ? TerminalControlIcon.SORT_ASCENDING : TerminalControlIcon.SORT_DESCENDING);
-        sortModeBtn.setIcon(switch (menu.getSortMode()) {
+        sortModeBtn.setIcon(switch (preferences.sortMode()) {
             case NAME -> TerminalControlIcon.SORT_NAME;
             case QUANTITY -> TerminalControlIcon.SORT_QUANTITY;
             case MOD -> TerminalControlIcon.SORT_MOD;
             case ID -> TerminalControlIcon.SORT_ID;
         });
-        searchModeBtn.setIcon(switch (menu.getSearchMode()) {
+        searchModeBtn.setIcon(switch (preferences.searchMode()) {
             case NORMAL -> TerminalControlIcon.SEARCH;
             case TAG -> TerminalControlIcon.SEARCH_TAG;
             case MOD -> TerminalControlIcon.SEARCH_MOD;
         });
+        resourceViewBtn.setItemIcon(resourceViewIcon());
         updateCycleTooltip(sortOrderBtn, "tooltip.magic_storage.sort_order", sortOrderLabel());
         updateCycleTooltip(sortModeBtn, "tooltip.magic_storage.sort_mode", sortModeLabel());
         updateCycleTooltip(searchModeBtn, "tooltip.magic_storage.search_mode", searchModeLabel());
+        updateCycleTooltip(resourceViewBtn, "tooltip.magic_storage.resource_view", resourceViewLabel());
     }
 
     protected static void updateCycleTooltip(
@@ -395,7 +442,8 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     private void sendSettings() {
         if (minecraft != null && minecraft.player != null && minecraft.getConnection() != null) {
-            minecraft.getConnection().send(new TerminalSettingsPacket(menu.containerId, visibleRows));
+            minecraft.getConnection().send(new TerminalSettingsPacket(
+                    menu.containerId, visibleRows, preferenceSession.preferences()));
         }
     }
 
@@ -642,10 +690,15 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     @Override
     protected void containerTick() {
         super.containerTick();
-        if (menu.getSortOrder() != lastSeenSortOrder
-                || menu.getSortMode() != lastSeenSortMode
-                || menu.getSearchMode() != lastSeenSearchMode) {
-            boolean searchModeChanged = menu.getSearchMode() != lastSeenSearchMode;
+        preferenceSession.observe(menu.getTerminalPreferences()).ifPresent(preferences -> {
+            TerminalClientPreferences.save(preferences);
+        });
+        TerminalPreferences preferences = displayedPreferences();
+        if (preferences.sortOrder() != lastSeenSortOrder
+                || preferences.sortMode() != lastSeenSortMode
+                || preferences.searchMode() != lastSeenSearchMode
+                || preferences.resourceView() != lastSeenResourceView) {
+            boolean searchModeChanged = preferences.searchMode() != lastSeenSearchMode;
             updateViewSettingButtons();
             if (searchModeChanged) sendSearchPacket();
         }
@@ -653,7 +706,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     private void sendSearchPacket() {
-        String text = menu.getSearchMode().apply(searchBox.getValue());
+        String text = displayedPreferences().searchMode().apply(searchBox.getValue());
         if (text.equals(lastSentSearch)) return;
         lastSentSearch = text;
         if (minecraft != null && minecraft.player != null && minecraft.getConnection() != null) {

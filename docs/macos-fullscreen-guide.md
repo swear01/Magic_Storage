@@ -18,10 +18,15 @@ python3 scripts/run_prism_gui_session.py --scenario crafting-fuel-page
 
 runner 會：
 
-1. 寫入 `fullscreen:true`，移除任何舊的 `fullscreenResolution`；`overrideWidth=1280`、`overrideHeight=720` 僅供離開全螢幕後的 windowed fallback。
-2. 在準備世界時記錄 macOS 桌面 display mode（點數、像素、refresh、depth）。
-3. 等 `MS_GUI_TEST_READY` 後再讀一次 desktop mode；任一欄不同即 fail closed，**不交接 GUI 操作**。
-4. 將 `manifest.json`、`session.json`、`checklist.md`、log 與 shutdown artifacts 寫進 `build/gui-runs/<timestamp>-<scenario>/`。
+1. 先從明確的 `/Applications/Prism Launcher.app` 讀版本並要求11.0.3+。
+2. 要求一般Prism Launcher已開啟且account initialization完成；若沒有warm normal-root process，runner在改世界與啟client前fail。這避免Prism cold start即使帶`-o`仍刷新Microsoft/Xbox ownership。runner不建立`-d` data root，也不建立或改寫`accounts.json`。Offline-only root沒有owning account，Prism會進Demo/account-selection，不能拿來啟動完整遊戲。
+3. 對該已執行process送出 `"/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher" -l dev -w MagicStorageGuiTest -o MagicStorageBot`。這是Prism官方CLI的既有instance離線launch路徑，不透過`open -n`。
+4. launcher subprocess只帶HOME/PATH/TMPDIR/locale等必要環境；run artifact會移除Prism列出的process/native environment。
+5. 寫入 `fullscreen:true`，移除任何舊的 `fullscreenResolution`；`overrideWidth=1280`、`overrideHeight=720` 僅供離開全螢幕後的 windowed fallback。
+6. 在準備世界時記錄 macOS 桌面 display mode（點數、像素、refresh、depth）。
+7. 等 `MS_GUI_TEST_READY` 後只掃normal-root `PrismLauncher-0.log`的本次cursor片段；任何`AuthFlow:`實際step或Microsoft/Xbox/XSTS/Minecraft-services endpoint都fail closed。generic Offline task與`RefreshSchedule` bookkeeping不代表網路登入。
+8. 再讀一次 desktop mode；任一欄不同也fail closed。
+9. 將 `manifest.json`、`session.json`、`checklist.md`、Minecraft log、已清理的`prism-launcher.log` 與 shutdown artifacts 寫進同一run directory。
 
 visual scenario 的 owner 是使用者。READY、GameTest 或 client smoke 都不等於 GUI 視覺驗收。
 
