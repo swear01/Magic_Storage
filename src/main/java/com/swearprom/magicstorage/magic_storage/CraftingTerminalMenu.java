@@ -57,6 +57,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             Map<StorageResourceKey, Long> coreDeltas,
             ToolUsePlan toolUse
     ) {}
+    private record TypedConsumption(
+            Map<StorageResourceKey, Long> consumed,
+            Map<StorageResourceKey, Long> remainders
+    ) {}
     private record CraftPlan(long crafts, IngredientPlan ingredients, DeliveryPlan delivery) {}
     private enum DeliveryTarget {
         CURSOR,
@@ -514,6 +518,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             resources.add(RecipePresentation.Resource.energy(
                     energy.type(), energy.available(), energy.required()));
         }
+        if (metadata.stationWorkRequired() > 0) {
+            resources.add(RecipePresentation.Resource.stationWork(
+                    selectionContainer.getItem(PRESENTATION_STATION_SLOT),
+                    metadata.stationWorkAvailable(),
+                    metadata.stationWorkRequired()));
+        }
         if (metadata.toolRequired() > 0) {
             ItemStack tool = selectionContainer.getItem(PRESENTATION_TOOL_SLOT);
             if (tool.isEmpty()) {
@@ -527,7 +537,24 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 inputs,
                 selectionContainer.getItem(PRESENTATION_OUTPUT_SLOT),
                 selectionContainer.getItem(PRESENTATION_STATION_SLOT),
+                presentationStationVariants(metadata.stationDescriptorId()),
                 resources);
+    }
+
+    private List<ItemStack> presentationStationVariants(ResourceLocation descriptorId) {
+        ItemStack installed = selectionContainer.getItem(PRESENTATION_STATION_SLOT);
+        MachineDescriptor descriptor = descriptorSnapshot.stream()
+                .filter(candidate -> candidate.id().equals(descriptorId))
+                .findFirst()
+                .orElse(null);
+        if (descriptor == null) return List.of(installed);
+        List<ItemStack> ordered = new ArrayList<>();
+        ordered.add(installed.copyWithCount(1));
+        for (MachineVariant variant : descriptor.variants()) {
+            ItemStack stack = variant.stack();
+            if (!stack.is(installed.getItem())) ordered.add(stack);
+        }
+        return List.copyOf(ordered);
     }
 
     public List<EnergyPreview> getEnergyPreview() {
@@ -935,9 +962,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             }
         }
         if (crafts <= 0 || ingredientPlan == null || deliveryPlan == null) return false;
-        EnergyCost energyCost = match.cost().energyCost().orElse(null);
         if (!commitCraft(
-                core, ingredientPlan, deliveryPlan, player, match, energyCost, crafts)) return false;
+                core, ingredientPlan, deliveryPlan, player, match, crafts)) return false;
         selectRecipeById(level, recipeId, result, player, core);
         refreshDisplayItems(core);
         updatePreview(core, player);
@@ -1103,8 +1129,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
         RecipeAdapterMatch match = resolveCurrentRecipeMatch(player.level());
         if (match == null) return false;
-        EnergyCost energyCost = match.cost().energyCost().orElse(null);
-        if (!hasEnergyForCrafts(core, energyCost, count)) return false;
+        if (!hasRecipeCostsForCrafts(core, match.cost(), count)) return false;
         List<IngredientSource> sources = snapshotIngredientSources(core, player);
         CraftPlan plan = planCraft(
                 core, match, count, DeliveryTarget.from(outputDestination), player, sources);
@@ -1114,7 +1139,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 plan.delivery(),
                 player,
                 match,
-                energyCost,
                 plan.crafts())) return false;
 
         refreshDisplayItems(core);
@@ -1133,14 +1157,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         long resourceMaximum = maximumResourceCrafts(match, core, sources);
         CraftPlan plan = largestDeliverablePlan(
                 core, match, resourceMaximum, DeliveryTarget.from(outputDestination), player, sources);
-        EnergyCost energyCost = match.cost().energyCost().orElse(null);
         if (plan == null || !commitCraft(
                 core,
                 plan.ingredients(),
                 plan.delivery(),
                 player,
                 match,
-                energyCost,
                 plan.crafts())) return;
         refreshDisplayItems(core);
         updatePreview(core, player);
@@ -1187,9 +1209,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             Player player,
             List<IngredientSource> sources
     ) {
-        EnergyCost energyCost = match.cost().energyCost().orElse(null);
-        if (crafts <= 0 || !hasEnergyForCrafts(core, energyCost, crafts)
-                || !hasToolForCrafts(core, match.cost().toolCost().orElse(null), crafts)) return null;
+        if (crafts <= 0 || !hasRecipeCostsForCrafts(core, match.cost(), crafts)) return null;
         TypedRecipePlan typedPlan = match.typedRecipePlan().orElse(null);
         if (typedPlan != null && !hasTypedInputs(core, typedPlan, crafts)) return null;
         IngredientPlan ingredients = typedPlan == null
@@ -1223,6 +1243,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 if (cost.fuelAmount() > 0) {
                     high = Math.min(high, core.getEnergy(cost.fuelType()) / cost.fuelAmount());
                 }
+            }
+            RecipeAdapterMatch.StationWorkCost stationWork =
+                    match.cost().stationWorkCost().orElse(null);
+            if (stationWork != null) {
+                high = Math.min(high,
+                        core.getStationWork(stationWork.descriptorId()) / stationWork.amountPerCraft());
             }
             return high;
         }
@@ -1262,6 +1288,12 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 high = Math.min(high, core.getEnergy(cost.fuelType()) / cost.fuelAmount());
             }
         }
+        RecipeAdapterMatch.StationWorkCost stationWork =
+                match.cost().stationWorkCost().orElse(null);
+        if (stationWork != null) {
+            high = Math.min(high,
+                    core.getStationWork(stationWork.descriptorId()) / stationWork.amountPerCraft());
+        }
         if (high <= 0) return 0;
 
         long low = 0;
@@ -1281,16 +1313,27 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             StorageCoreBlockEntity core,
             TypedRecipePlan plan
     ) {
-        long maximum = Long.MAX_VALUE;
+        long upperBound = Long.MAX_VALUE;
+        boolean hasConsumedInput = false;
         for (TypedRecipeInput input : plan.inputs()) {
-            long available = core.getResourceAmount(input.key());
+            long available = typedInputAvailable(core, input);
             if (input.role() == TypedRecipeInput.Role.CONSUME) {
-                maximum = Math.min(maximum, available / input.amount());
+                hasConsumedInput = true;
+                upperBound = Math.min(upperBound, available / input.amount());
             } else if (available < input.amount()) {
                 return 0;
             }
         }
-        return maximum;
+        if (!hasConsumedInput || upperBound == 0) return hasConsumedInput ? 0 : Long.MAX_VALUE;
+        long low = 0;
+        long high = upperBound;
+        while (low < high) {
+            long difference = high - low;
+            long candidate = low + difference / 2 + difference % 2;
+            if (planTypedConsumption(core, plan, candidate) != null) low = candidate;
+            else high = candidate - 1;
+        }
+        return low;
     }
 
     private static boolean hasTypedInputs(
@@ -1300,17 +1343,31 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
     ) {
         if (crafts <= 0) return false;
         for (TypedRecipeInput input : plan.inputs()) {
-            long required;
-            try {
-                required = input.role() == TypedRecipeInput.Role.CONSUME
-                        ? Math.multiplyExact(input.amount(), crafts)
-                        : input.amount();
-            } catch (ArithmeticException exception) {
-                return false;
-            }
-            if (core.getResourceAmount(input.key()) < required) return false;
+            if (input.role() != TypedRecipeInput.Role.CONSUME
+                    && typedInputAvailable(core, input) < input.amount()) return false;
         }
-        return true;
+        return planTypedConsumption(core, plan, crafts) != null;
+    }
+
+    private static long typedInputAvailable(
+            StorageCoreBlockEntity core,
+            TypedRecipeInput input
+    ) {
+        long available = 0;
+        for (StorageResourceKey alternative : input.alternatives()) {
+            available = saturatingAdd(available, core.getResourceAmount(alternative));
+        }
+        return available;
+    }
+
+    private static StorageResourceKey typedInputRepresentativeKey(
+            StorageCoreBlockEntity core,
+            TypedRecipeInput input
+    ) {
+        for (StorageResourceKey alternative : input.alternatives()) {
+            if (core.getResourceAmount(alternative) > 0) return alternative;
+        }
+        return input.key();
     }
 
     private static boolean hasEnergyForCrafts(
@@ -1326,6 +1383,24 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return core.getEnergy(energyCost.processType()) >= processNeed
                     && core.getEnergy(energyCost.fuelType()) >= fuelNeed;
         } catch (ArithmeticException e) {
+            return false;
+        }
+    }
+
+    private static boolean hasRecipeCostsForCrafts(
+            StorageCoreBlockEntity core,
+            RecipeAdapterMatch.Cost cost,
+            long crafts
+    ) {
+        if (crafts <= 0 || !hasEnergyForCrafts(
+                core, cost.energyCost().orElse(null), crafts)
+                || !hasToolForCrafts(core, cost.toolCost().orElse(null), crafts)) return false;
+        RecipeAdapterMatch.StationWorkCost stationWork = cost.stationWorkCost().orElse(null);
+        if (stationWork == null) return true;
+        try {
+            return core.getStationWork(stationWork.descriptorId()) >= Math.multiplyExact(
+                    stationWork.amountPerCraft(), crafts);
+        } catch (ArithmeticException exception) {
             return false;
         }
     }
@@ -1416,9 +1491,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         if (typedPlan != null) {
             max = Math.min(max, maximumTypedCrafts(core, typedPlan));
             for (TypedRecipeInput input : typedPlan.inputs()) {
-                long available = core.getResourceAmount(input.key());
+                long available = typedInputAvailable(core, input);
                 ItemStack representative = StorageResourceKinds.representative(
-                        input.key(), core.getLevel().registryAccess());
+                        typedInputRepresentativeKey(core, input),
+                        core.getLevel().registryAccess());
                 ingredientPreviews.add(new IngredientPreview(
                         representative, available, input.amount()));
                 if (available < input.amount() && missing.size() < MAX_INGREDIENTS) {
@@ -1455,6 +1531,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                     ? Long.MAX_VALUE
                     : core.getDescriptorAmount(toolCost.descriptorId());
             max = Math.min(max, available / toolCost.amountPerCraft());
+        }
+
+        RecipeAdapterMatch.StationWorkCost stationWork =
+                match.cost().stationWorkCost().orElse(null);
+        if (stationWork != null) {
+            max = Math.min(max,
+                    core.getStationWork(stationWork.descriptorId()) / stationWork.amountPerCraft());
         }
 
         EnergyCost cost = match.cost().energyCost().orElse(null);
@@ -1584,6 +1667,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
 
         RecipePresentation.Metadata metadata = new RecipePresentation.Metadata(
                 match.holder().id(),
+                match.stationDescriptorId(),
                 semantics.kind(),
                 semantics.width(),
                 semantics.height(),
@@ -1591,7 +1675,13 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 itemResourceCount,
                 toolAvailable,
                 toolRequired,
-                toolInfinite);
+                toolInfinite,
+                match.cost().stationWorkCost()
+                        .map(cost -> core.getStationWork(cost.descriptorId()))
+                        .orElse(0L),
+                match.cost().stationWorkCost()
+                        .map(RecipeAdapterMatch.StationWorkCost::amountPerCraft)
+                        .orElse(0L));
         selectionContainer.setItem(
                 PRESENTATION_METADATA_SLOT, RecipePresentation.metadataCarrier(metadata));
     }
@@ -1791,10 +1881,32 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
         ItemStack carried = getCarried().copy();
         Level level = core.getLevel();
         if (level == null) return null;
+        TypedRecipePlan typedPlan = match.typedRecipePlan().orElse(null);
+        TypedConsumption typedConsumption = typedPlan == null
+                ? new TypedConsumption(Map.of(), Map.of())
+                : planTypedConsumption(core, typedPlan, crafts);
+        if (typedConsumption == null) return null;
         RecipeAdapterMatch.CheckedOutput checkedOutput = match.checkedOutput(
                 ingredientPlan.allocations(), crafts, level).orElse(null);
         if (checkedOutput == null) return null;
         Map<ItemKey, Long> primaryOutputs = checkedOutput.primaryOutputs();
+        Map<ItemKey, Long> remainders = new LinkedHashMap<>(checkedOutput.remainders());
+        Map<StorageResourceKey, Long> resourceOutputs = new LinkedHashMap<>(
+                checkedOutput.resourceOutputs());
+        try {
+            for (Map.Entry<StorageResourceKey, Long> entry
+                    : typedConsumption.remainders().entrySet()) {
+                var itemKey = StorageResourceBridge.itemKey(
+                        entry.getKey(), level.registryAccess());
+                if (itemKey.isPresent()) {
+                    remainders.merge(itemKey.orElseThrow(), entry.getValue(), Math::addExact);
+                } else {
+                    resourceOutputs.merge(entry.getKey(), entry.getValue(), Math::addExact);
+                }
+            }
+        } catch (ArithmeticException exception) {
+            return null;
+        }
         Map<ItemKey, Long> coreOutputs = new LinkedHashMap<>();
         if (destination == DeliveryTarget.CURSOR) {
             if (primaryOutputs.size() != 1) return null;
@@ -1825,7 +1937,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             return null;
         }
 
-        for (Map.Entry<ItemKey, Long> entry : checkedOutput.remainders().entrySet()) {
+        for (Map.Entry<ItemKey, Long> entry : remainders.entrySet()) {
             if (destination == DeliveryTarget.STORAGE) {
                 if (!addCoreOutput(coreOutputs, entry.getKey(), entry.getValue())) return null;
             } else if (!addOutputToInventoryThenCore(
@@ -1837,9 +1949,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 core,
                 ingredientPlan,
                 coreOutputs,
-                checkedOutput.resourceOutputs(),
-                match.typedRecipePlan().orElse(null),
-                crafts);
+                resourceOutputs,
+                typedConsumption.consumed());
         if (coreDeltas == null || !coreDeltas.isEmpty()
                 && !applyCoreResourceDeltas(
                 core, coreDeltas, Action.SIMULATE)) return null;
@@ -1852,11 +1963,10 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             IngredientPlan ingredientPlan,
             Map<ItemKey, Long> coreOutputs,
             Map<StorageResourceKey, Long> resourceOutputs,
-            TypedRecipePlan typedPlan,
-            long crafts
+            Map<StorageResourceKey, Long> typedConsumption
     ) {
         Level level = core.getLevel();
-        if (level == null || crafts <= 0) return null;
+        if (level == null) return null;
         Map<StorageResourceKey, Long> deltas = new LinkedHashMap<>();
         try {
             for (Map.Entry<ItemKey, Long> entry : ingredientPlan.coreReservations().entrySet()) {
@@ -1874,19 +1984,89 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             for (Map.Entry<StorageResourceKey, Long> entry : resourceOutputs.entrySet()) {
                 mergeResourceDelta(deltas, entry.getKey(), entry.getValue());
             }
-            if (typedPlan != null) {
-                for (TypedRecipeInput input : typedPlan.inputs()) {
-                    if (input.role() != TypedRecipeInput.Role.CONSUME) continue;
-                    mergeResourceDelta(
-                            deltas,
-                            input.key(),
-                            Math.negateExact(Math.multiplyExact(input.amount(), crafts)));
-                }
+            for (Map.Entry<StorageResourceKey, Long> entry : typedConsumption.entrySet()) {
+                mergeResourceDelta(deltas, entry.getKey(), Math.negateExact(entry.getValue()));
             }
         } catch (ArithmeticException exception) {
             return null;
         }
         return Map.copyOf(deltas);
+    }
+
+    private static TypedConsumption planTypedConsumption(
+            StorageCoreBlockEntity core,
+            TypedRecipePlan plan,
+            long crafts
+    ) {
+        if (crafts <= 0) return null;
+        List<TypedRecipeInput> inputs = plan.inputs().stream()
+                .filter(input -> input.role() == TypedRecipeInput.Role.CONSUME)
+                .toList();
+        if (inputs.isEmpty()) return new TypedConsumption(Map.of(), Map.of());
+        List<StorageResourceKey> resources = inputs.stream()
+                .flatMap(input -> input.alternatives().stream())
+                .distinct()
+                .toList();
+        int sourceNode = 0;
+        int resourceStart = 1;
+        int inputStart = resourceStart + resources.size();
+        int sinkNode = inputStart + inputs.size();
+        List<List<FlowEdge>> graph = new ArrayList<>(sinkNode + 1);
+        for (int index = 0; index <= sinkNode; index++) graph.add(new ArrayList<>());
+        for (int index = 0; index < resources.size(); index++) {
+            addFlowEdge(
+                    graph,
+                    sourceNode,
+                    resourceStart + index,
+                    core.getResourceAmount(resources.get(index)));
+        }
+        long totalRequired = 0;
+        try {
+            for (int inputIndex = 0; inputIndex < inputs.size(); inputIndex++) {
+                TypedRecipeInput input = inputs.get(inputIndex);
+                long required = Math.multiplyExact(input.amount(), crafts);
+                totalRequired = Math.addExact(totalRequired, required);
+                addFlowEdge(graph, inputStart + inputIndex, sinkNode, required);
+                for (int resourceIndex = 0; resourceIndex < resources.size(); resourceIndex++) {
+                    StorageResourceKey resource = resources.get(resourceIndex);
+                    if (input.alternatives().contains(resource)) {
+                        addFlowEdge(
+                                graph,
+                                resourceStart + resourceIndex,
+                                inputStart + inputIndex,
+                                core.getResourceAmount(resource));
+                    }
+                }
+            }
+        } catch (ArithmeticException exception) {
+            return null;
+        }
+        if (maximumFlow(graph, sourceNode, sinkNode) != totalRequired) return null;
+
+        Map<StorageResourceKey, Long> consumed = new LinkedHashMap<>();
+        Map<StorageResourceKey, Long> remainders = new LinkedHashMap<>();
+        try {
+            for (int resourceIndex = 0; resourceIndex < resources.size(); resourceIndex++) {
+                StorageResourceKey resource = resources.get(resourceIndex);
+                for (FlowEdge edge : graph.get(resourceStart + resourceIndex)) {
+                    if (edge.to < inputStart || edge.to >= sinkNode) continue;
+                    long allocated = edge.originalCapacity - edge.capacity;
+                    if (allocated <= 0) continue;
+                    consumed.merge(resource, allocated, Math::addExact);
+                    TypedRecipeInput input = inputs.get(edge.to - inputStart);
+                    TypedRecipeOutput remainder = input.remainderFor(resource).orElse(null);
+                    if (remainder != null) {
+                        remainders.merge(
+                                remainder.key(),
+                                Math.multiplyExact(remainder.amount(), allocated),
+                                Math::addExact);
+                    }
+                }
+            }
+        } catch (ArithmeticException exception) {
+            return null;
+        }
+        return new TypedConsumption(Map.copyOf(consumed), Map.copyOf(remainders));
     }
 
     private static void mergeResourceDelta(
@@ -1975,7 +2155,6 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
             DeliveryPlan delivery,
             Player player,
             RecipeAdapterMatch plannedMatch,
-            EnergyCost energyCost,
             long crafts
     ) {
         Level level = core.getLevel();
@@ -1989,9 +2168,8 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                 || !plannedMatch.validatesCommit(currentMatch.holder())
                 || !currentMatch.validatesCommit(currentMatch.holder())
                 || !plannedMatch.typedRecipePlan().equals(currentMatch.typedRecipePlan())
-                || !hasEnergyForCrafts(core, energyCost, crafts)
-                || !hasToolForCrafts(
-                core, currentMatch.cost().toolCost().orElse(null), crafts)
+                || !plannedMatch.cost().equals(currentMatch.cost())
+                || !hasRecipeCostsForCrafts(core, currentMatch.cost(), crafts)
                 || currentMatch.typedRecipePlan().isPresent()
                 && !hasTypedInputs(
                 core, currentMatch.typedRecipePlan().orElseThrow(), crafts)) return false;
@@ -2012,12 +2190,7 @@ public class CraftingTerminalMenu extends StorageTerminalMenu {
                     core, delivery.coreDeltas(), Action.SIMULATE)
                     || !applyCoreResourceDeltas(
                     core, delivery.coreDeltas(), Action.EXECUTE))) return false;
-            if (energyCost != null && !core.consumeEnergy(energyCost, crafts)) {
-                rollbackResourceTransaction(core, delivery.coreDeltas());
-                return false;
-            }
-            if (toolUse != null
-                    && !core.consumeDescriptor(toolUse.descriptorId(), toolUse.amount())) {
+            if (!core.consumeCraftCosts(currentMatch.cost(), crafts)) {
                 rollbackResourceTransaction(core, delivery.coreDeltas());
                 return false;
             }

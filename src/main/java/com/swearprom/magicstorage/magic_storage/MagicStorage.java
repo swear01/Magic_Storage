@@ -233,6 +233,7 @@ public class MagicStorage {
 
     public MagicStorage(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.CLIENT, TerminalClientPreferences.SPEC);
+        OptionalModRecipeCompatibility.register();
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
         BLOCK_ENTITIES.register(modEventBus);

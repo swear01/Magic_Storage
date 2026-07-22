@@ -30,6 +30,14 @@ sourceSets {
         compileClasspath += sourceSets.main.output + configurations.compileClasspath
         runtimeClasspath += output + sourceSets.main.runtimeClasspath
     }
+    ironFurnacesFixture {
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
+    farmersDelightFixture {
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
 }
 
 base {
@@ -43,6 +51,8 @@ neoForge {
     addModdingDependenciesTo sourceSets.fusionRuntime
     addModdingDependenciesTo sourceSets.recipeAddonFixture
     addModdingDependenciesTo sourceSets.mekanismFixture
+    addModdingDependenciesTo sourceSets.ironFurnacesFixture
+    addModdingDependenciesTo sourceSets.farmersDelightFixture
 
     mods {
         "${mod_id}" {
@@ -53,6 +63,12 @@ neoForge {
         }
         magic_storage_mekanism_fixture {
             sourceSet(sourceSets.mekanismFixture)
+        }
+        magic_storage_iron_furnaces_fixture {
+            sourceSet(sourceSets.ironFurnacesFixture)
+        }
+        magic_storage_farmers_delight_fixture {
+            sourceSet(sourceSets.farmersDelightFixture)
         }
     }
 
@@ -94,6 +110,20 @@ neoForge {
             sourceSet = sourceSets.mekanismFixture
             loadedMods = [mods."${mod_id}", mods.magic_storage_mekanism_fixture]
             systemProperty 'neoforge.enabledGameTestNamespaces', 'magic_storage_mekanism_fixture'
+        }
+
+        ironFurnacesGameTestServer {
+            type = "gameTestServer"
+            sourceSet = sourceSets.ironFurnacesFixture
+            loadedMods = [mods."${mod_id}", mods.magic_storage_iron_furnaces_fixture]
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'magic_storage_iron_furnaces_fixture'
+        }
+
+        farmersDelightGameTestServer {
+            type = "gameTestServer"
+            sourceSet = sourceSets.farmersDelightFixture
+            loadedMods = [mods."${mod_id}", mods.magic_storage_farmers_delight_fixture]
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'magic_storage_farmers_delight_fixture'
         }
 
         data {
@@ -153,7 +183,11 @@ dependencies {
     runtimeOnly "vazkii.patchouli:Patchouli:${patchouli_version}"
     compileOnly "maven.modrinth:emi:${emi_runtime_version}"
     compileOnly "maven.modrinth:mekanism:${mekanism_ci_version}"
+    compileOnly "maven.modrinth:iron-furnaces:${iron_furnaces_ci_version}"
+    compileOnly "maven.modrinth:farmers-delight:${farmers_delight_ci_version}"
     mekanismFixtureRuntimeOnly "maven.modrinth:mekanism:${mekanism_ci_version}"
+    ironFurnacesFixtureRuntimeOnly "maven.modrinth:iron-furnaces:${iron_furnaces_ci_version}"
+    farmersDelightFixtureRuntimeOnly "maven.modrinth:farmers-delight:${farmers_delight_ci_version}"
     fusionRuntimeRuntimeOnly "maven.modrinth:emi:${emi_runtime_version}"
     emiRuntime "maven.modrinth:emi:${emi_runtime_version}"
     fusionRuntimeRuntimeOnly "maven.modrinth:fusion-connected-textures:h2GrA0Ku"
@@ -220,14 +254,14 @@ tasks.named('check').configure {
 }
 
 def baseGameTestLatestLog = layout.projectDirectory.file('run/logs/latest.log').asFile
-def expectedSelfTestSummary = 'SelfTest: 224723 passed, 0 failed, 224723 total'
+def expectedSelfTestSummary = 'SelfTest: 224741 passed, 0 failed, 224741 total'
 tasks.named('runGameTestServer').configure {
     doLast {
         if (!baseGameTestLatestLog.exists()) {
             throw new GradleException('Base GameTest did not produce run/logs/latest.log')
         }
         def text = baseGameTestLatestLog.getText('UTF-8')
-        if (!text.contains('All 371 required tests passed')
+        if (!text.contains('All 372 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException('Base GameTest or SelfTest did not pass; inspect run/logs/latest.log')
@@ -242,7 +276,7 @@ tasks.named('runRecipeAddonGameTestServer').configure {
             throw new GradleException('Recipe addon GameTest did not produce run/logs/latest.log')
         }
         def text = recipeAddonLatestLog.getText('UTF-8')
-        if (!text.contains('All 14 required tests passed')
+        if (!text.contains('All 17 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException('Recipe addon GameTest or SelfTest did not pass; inspect run/logs/latest.log')
@@ -257,10 +291,40 @@ tasks.named('runMekanismGameTestServer').configure {
             throw new GradleException('Mekanism GameTest did not produce run/logs/latest.log')
         }
         def text = mekanismLatestLog.getText('UTF-8')
-        if (!text.contains('All 5 required tests passed')
+        if (!text.contains('All 17 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException('Mekanism GameTest or SelfTest did not pass; inspect run/logs/latest.log')
+        }
+    }
+}
+
+def ironFurnacesLatestLog = layout.projectDirectory.file('run/logs/latest.log').asFile
+tasks.named('runIronFurnacesGameTestServer').configure {
+    doLast {
+        if (!ironFurnacesLatestLog.exists()) {
+            throw new GradleException('Iron Furnaces GameTest did not produce run/logs/latest.log')
+        }
+        def text = ironFurnacesLatestLog.getText('UTF-8')
+        if (!text.contains('All 3 required tests passed')
+                || !text.contains(expectedSelfTestSummary)
+                || text.contains('TESTS FAILED!')) {
+            throw new GradleException('Iron Furnaces GameTest or SelfTest did not pass; inspect run/logs/latest.log')
+        }
+    }
+}
+
+def farmersDelightLatestLog = layout.projectDirectory.file('run/logs/latest.log').asFile
+tasks.named('runFarmersDelightGameTestServer').configure {
+    doLast {
+        if (!farmersDelightLatestLog.exists()) {
+            throw new GradleException("Farmer's Delight GameTest did not produce run/logs/latest.log")
+        }
+        def text = farmersDelightLatestLog.getText('UTF-8')
+        if (!text.contains('All 5 required tests passed')
+                || !text.contains(expectedSelfTestSummary)
+                || text.contains('TESTS FAILED!')) {
+            throw new GradleException("Farmer's Delight GameTest or SelfTest did not pass; inspect run/logs/latest.log")
         }
     }
 }

@@ -112,6 +112,12 @@ public class PersistenceTests {
         source.putItem(ItemKey.of(namedDiamond), Long.MAX_VALUE - 7, registries);
         source.machines().setItem(MachineEnergyTable.FURNACE_SLOT, new ItemStack(Items.FURNACE, 3));
         source.descriptorAmounts().put(MachineEnergyTable.AXE_ID, 37L);
+        source.machineWorkRemainders().put(
+                MachineEnergyTable.FURNACE_ID,
+                new MachineWorkAccumulator.Remainder(
+                        ResourceLocation.withDefaultNamespace("furnace"),
+                        MachineWorkRate.of(5, 18),
+                        7));
         source.infiniteDescriptors().add(ResourceLocation.fromNamespaceAndPath(
                 MagicStorage.MODID, "round_trip_infinite"));
 
@@ -147,6 +153,7 @@ public class PersistenceTests {
         if (restored.getItemCount(ItemKey.of(namedDiamond), registries) != Long.MAX_VALUE - 7
                 || restored.machines().getItem(MachineEnergyTable.FURNACE_SLOT).getCount() != 3
                 || restored.descriptorAmounts().getOrDefault(MachineEnergyTable.AXE_ID, 0L) != 37
+                || restored.machineWorkRemainders().get(MachineEnergyTable.FURNACE_ID).remainder() != 7
                 || restored.unresolvedInventoryEntries().size() != 1
                 || restored.unresolvedMachineEntries().size() != 1
                 || restored.unresolvedDescriptorEntries().size() != 2) {
@@ -156,6 +163,22 @@ public class PersistenceTests {
         if (!restored.unresolvedInventoryEntries().getFirst().equals(unresolvedInventory)
                 || !restored.unresolvedMachineEntries().getFirst().equals(unresolvedMachine)) {
             helper.fail("Unavailable addon NBT changed during repository round trip");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "platform")
+    public static void legacy_record_without_machine_work_payload_still_loads(GameTestHelper helper) {
+        var registries = helper.getLevel().registryAccess();
+        CoreStorageRecord source = CoreStorageRecord.fresh(UUID.randomUUID());
+        CompoundTag encoded = source.save(registries);
+        encoded.remove(CoreStorageRecord.TAG_MACHINE_WORK);
+        CoreStorageRecord.LoadResult decoded = CoreStorageRecord.load(encoded, registries);
+        if (!decoded.success()
+                || !decoded.record().stationWork().isEmpty()
+                || !decoded.record().machineWorkRemainders().isEmpty()) {
+            helper.fail("Legacy record without optional machine work payload did not load empty");
             return;
         }
         helper.succeed();

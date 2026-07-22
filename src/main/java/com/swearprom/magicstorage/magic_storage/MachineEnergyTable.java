@@ -56,8 +56,15 @@ public final class MachineEnergyTable {
     }
 
     static void registerBuiltIns(DeferredRegister<MachineDescriptor> descriptors) {
-        descriptors.register(FURNACE_ID.getPath(), () -> installable(
-                FURNACE_ID, new ItemStack(Items.FURNACE), EnergyType.SMELTING_ENERGY, 1, Category.PROCESS, 64));
+        descriptors.register(FURNACE_ID.getPath(), () -> MachineDescriptor.installableVariants(
+                FURNACE_ID,
+                () -> MachineVariantContributors.combine(
+                        FURNACE_ID,
+                        List.of(MachineVariant.of(
+                                new ItemStack(Items.FURNACE), MachineWorkRate.ONE))),
+                Category.PROCESS,
+                64,
+                EnergyType.SMELTING_ENERGY));
         descriptors.register(BLAST_FURNACE_ID.getPath(), () -> installable(
                 BLAST_FURNACE_ID, new ItemStack(Items.BLAST_FURNACE), EnergyType.BLASTING_ENERGY, 1, Category.PROCESS, 64));
         descriptors.register(SMOKER_ID.getPath(), () -> installable(
@@ -179,6 +186,15 @@ public final class MachineEnergyTable {
             buf.writeBoolean(descriptor.energyType() != null);
             if (descriptor.energyType() != null) buf.writeEnum(descriptor.energyType());
             buf.writeVarInt(descriptor.energyPerTick());
+            buf.writeBoolean(descriptor.isPolymorphic());
+            List<MachineVariant> variants = descriptor.isPolymorphic()
+                    ? descriptor.variants() : List.of();
+            buf.writeVarInt(variants.size());
+            for (MachineVariant variant : variants) {
+                ItemStack.STREAM_CODEC.encode(buf, variant.stack());
+                buf.writeVarLong(variant.rate().numerator());
+                buf.writeVarLong(variant.rate().denominator());
+            }
         }
     }
 
@@ -198,14 +214,23 @@ public final class MachineEnergyTable {
             int maxInstalledCount = buf.readVarInt();
             EnergyType energyType = buf.readBoolean() ? buf.readEnum(EnergyType.class) : null;
             int energyPerTick = buf.readVarInt();
-            descriptors.add(MachineDescriptor.clientSynced(
-                    id,
-                    representative,
-                    acceptedItems,
-                    category,
-                    maxInstalledCount,
-                    energyType,
-                    energyPerTick));
+            boolean polymorphic = buf.readBoolean();
+            int variantCount = buf.readVarInt();
+            if (variantCount < 0 || variantCount > 64) {
+                throw new IllegalArgumentException("Invalid machine variant count: " + variantCount);
+            }
+            List<MachineVariant> variants = new ArrayList<>(variantCount);
+            for (int variant = 0; variant < variantCount; variant++) {
+                variants.add(MachineVariant.of(
+                        ItemStack.STREAM_CODEC.decode(buf),
+                        MachineWorkRate.of(buf.readVarLong(), buf.readVarLong())));
+            }
+            descriptors.add(!polymorphic
+                    ? MachineDescriptor.clientSynced(
+                            id, representative, acceptedItems, category,
+                            maxInstalledCount, energyType, energyPerTick)
+                    : MachineDescriptor.clientSyncedVariants(
+                            id, variants, category, maxInstalledCount, energyType));
         }
         return List.copyOf(descriptors);
     }

@@ -752,13 +752,14 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertNotRegex(build, r'(?m)^\s*url\s+"')
         self.assertIn('url = uri("file://${project.projectDir}/repo")', build)
 
-    def test_recipe_addon_gametest_gate_rejects_any_selftest_failure(self):
+    def test_all_gametest_gates_reject_any_selftest_failure(self):
         build = self.read_required("build.gradle")
         self.assertIn("tasks.named('runGameTestServer').configure", build)
-        self.assertIn("All 371 required tests passed", build)
-        self.assertIn("All 14 required tests passed", build)
+        self.assertIn("All 372 required tests passed", build)
+        self.assertEqual(build.count("All 17 required tests passed"), 2)
+        self.assertIn("All 3 required tests passed", build)
         self.assertIn("All 5 required tests passed", build)
-        self.assertIn("SelfTest: 224723 passed, 0 failed, 224723 total", build)
+        self.assertIn("SelfTest: 224741 passed, 0 failed, 224741 total", build)
         self.assertIn("text.contains('TESTS FAILED!')", build)
         self.assertNotIn("SelfTest: 1 TESTS FAILED!", build)
 
@@ -2415,8 +2416,15 @@ class StaticRegressionTests(unittest.TestCase):
         self.assertIn("PRESENTATION_OUTPUT_SLOT", clear_presentation)
 
         self.assertIn("renderRecipeStationHint", screen)
-        self.assertIn("presentation.station()", screen)
-        self.assertNotIn("presentation.station()", native)
+        displayed_station = self.java_block(
+            screen,
+            r"\bprivate\s+ItemStack\s+displayedRecipeStation\s*\(",
+            "cycling recipe station badge",
+        )
+        self.assertIn("getGameTime() / 40L", displayed_station)
+        self.assertIn("presentation.stationForCycle(cycle)", displayed_station)
+        self.assertIn("displayedRecipeStation(presentation)", screen)
+        self.assertNotIn("stationForCycle", native)
         recipe_geometry = self.java_block(
             layout,
             r"\bprivate\s+static\s+RecipeGeometry\s+recipeGeometry\s*\(",

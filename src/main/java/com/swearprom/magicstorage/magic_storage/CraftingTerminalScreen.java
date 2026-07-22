@@ -813,8 +813,13 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
         TerminalLayout.Rect station = geometry.recipeStation();
         int x = leftPos + station.x() + (station.width() - 16) / 2;
         int y = topPos + station.y() + (station.height() - 16) / 2;
-        graphics.renderItem(presentation.station(), x, y);
+        graphics.renderItem(displayedRecipeStation(presentation), x, y);
         graphics.fill(x, y, x + 16, y + 16, 0x58000000);
+    }
+
+    private ItemStack displayedRecipeStation(RecipePresentation presentation) {
+        long cycle = minecraft.level == null ? 0 : minecraft.level.getGameTime() / 40L;
+        return presentation.stationForCycle(cycle);
     }
 
     private void renderResourceRow(
@@ -859,7 +864,8 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             TerminalLayout.Rect station = geometry.recipeStation();
             if (station.contains(mouseX - leftPos, mouseY - topPos)) {
                 graphics.renderTooltip(font, Component.translatable(
-                        "gui.magic_storage.recipe_station", presentation.station().getHoverName()),
+                        "gui.magic_storage.recipe_station",
+                        displayedRecipeStation(presentation).getHoverName()),
                         mouseX, mouseY);
                 return;
             }
@@ -915,9 +921,12 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
             List<Component> tooltip = new ArrayList<>();
             tooltip.add(machineName);
             if (entry.generatesEnergy()) {
-                int rate = installed.isEmpty() || !entry.accepts(installed)
-                        ? 0 : installed.getCount() * entry.energyPerTick();
-                tooltip.add(Component.translatable("tooltip.magic_storage.machine_rate", rate));
+                MachineWorkRate rate = installed.isEmpty()
+                        ? MachineWorkRate.ZERO
+                        : entry.rateFor(installed).orElse(MachineWorkRate.ZERO);
+                tooltip.add(Component.translatable(
+                        "tooltip.magic_storage.machine_rate",
+                        formatMachineRate(rate, installed.getCount())));
                 tooltip.add(Component.translatable("tooltip.magic_storage.energy_stored",
                         menu.getEnergyAmount(entry.energyType())));
             } else if (entry.category() == MachineEnergyTable.Category.CONSUMABLE) {
@@ -949,6 +958,19 @@ public class CraftingTerminalScreen extends StorageTerminalScreen<CraftingTermin
                 && input.contains(mouseX - leftPos, mouseY - topPos)) {
             graphics.renderTooltip(font, Component.translatable("gui.magic_storage.fuel_input"), mouseX, mouseY);
         }
+    }
+
+    private static String formatMachineRate(MachineWorkRate rate, int installedCount) {
+        if (rate.isZero() || installedCount <= 0) return "0";
+        java.math.BigInteger numerator = java.math.BigInteger.valueOf(rate.numerator())
+                .multiply(java.math.BigInteger.valueOf(installedCount));
+        java.math.BigInteger denominator = java.math.BigInteger.valueOf(rate.denominator());
+        java.math.BigInteger divisor = numerator.gcd(denominator);
+        numerator = numerator.divide(divisor);
+        denominator = denominator.divide(divisor);
+        return denominator.equals(java.math.BigInteger.ONE)
+                ? numerator.toString()
+                : numerator + "/" + denominator;
     }
 
     private RecipePresentation.Resource recipeResourceAt(

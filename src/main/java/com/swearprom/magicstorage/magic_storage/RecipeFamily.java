@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 public final class RecipeFamily {
@@ -25,6 +26,8 @@ public final class RecipeFamily {
     private final Function<Recipe<?>, Ingredient> input;
     private final BiFunction<Recipe<?>, HolderLookup.Provider, ItemStack> output;
     private final BiFunction<Recipe<?>, HolderLookup.Provider, TypedRecipePlan> typedPlan;
+    private final Predicate<Recipe<?>> eligibility;
+    private final boolean allowSpecial;
     private final Function<Recipe<?>, RecipeFamilyCost> cost;
     private final RecipePresentationKind presentationKind;
 
@@ -43,6 +46,8 @@ public final class RecipeFamily {
         this.input = Objects.requireNonNull(input, "input");
         this.output = Objects.requireNonNull(output, "output");
         this.typedPlan = null;
+        this.eligibility = recipe -> true;
+        this.allowSpecial = false;
         this.cost = Objects.requireNonNull(cost, "cost");
         this.presentationKind = Objects.requireNonNull(presentationKind, "presentationKind");
     }
@@ -51,15 +56,19 @@ public final class RecipeFamily {
             Class<? extends Recipe<?>> exactRecipeClass,
             Supplier<? extends RecipeType<?>> recipeType,
             ResourceLocation stationDescriptorId,
+            Predicate<Recipe<?>> eligibility,
             BiFunction<Recipe<?>, HolderLookup.Provider, TypedRecipePlan> typedPlan,
             Function<Recipe<?>, RecipeFamilyCost> cost,
-            RecipePresentationKind presentationKind
+            RecipePresentationKind presentationKind,
+            boolean allowSpecial
     ) {
         this.exactRecipeClass = Objects.requireNonNull(exactRecipeClass, "exactRecipeClass");
         this.recipeType = Objects.requireNonNull(recipeType, "recipeType");
         this.stationDescriptorId = Objects.requireNonNull(stationDescriptorId, "stationDescriptorId");
         this.input = null;
         this.output = null;
+        this.eligibility = Objects.requireNonNull(eligibility, "eligibility");
+        this.allowSpecial = allowSpecial;
         this.typedPlan = Objects.requireNonNull(typedPlan, "typedPlan");
         this.cost = Objects.requireNonNull(cost, "cost");
         this.presentationKind = Objects.requireNonNull(presentationKind, "presentationKind");
@@ -133,8 +142,9 @@ public final class RecipeFamily {
             Recipe<?> recipe = holder.value();
             return recipe.getClass() == exactRecipeClass
                     && recipe.getType() == recipeType()
-                    && !recipe.isSpecial()
-                    && !recipe.isIncomplete();
+                    && (allowSpecial || !recipe.isSpecial())
+                    && !recipe.isIncomplete()
+                    && eligibility.test(recipe);
         }
 
         @Override
@@ -163,7 +173,7 @@ public final class RecipeFamily {
                         (inputs, level) -> ItemStack.EMPTY);
                 RecipeAdapterMatch.HolderValidator validator = this::supports;
                 return RecipeAdapterMatch.Contract.pendingTyped(
-                        stationDescriptorId, costFor(recipe).toInternal(), presentation, validator);
+                        stationDescriptorId, costFor(recipe).toInternal(stationDescriptorId), presentation, validator);
             }
             Ingredient ingredient = inputFor(recipe);
             RecipeAdapterMatch.Input adapterInput = RecipeAdapterMatch.Input.of(
@@ -195,7 +205,7 @@ public final class RecipeFamily {
             return new RecipeAdapterMatch.Contract(
                     List.of(adapterInput),
                     stationDescriptorId,
-                    costFor(recipe).toInternal(),
+                    costFor(recipe).toInternal(stationDescriptorId),
                     outputResolver,
                     presentation,
                     validator,
@@ -224,7 +234,7 @@ public final class RecipeFamily {
                 return List.of(new RecipeAdapterMatch.Contract(
                         List.of(),
                         stationDescriptorId,
-                        costFor(recipe).toInternal(),
+                        costFor(recipe).toInternal(stationDescriptorId),
                         outputResolver,
                         presentation,
                         validator,

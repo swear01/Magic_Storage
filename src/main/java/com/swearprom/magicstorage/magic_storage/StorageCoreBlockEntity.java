@@ -3,6 +3,7 @@ package com.swearprom.magicstorage.magic_storage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -35,6 +36,9 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private long machineRevision;
     private Map<ResourceLocation, Long> descriptorAmounts = new HashMap<>();
     private Set<ResourceLocation> infiniteDescriptors = new HashSet<>();
+    private Map<ResourceLocation, Long> stationWork = new HashMap<>();
+    private Map<ResourceLocation, MachineWorkAccumulator.Remainder> machineWorkRemainders =
+            new HashMap<>();
     private UUID preparedRecoveryId;
 
     private Map<EnergyType, Long> energy = new EnumMap<>(EnergyType.class);
@@ -62,14 +66,45 @@ public class StorageCoreBlockEntity extends BlockEntity {
         for (int slot = 0; slot < descriptors.size(); slot++) {
             MachineDescriptor entry = MachineEnergyTable.get(slot);
             ItemStack machineStack = machines.getItem(slot);
-            if (entry == null || !entry.generatesEnergy() || !entry.accepts(machineStack)) continue;
-            long increment = (long) machineStack.getCount() * entry.energyPerTick();
-            long current = getEnergy(entry.energyType());
-            long updated = current > Long.MAX_VALUE - increment ? Long.MAX_VALUE : current + increment;
-            if (updated != current) {
-                energy.put(entry.energyType(), updated);
-                fireEnergyChanged(entry.energyType(), updated);
+            if (entry == null || entry.category() != MachineEnergyTable.Category.PROCESS
+                    || !entry.accepts(machineStack)) {
+                if (entry != null && machineWorkRemainders.remove(entry.id()) != null) changed = true;
+                continue;
+            }
+            MachineWorkRate rate = entry.rateFor(machineStack).orElse(null);
+            if (rate == null || rate.isZero()) {
+                if (machineWorkRemainders.remove(entry.id()) != null) changed = true;
+                continue;
+            }
+            MachineWorkAccumulator.Remainder previous = machineWorkRemainders.get(entry.id());
+            MachineWorkAccumulator.Advance advance = MachineWorkAccumulator.advance(
+                    previous,
+                    BuiltInRegistries.ITEM.getKey(machineStack.getItem()),
+                    rate,
+                    machineStack.getCount());
+            if (advance.remainder().remainder() == 0) {
+                if (machineWorkRemainders.remove(entry.id()) != null) changed = true;
+            } else if (!advance.remainder().equals(previous)) {
+                machineWorkRemainders.put(entry.id(), advance.remainder());
                 changed = true;
+            }
+            if (advance.wholeWork() <= 0) continue;
+            if (entry.energyType() != null) {
+                long current = getEnergy(entry.energyType());
+                long updated = saturatingAdd(current, advance.wholeWork());
+                if (updated != current) {
+                    energy.put(entry.energyType(), updated);
+                    fireEnergyChanged(entry.energyType(), updated);
+                    changed = true;
+                }
+            } else {
+                long current = getStationWork(entry.id());
+                long updated = saturatingAdd(current, advance.wholeWork());
+                if (updated != current) {
+                    stationWork.put(entry.id(), updated);
+                    machineRevision++;
+                    changed = true;
+                }
             }
         }
         if (changed) markStorageChanged();
@@ -110,6 +145,87 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public long getDescriptorAmount(ResourceLocation descriptorId) {
         if (!isStorageAvailable()) return 0;
         return descriptorAmounts.getOrDefault(descriptorId, 0L);
+    }
+
+    public long getStationWork(ResourceLocation descriptorId) {
+        if (!isStorageAvailable()) return 0;
+        return stationWork.getOrDefault(descriptorId, 0L);
+    }
+
+    public boolean consumeStationWork(ResourceLocation descriptorId, long amount) {
+        if (amount <= 0 || conflicted || !isStorageAvailable()) return false;
+        long current = getStationWork(descriptorId);
+        if (current < amount) return false;
+        long remaining = current - amount;
+        if (remaining == 0) stationWork.remove(descriptorId);
+        else stationWork.put(descriptorId, remaining);
+        machineRevision++;
+        markStorageChanged();
+        return true;
+    }
+
+    boolean consumeCraftCosts(RecipeAdapterMatch.Cost cost, long crafts) {
+        if (cost == null || crafts <= 0 || conflicted || !isStorageAvailable()) return false;
+        EnergyCost energyCost = cost.energyCost().orElse(null);
+        RecipeAdapterMatch.StationWorkCost stationCost = cost.stationWorkCost().orElse(null);
+        RecipeAdapterMatch.ToolCost toolCost = cost.toolCost().orElse(null);
+        long processNeed = 0;
+        long fuelNeed = 0;
+        long stationNeed = 0;
+        long toolNeed = 0;
+        try {
+            if (energyCost != null) {
+                processNeed = Math.multiplyExact(energyCost.processAmount(), crafts);
+                fuelNeed = Math.multiplyExact(energyCost.fuelAmount(), crafts);
+            }
+            if (stationCost != null) {
+                stationNeed = Math.multiplyExact(stationCost.amountPerCraft(), crafts);
+            }
+            if (toolCost != null) {
+                toolNeed = Math.multiplyExact(toolCost.amountPerCraft(), crafts);
+            }
+        } catch (ArithmeticException exception) {
+            return false;
+        }
+        if (energyCost != null
+                && (getEnergy(energyCost.processType()) < processNeed
+                || getEnergy(energyCost.fuelType()) < fuelNeed)) return false;
+        if (stationCost != null
+                && getStationWork(stationCost.descriptorId()) < stationNeed) return false;
+        if (toolCost != null && !hasDescriptorAmount(toolCost.descriptorId(), toolNeed)) return false;
+
+        boolean changed = false;
+        if (energyCost != null) {
+            if (processNeed > 0) {
+                energy.merge(energyCost.processType(), -processNeed, Long::sum);
+                fireEnergyChanged(energyCost.processType(), getEnergy(energyCost.processType()));
+                changed = true;
+            }
+            if (fuelNeed > 0) {
+                energy.merge(energyCost.fuelType(), -fuelNeed, Long::sum);
+                fireEnergyChanged(energyCost.fuelType(), getEnergy(energyCost.fuelType()));
+                changed = true;
+            }
+        }
+        boolean descriptorChanged = false;
+        if (stationCost != null) {
+            long remaining = getStationWork(stationCost.descriptorId()) - stationNeed;
+            if (remaining == 0) stationWork.remove(stationCost.descriptorId());
+            else stationWork.put(stationCost.descriptorId(), remaining);
+            descriptorChanged = true;
+        }
+        if (toolCost != null && !hasInfiniteDescriptor(toolCost.descriptorId())) {
+            long remaining = getDescriptorAmount(toolCost.descriptorId()) - toolNeed;
+            if (remaining == 0) descriptorAmounts.remove(toolCost.descriptorId());
+            else descriptorAmounts.put(toolCost.descriptorId(), remaining);
+            descriptorChanged = true;
+        }
+        if (descriptorChanged) {
+            machineRevision++;
+            changed = true;
+        }
+        if (changed) markStorageChanged();
+        return true;
     }
 
     public boolean hasInfiniteDescriptor(ResourceLocation descriptorId) {
@@ -308,6 +424,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
             machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
             descriptorAmounts = new HashMap<>();
             infiniteDescriptors = new HashSet<>();
+            stationWork = new HashMap<>();
+            machineWorkRemainders = new HashMap<>();
             resourceLedger = new StorageResourceLedger();
             typeCount = 0;
             cacheDirty = true;
@@ -358,6 +476,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
         machines = record.machines();
         descriptorAmounts = record.descriptorAmounts();
         infiniteDescriptors = record.infiniteDescriptors();
+        stationWork = record.stationWork();
+        machineWorkRemainders = record.machineWorkRemainders();
         resourceLedger = record.resourceLedger();
         typeCount = record.typeCount();
         cacheDirty = true;
@@ -377,6 +497,11 @@ public class StorageCoreBlockEntity extends BlockEntity {
             return;
         }
         storageRecord.markChanged();
+    }
+
+    private static long saturatingAdd(long left, long right) {
+        if (right <= 0) return left;
+        return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
     }
 
     private CoreStorageRepository.CoreLocation location(ServerLevel serverLevel) {
@@ -813,6 +938,8 @@ public class StorageCoreBlockEntity extends BlockEntity {
         machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS);
         descriptorAmounts = new HashMap<>();
         infiniteDescriptors = new HashSet<>();
+        stationWork = new HashMap<>();
+        machineWorkRemainders = new HashMap<>();
         resourceLedger = new StorageResourceLedger();
         typeCount = 0;
         cacheDirty = true;

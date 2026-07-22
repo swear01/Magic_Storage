@@ -29,6 +29,7 @@ final class CoreStorageRecord {
     static final String TAG_ENERGY = "energy";
     static final String TAG_DESCRIPTOR_CONSUMABLES = "descriptorConsumables";
     static final String TAG_MACHINE_DESCRIPTORS = "machineDescriptors";
+    static final String TAG_MACHINE_WORK = "machineWork";
     static final String TAG_INVENTORY_SEGMENTS = "inventorySegments";
     static final String TAG_RESOURCE_LEDGER = "resourceLedger";
     static final String TAG_ENTRIES = "entries";
@@ -37,14 +38,22 @@ final class CoreStorageRecord {
     static final String TAG_COUNT = "count";
     static final String TAG_AMOUNT = "amount";
     static final String TAG_INFINITE = "infinite";
+    static final String TAG_VARIANT_ITEM_ID = "variantItemId";
+    static final String TAG_RATE_NUMERATOR = "rateNumerator";
+    static final String TAG_RATE_DENOMINATOR = "rateDenominator";
+    static final String TAG_REMAINDER = "remainder";
 
     private final UUID storageId;
     private final UUID networkId;
     private final Map<EnergyType, Long> energy = new EnumMap<>(EnergyType.class);
     private final Map<ResourceLocation, Long> descriptorAmounts = new java.util.HashMap<>();
     private final Set<ResourceLocation> infiniteDescriptors = new java.util.HashSet<>();
+    private final Map<ResourceLocation, Long> stationWork = new java.util.HashMap<>();
+    private final Map<ResourceLocation, MachineWorkAccumulator.Remainder> machineWorkRemainders =
+            new java.util.HashMap<>();
     private final List<CompoundTag> unresolvedDescriptorEntries = new ArrayList<>();
     private final List<CompoundTag> unresolvedMachineEntries = new ArrayList<>();
+    private final List<CompoundTag> unresolvedMachineWorkEntries = new ArrayList<>();
     private StorageResourceLedger resourceLedger = new StorageResourceLedger();
     private final List<CompoundTag> unresolvedInventoryEntries = new ArrayList<>();
     private final SimpleContainer machines;
@@ -119,6 +128,17 @@ final class CoreStorageRecord {
             }
             record.loadDescriptorEntries(descriptorEntries);
             record.loadMachineEntries(machineEntries, registries);
+            if (tag.contains(TAG_MACHINE_WORK)) {
+                if (!tag.contains(TAG_MACHINE_WORK, Tag.TAG_LIST)) {
+                    return LoadResult.failure(storageId, raw, "machine work payload is not a list");
+                }
+                ListTag workEntries = compoundList(tag, TAG_MACHINE_WORK);
+                if (workEntries == null) {
+                    return LoadResult.failure(storageId, raw,
+                            "machine work list has non-compound elements");
+                }
+                record.loadMachineWorkEntries(workEntries);
+            }
             if (tag.contains(TAG_RESOURCE_LEDGER)) {
                 if (!tag.contains(TAG_RESOURCE_LEDGER, Tag.TAG_COMPOUND)) {
                     return LoadResult.failure(storageId, raw, "typed resource ledger is not a compound");
@@ -176,6 +196,26 @@ final class CoreStorageRecord {
         }
         unresolvedMachineEntries.forEach(entry -> machineTags.add(entry.copy()));
         tag.put(TAG_MACHINE_DESCRIPTORS, machineTags);
+
+        ListTag machineWorkTags = new ListTag();
+        Set<ResourceLocation> workIds = new TreeSet<>(Comparator.comparing(ResourceLocation::toString));
+        workIds.addAll(stationWork.keySet());
+        workIds.addAll(machineWorkRemainders.keySet());
+        for (ResourceLocation descriptorId : workIds) {
+            CompoundTag entry = new CompoundTag();
+            entry.putString(TAG_DESCRIPTOR_ID, descriptorId.toString());
+            entry.putLong(TAG_AMOUNT, Math.max(0, stationWork.getOrDefault(descriptorId, 0L)));
+            MachineWorkAccumulator.Remainder remainder = machineWorkRemainders.get(descriptorId);
+            if (remainder != null) {
+                entry.putString(TAG_VARIANT_ITEM_ID, remainder.variantItemId().toString());
+                entry.putLong(TAG_RATE_NUMERATOR, remainder.rate().numerator());
+                entry.putLong(TAG_RATE_DENOMINATOR, remainder.rate().denominator());
+                entry.putLong(TAG_REMAINDER, remainder.remainder());
+            }
+            machineWorkTags.add(entry);
+        }
+        unresolvedMachineWorkEntries.forEach(entry -> machineWorkTags.add(entry.copy()));
+        tag.put(TAG_MACHINE_WORK, machineWorkTags);
 
         List<CompoundTag> inventoryEntries = new ArrayList<>();
         Set<StorageResourceKey> persistedAsInventory = new HashSet<>();
@@ -285,6 +325,47 @@ final class CoreStorageRecord {
         }
     }
 
+    private void loadMachineWorkEntries(ListTag entries) {
+        for (int index = 0; index < entries.size(); index++) {
+            CompoundTag entry = entries.getCompound(index);
+            ResourceLocation descriptorId = ResourceLocation.tryParse(entry.getString(TAG_DESCRIPTOR_ID));
+            MachineDescriptor descriptor = descriptorId == null ? null : MachineEnergyTable.get(descriptorId);
+            if (descriptor == null || descriptor.category() != MachineEnergyTable.Category.PROCESS
+                    || !entry.contains(TAG_AMOUNT, Tag.TAG_LONG)
+                    || entry.getLong(TAG_AMOUNT) < 0) {
+                unresolvedMachineWorkEntries.add(entry.copy());
+                continue;
+            }
+            long amount = entry.getLong(TAG_AMOUNT);
+            if (descriptor.energyType() != null && amount > 0) {
+                unresolvedMachineWorkEntries.add(entry.copy());
+                continue;
+            }
+            boolean hasRemainder = entry.contains(TAG_VARIANT_ITEM_ID, Tag.TAG_STRING)
+                    || entry.contains(TAG_RATE_NUMERATOR, Tag.TAG_LONG)
+                    || entry.contains(TAG_RATE_DENOMINATOR, Tag.TAG_LONG)
+                    || entry.contains(TAG_REMAINDER, Tag.TAG_LONG);
+            MachineWorkAccumulator.Remainder remainder = null;
+            if (hasRemainder) {
+                ResourceLocation variantId = ResourceLocation.tryParse(
+                        entry.getString(TAG_VARIANT_ITEM_ID));
+                try {
+                    remainder = new MachineWorkAccumulator.Remainder(
+                            variantId,
+                            MachineWorkRate.of(
+                                    entry.getLong(TAG_RATE_NUMERATOR),
+                                    entry.getLong(TAG_RATE_DENOMINATOR)),
+                            entry.getLong(TAG_REMAINDER));
+                } catch (RuntimeException exception) {
+                    unresolvedMachineWorkEntries.add(entry.copy());
+                    continue;
+                }
+            }
+            if (amount > 0) stationWork.put(descriptorId, amount);
+            if (remainder != null) machineWorkRemainders.put(descriptorId, remainder);
+        }
+    }
+
     private String loadInventorySegments(ListTag segments, HolderLookup.Provider registries) {
         Set<StorageResourceKey> loadedLegacyKeys = new HashSet<>();
         for (int segmentIndex = 0; segmentIndex < segments.size(); segmentIndex++) {
@@ -371,12 +452,24 @@ final class CoreStorageRecord {
         return infiniteDescriptors;
     }
 
+    Map<ResourceLocation, Long> stationWork() {
+        return stationWork;
+    }
+
+    Map<ResourceLocation, MachineWorkAccumulator.Remainder> machineWorkRemainders() {
+        return machineWorkRemainders;
+    }
+
     List<CompoundTag> unresolvedDescriptorEntries() {
         return unresolvedDescriptorEntries;
     }
 
     List<CompoundTag> unresolvedMachineEntries() {
         return unresolvedMachineEntries;
+    }
+
+    List<CompoundTag> unresolvedMachineWorkEntries() {
+        return unresolvedMachineWorkEntries;
     }
 
     StorageResourceLedger resourceLedger() {
@@ -427,7 +520,9 @@ final class CoreStorageRecord {
         if (!resourceLedger.isEmpty()
                 || !machines.isEmpty() || !descriptorAmounts.isEmpty()
                 || !infiniteDescriptors.isEmpty() || !unresolvedDescriptorEntries.isEmpty()
-                || !unresolvedMachineEntries.isEmpty() || !unresolvedInventoryEntries.isEmpty()) {
+                || !stationWork.isEmpty() || !machineWorkRemainders.isEmpty()
+                || !unresolvedMachineEntries.isEmpty() || !unresolvedMachineWorkEntries.isEmpty()
+                || !unresolvedInventoryEntries.isEmpty()) {
             return false;
         }
         for (long amount : energy.values()) {

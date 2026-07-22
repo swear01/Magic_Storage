@@ -1,6 +1,10 @@
 package com.swearprom.magicstorage.fixture.recipe;
 
 import com.swearprom.magicstorage.magic_storage.MachineEnergyTable;
+import com.swearprom.magicstorage.magic_storage.MachineDescriptor;
+import com.swearprom.magicstorage.magic_storage.MachineDescriptorApi;
+import com.swearprom.magicstorage.magic_storage.MachineVariant;
+import com.swearprom.magicstorage.magic_storage.MachineWorkRate;
 import com.swearprom.magicstorage.magic_storage.RecipeFamily;
 import com.swearprom.magicstorage.magic_storage.RecipeFamilyApi;
 import com.swearprom.magicstorage.magic_storage.RecipeFamilyCost;
@@ -36,6 +40,8 @@ import net.minecraft.world.level.block.Blocks;
 @Mod(FixtureMod.MODID)
 public final class FixtureMod {
     public static final String MODID = "magic_storage_recipe_fixture";
+    static final ResourceLocation FRACTIONAL_PROCESSOR_ID = ResourceLocation.fromNamespaceAndPath(
+            MODID, "fractional_processor");
 
     private static final DeferredRegister<RecipeType<?>> RECIPE_TYPES =
             DeferredRegister.create(Registries.RECIPE_TYPE, MODID);
@@ -58,8 +64,17 @@ public final class FixtureMod {
                     return MODID + ":infusion";
                 }
             });
+    static final DeferredHolder<RecipeType<?>, RecipeType<FixtureProcessingRecipe>> PROCESSING_TYPE =
+            RECIPE_TYPES.register("processing", () -> new RecipeType<>() {
+                @Override
+                public String toString() {
+                    return MODID + ":processing";
+                }
+            });
     private static final DeferredRegister<RecipeFamily> RECIPE_FAMILIES =
             RecipeFamilyApi.createDeferredRegister(MODID);
+    private static final DeferredRegister<MachineDescriptor> MACHINE_DESCRIPTORS =
+            MachineDescriptorApi.createDeferredRegister(MODID);
     private static final DeferredRegister<StorageResourceKind> RESOURCE_KINDS =
             StorageResourceKindApi.createDeferredRegister(MODID);
     private static final DeferredRegister<StorageResourceContainerStrategy> CONTAINER_STRATEGIES =
@@ -68,6 +83,21 @@ public final class FixtureMod {
             StorageResourceBlockApi.createDeferredRegister(MODID);
 
     static {
+        MACHINE_DESCRIPTORS.register("fractional_processor", () ->
+                MachineDescriptor.installableVariants(
+                        FRACTIONAL_PROCESSOR_ID,
+                        () -> java.util.List.of(
+                                MachineVariant.of(
+                                        new net.minecraft.world.item.ItemStack(
+                                                net.minecraft.world.item.Items.COPPER_BLOCK),
+                                        MachineWorkRate.of(10, 9)),
+                                MachineVariant.of(
+                                        new net.minecraft.world.item.ItemStack(
+                                                net.minecraft.world.item.Items.IRON_BLOCK),
+                                        MachineWorkRate.of(5, 4))),
+                        MachineEnergyTable.Category.PROCESS,
+                        64,
+                        null));
         RECIPE_FAMILIES.register("grinding", () -> RecipeFamilyFactories.singleItemToItem(
                 FixtureGrindingRecipe.class,
                 GRINDING_TYPE,
@@ -82,18 +112,30 @@ public final class FixtureMod {
                 MachineEnergyTable.STONECUTTER_ID,
                 (recipe, registries) -> TypedRecipePlan.builder()
                         .input(TypedRecipeInput.consume(item("cobblestone", registries), 2))
-                        .input(TypedRecipeInput.consume(mana("blue"), 100))
+                        .input(TypedRecipeInput.consumeAnyWithRemainders(
+                                java.util.List.of(mana("blue"), mana("green")),
+                                1,
+                                java.util.Map.of(
+                                        mana("blue"), TypedRecipeOutput.remainder(mana("blue"), 25),
+                                        mana("green"), TypedRecipeOutput.remainder(mana("yellow"), 25))))
                         .input(TypedRecipeInput.catalyst(mana("red"), 5))
                         .input(TypedRecipeInput.tool(item("iron_pickaxe", registries), 1))
                         .output(TypedRecipeOutput.primary(item("gravel", registries), 3))
                         .output(TypedRecipeOutput.primary(StorageResourceKey.fluid(
                                 new FluidStack(Fluids.WATER, 1), registries), 250))
-                        .output(TypedRecipeOutput.remainder(mana("blue"), 25))
                         .presentationOutput(new net.minecraft.world.item.ItemStack(
                                 net.minecraft.world.item.Items.GRAVEL, 3))
                         .layout(2, 2, true)
                         .build(),
                 recipe -> RecipeFamilyCost.free(),
+                RecipePresentationKind.STONECUTTING));
+        RECIPE_FAMILIES.register("processing", () -> RecipeFamilyFactories.singleItemToItem(
+                FixtureProcessingRecipe.class,
+                PROCESSING_TYPE,
+                FRACTIONAL_PROCESSOR_ID,
+                recipe -> recipe.getIngredients().getFirst(),
+                (recipe, registries) -> recipe.getResultItem(registries),
+                recipe -> RecipeFamilyCost.stationWork(10),
                 RecipePresentationKind.STONECUTTING));
         RESOURCE_KINDS.register("mana", () -> StorageResourceKind.variantAware(
                 () -> new net.minecraft.world.item.ItemStack(
@@ -106,6 +148,7 @@ public final class FixtureMod {
         ITEMS.register(modEventBus);
         RECIPE_TYPES.register(modEventBus);
         RECIPE_FAMILIES.register(modEventBus);
+        MACHINE_DESCRIPTORS.register(modEventBus);
         RESOURCE_KINDS.register(modEventBus);
         CONTAINER_STRATEGIES.register(modEventBus);
         BLOCK_STRATEGIES.register(modEventBus);

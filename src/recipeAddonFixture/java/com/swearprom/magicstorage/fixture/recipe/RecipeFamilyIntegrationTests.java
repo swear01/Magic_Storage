@@ -63,6 +63,8 @@ public final class RecipeFamilyIntegrationTests {
             FixtureMod.MODID, "grinding_cobblestone");
     private static final ResourceLocation TYPED_RECIPE_ID = ResourceLocation.fromNamespaceAndPath(
             FixtureMod.MODID, "infuse_cobblestone");
+    private static final ResourceLocation PROCESSING_RECIPE_ID = ResourceLocation.fromNamespaceAndPath(
+            FixtureMod.MODID, "process_cobblestone");
 
     private RecipeFamilyIntegrationTests() {
     }
@@ -154,6 +156,102 @@ public final class RecipeFamilyIntegrationTests {
             if (context.core().getItemCount(ItemKey.of(new ItemStack(Items.COBBLESTONE))) != 2
                     || inventoryCount(context.player().getInventory(), context.output()) != 0) {
                 helper.fail("Failed registered-family delivery changed storage or inventory");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void polymorphic_station_generates_exact_descriptor_work_at_each_variant_rate(
+            GameTestHelper helper
+    ) {
+        withFixture(helper, context -> {
+            context.menu().clickMenuButton(context.player(), FUEL_PAGE_BUTTON);
+            var machineSlot = findMachineSlot(context, new ItemStack(Items.COPPER_BLOCK));
+            if (machineSlot == null) {
+                helper.fail("Polymorphic fixture station had no installable terminal slot");
+                return;
+            }
+            machineSlot.set(new ItemStack(Items.COPPER_BLOCK));
+            machineSlot.setChanged();
+            for (int tick = 0; tick < 9; tick++) context.core().tick();
+            if (context.core().getStationWork(FixtureMod.FRACTIONAL_PROCESSOR_ID) != 10) {
+                helper.fail("Slow polymorphic station lost fractional work");
+                return;
+            }
+            machineSlot.set(new ItemStack(Items.IRON_BLOCK));
+            machineSlot.setChanged();
+            for (int tick = 0; tick < 4; tick++) context.core().tick();
+            if (context.core().getStationWork(FixtureMod.FRACTIONAL_PROCESSOR_ID) != 15) {
+                helper.fail("Changing polymorphic station variant did not use its own rate");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void descriptor_station_work_is_simulated_committed_and_consumed_atomically(
+            GameTestHelper helper
+    ) {
+        withFixture(helper, context -> {
+            context.menu().clickMenuButton(context.player(), FUEL_PAGE_BUTTON);
+            var machineSlot = findMachineSlot(context, new ItemStack(Items.COPPER_BLOCK));
+            if (machineSlot == null) {
+                helper.fail("Process fixture station had no installable terminal slot");
+                return;
+            }
+            machineSlot.set(new ItemStack(Items.COPPER_BLOCK));
+            machineSlot.setChanged();
+            context.menu().clickMenuButton(context.player(), STORAGE_PAGE_BUTTON);
+            if (context.menu().handleRecipeRequest(
+                    context.level(), PROCESSING_RECIPE_ID, 1,
+                    CraftingDestination.INVENTORY, context.player())) {
+                helper.fail("Process recipe crafted without descriptor station work");
+                return;
+            }
+            for (int tick = 0; tick < 9; tick++) context.core().tick();
+            long work = context.core().getStationWork(FixtureMod.FRACTIONAL_PROCESSOR_ID);
+            long cobblestone = context.core().getItemCount(
+                    ItemKey.of(new ItemStack(Items.COBBLESTONE)));
+            machineSlot.set(new ItemStack(Items.IRON_BLOCK));
+            machineSlot.setChanged();
+            if (!context.menu().handleRecipeRequest(
+                    context.level(), PROCESSING_RECIPE_ID, 1,
+                    CraftingDestination.NONE, context.player())) {
+                helper.fail("Could not select process recipe for station preview");
+                return;
+            }
+            RecipePresentation presentation = context.menu().getRecipePresentation();
+            if (presentation.stationVariants().size() != 2
+                    || !presentation.stationForCycle(0).is(Items.IRON_BLOCK)
+                    || !presentation.stationForCycle(1).is(Items.COPPER_BLOCK)
+                    || !presentation.stationForCycle(2).is(Items.IRON_BLOCK)) {
+                helper.fail("Process recipe preview did not cycle from the installed station variant");
+                return;
+            }
+            RecipePresentation.Resource stationResource = presentation.resources().stream()
+                    .filter(resource -> resource.kind()
+                            == RecipePresentation.ResourceKind.STATION_WORK)
+                    .findFirst()
+                    .orElse(null);
+            if (stationResource == null
+                    || stationResource.available() != 10
+                    || stationResource.required() != 10) {
+                helper.fail("Process recipe preview omitted descriptor station work amounts");
+                return;
+            }
+            if (!context.menu().handleRecipeRequest(
+                    context.level(), PROCESSING_RECIPE_ID, 1,
+                    CraftingDestination.INVENTORY, context.player())) {
+                helper.fail("Process recipe rejected sufficient descriptor station work: work="
+                        + work + ", cobblestone=" + cobblestone);
+                return;
+            }
+            if (context.core().getStationWork(FixtureMod.FRACTIONAL_PROCESSOR_ID) != 0
+                    || inventoryCount(context.player().getInventory(), new ItemStack(Items.FLINT)) != 1) {
+                helper.fail("Process recipe did not consume station work and deliver output atomically");
                 return;
             }
             helper.succeed();
@@ -527,7 +625,7 @@ public final class RecipeFamilyIntegrationTests {
                     context.level().registryAccess());
             if (context.core().insertItem(new ItemStack(Items.COBBLESTONE, 4)) != 4
                     || context.core().insertItem(new ItemStack(Items.IRON_PICKAXE)) != 1
-                    || context.core().insertResource(blue, 200, Action.EXECUTE) != 200
+                    || context.core().insertResource(blue, 2, Action.EXECUTE) != 2
                     || context.core().insertResource(red, 5, Action.EXECUTE) != 5) {
                 helper.fail("Could not seed typed-family resources");
                 return;
@@ -577,7 +675,7 @@ public final class RecipeFamilyIntegrationTests {
             StorageResourceKey red = mana("red");
             if (context.core().insertItem(new ItemStack(Items.COBBLESTONE, 4)) != 4
                     || context.core().insertItem(new ItemStack(Items.IRON_PICKAXE)) != 1
-                    || context.core().insertResource(blue, 200, Action.EXECUTE) != 200
+                    || context.core().insertResource(blue, 2, Action.EXECUTE) != 2
                     || context.core().insertResource(red, 5, Action.EXECUTE) != 5) {
                 helper.fail("Could not seed typed rollback resources");
                 return;
@@ -607,10 +705,47 @@ public final class RecipeFamilyIntegrationTests {
                 return;
             }
             if (context.core().getItemCount(ItemKey.of(new ItemStack(Items.COBBLESTONE))) != 4
-                    || context.core().getResourceAmount(blue) != 200
+                    || context.core().getResourceAmount(blue) != 2
                     || context.core().getResourceAmount(red) != 5
                     || inventoryCount(context.player().getInventory(), new ItemStack(Items.GRAVEL)) != 0) {
                 helper.fail("Failed typed family commit partially mutated resources");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void typed_family_consumes_an_available_resource_alternative(
+            GameTestHelper helper
+    ) {
+        withTypedFixture(helper, context -> {
+            if (!installStonecutter(context)) {
+                helper.fail("Could not install alternative typed-family station");
+                return;
+            }
+            StorageResourceKey green = mana("green");
+            StorageResourceKey blue = mana("blue");
+            StorageResourceKey red = mana("red");
+            StorageResourceKey yellow = mana("yellow");
+            if (context.core().insertItem(new ItemStack(Items.COBBLESTONE, 2)) != 2
+                    || context.core().insertItem(new ItemStack(Items.IRON_PICKAXE)) != 1
+                    || context.core().insertResource(green, 1, Action.EXECUTE) != 1
+                    || context.core().insertResource(red, 5, Action.EXECUTE) != 5) {
+                helper.fail("Could not seed typed resource alternative");
+                return;
+            }
+            if (!context.menu().handleRecipeRequest(
+                    context.level(), TYPED_RECIPE_ID, 1,
+                    CraftingDestination.INVENTORY, context.player())) {
+                helper.fail("Typed family rejected an available non-primary alternative");
+                return;
+            }
+            if (context.core().getResourceAmount(green) != 0
+                    || context.core().getResourceAmount(blue) != 0
+                    || context.core().getResourceAmount(yellow) != 25
+                    || inventoryCount(context.player().getInventory(), new ItemStack(Items.GRAVEL)) != 3) {
+                helper.fail("Typed family consumed or returned the wrong alternative-specific remainder");
                 return;
             }
             helper.succeed();
@@ -744,11 +879,17 @@ public final class RecipeFamilyIntegrationTests {
             RecipeHolder<FixtureGrindingRecipe> holder = new RecipeHolder<>(
                     RECIPE_ID,
                     new FixtureGrindingRecipe(Ingredient.of(Items.COBBLESTONE), output));
+            RecipeHolder<FixtureProcessingRecipe> processingHolder = new RecipeHolder<>(
+                    PROCESSING_RECIPE_ID,
+                    new FixtureProcessingRecipe(
+                            Ingredient.of(Items.COBBLESTONE), new ItemStack(Items.FLINT)));
             var manager = level.getRecipeManager();
             List<RecipeHolder<?>> original = List.copyOf(manager.getRecipes());
             List<RecipeHolder<?>> registered = new ArrayList<>(original);
             registered.removeIf(recipe -> recipe.id().equals(RECIPE_ID));
+            registered.removeIf(recipe -> recipe.id().equals(PROCESSING_RECIPE_ID));
             registered.add(holder);
+            registered.add(processingHolder);
             manager.replaceRecipes(registered);
             try {
                 core.rebuildNetwork(level);
@@ -830,6 +971,19 @@ public final class RecipeFamilyIntegrationTests {
         }
         context.menu().clickMenuButton(context.player(), STORAGE_PAGE_BUTTON);
         return installed;
+    }
+
+    private static net.minecraft.world.inventory.Slot findMachineSlot(
+            FixtureContext context,
+            ItemStack station
+    ) {
+        for (int index = CraftingTerminalMenu.MACHINE_SLOT_START;
+             index < CraftingTerminalMenu.MACHINE_SLOT_START + CraftingTerminalMenu.MACHINE_SLOT_COUNT;
+             index++) {
+            var slot = context.menu().getSlot(index);
+            if (slot.isActive() && slot.mayPlace(station)) return slot;
+        }
+        return null;
     }
 
     private static boolean applyBusConfiguration(

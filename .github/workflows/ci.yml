@@ -53,17 +53,32 @@ jobs:
       - name: Run GameTest server
         run: |
           set -o pipefail
+          python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
           ./gradlew runGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/gametest.log
 
       - name: Run recipe addon GameTest server
         run: |
           set -o pipefail
+          python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
           ./gradlew runRecipeAddonGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/recipe-addon-gametest.log
 
-      - name: Run Mekanism chemical GameTest server
+      - name: Run Mekanism GameTest server
         run: |
           set -o pipefail
+          python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
           ./gradlew runMekanismGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/mekanism-gametest.log
+
+      - name: Run Iron Furnaces GameTest server
+        run: |
+          set -o pipefail
+          python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
+          ./gradlew runIronFurnacesGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/iron-furnaces-gametest.log
+
+      - name: Run Farmer's Delight GameTest server
+        run: |
+          set -o pipefail
+          python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
+          ./gradlew runFarmersDelightGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/farmers-delight-gametest.log
 
       - name: Run script tests
         run: |

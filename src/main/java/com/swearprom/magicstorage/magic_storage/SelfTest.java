@@ -58,6 +58,8 @@ class SelfTest {
         testRecipeAdapterCandidateCoverage();
         testRecipeAdapterReloadIdentity();
         testEnergyType();
+        testMachineVariantContract();
+        testMachineWorkAccumulator();
         testEnergyCost();
         testFuelValue();
         testEnergyTypeUniqueness();
@@ -525,6 +527,21 @@ class SelfTest {
                         && match.stationDescriptorId().equals(MachineEnergyTable.STONECUTTER_ID)
                         && match.cost().equals(RecipeAdapterMatch.Cost.free())
                         && match.presentation().kind() == RecipePresentationKind.STONECUTTING);
+        ResourceLocation processStation = testRecipeId("process_station");
+        assertTrue("public recipe families expose descriptor-scoped station work",
+                RecipeFamilyCost.stationWork(37).toInternal(processStation).equals(
+                        RecipeAdapterMatch.Cost.stationWork(
+                                new RecipeAdapterMatch.StationWorkCost(processStation, 37))));
+        EnergyCost processFuel = new EnergyCost(
+                EnergyType.SMELTING_ENERGY, 0, EnergyType.FURNACE_FUEL, 37);
+        assertTrue("public station work can share one atomic legacy Fuel cost",
+                RecipeFamilyCost.stationWorkAndEnergy(37, processFuel)
+                        .toInternal(processStation)
+                        .equals(new RecipeAdapterMatch.Cost(
+                                java.util.Optional.of(processFuel),
+                                java.util.Optional.empty(),
+                                java.util.Optional.of(new RecipeAdapterMatch.StationWorkCost(
+                                        processStation, 37)))));
         assertTrue("public exact family does not claim the recipe superclass",
                 registry.classify(new RecipeHolder<>(
                         testRecipeId("vanilla_stonecutting"),
@@ -582,6 +599,44 @@ class SelfTest {
         }
         assertTrue("public recipe families reject overlapping energy pools",
                 overlappingEnergyRejected);
+
+        StorageResourceKey blue = StorageResourceKey.of(
+                testRecipeId("mana"), testRecipeId("blue"), new net.minecraft.nbt.CompoundTag());
+        StorageResourceKey red = StorageResourceKey.of(
+                testRecipeId("mana"), testRecipeId("red"), new net.minecraft.nbt.CompoundTag());
+        TypedRecipeInput alternatives = TypedRecipeInput.consumeAny(List.of(blue, red), 3);
+        assertTrue("typed recipe inputs preserve deterministic resource alternatives",
+                alternatives.alternatives().equals(List.of(blue, red))
+                        && alternatives.key().equals(blue)
+                        && alternatives.amount() == 3);
+        TypedRecipeInput alternativeRemainders = TypedRecipeInput.consumeAnyWithRemainders(
+                List.of(blue, red),
+                2,
+                java.util.Map.of(
+                        blue, TypedRecipeOutput.remainder(red, 1),
+                        red, TypedRecipeOutput.remainder(blue, 2)));
+        assertTrue("typed recipe inputs preserve alternative-specific remainders",
+                alternativeRemainders.remainderFor(blue).orElseThrow().key().equals(red)
+                        && alternativeRemainders.remainderFor(red).orElseThrow().amount() == 2);
+        boolean unrelatedRemainderRejected = false;
+        try {
+            TypedRecipeInput.consumeAnyWithRemainders(
+                    List.of(blue),
+                    1,
+                    java.util.Map.of(red, TypedRecipeOutput.remainder(blue, 1)));
+        } catch (IllegalArgumentException expected) {
+            unrelatedRemainderRejected = true;
+        }
+        assertTrue("typed recipe inputs reject remainders for unrelated alternatives",
+                unrelatedRemainderRejected);
+        boolean duplicateAlternativeRejected = false;
+        try {
+            TypedRecipeInput.consumeAny(List.of(blue, blue), 1);
+        } catch (IllegalArgumentException expected) {
+            duplicateAlternativeRejected = true;
+        }
+        assertTrue("typed recipe inputs reject duplicate alternatives",
+                duplicateAlternativeRejected);
     }
 
     private static void testRecipeAdapterSnapshot() {
@@ -724,11 +779,14 @@ class SelfTest {
             assertTrue("exact built-in family selects adapter " + expectedAdapterIds.get(index),
                     match != null && match.adapterId().equals(expectedAdapterIds.get(index)));
         }
+        List<ResourceLocation> actualAdapterIds = BuiltInRecipeAdapters.registry().adapters().stream()
+                .map(RecipeAdapter::id)
+                .filter(id -> id.getNamespace().equals(MagicStorage.MODID))
+                .toList();
         assertTrue("built-in adapter IDs have a stable deterministic order",
-                BuiltInRecipeAdapters.registry().adapters().stream()
-                        .map(RecipeAdapter::id)
-                        .filter(id -> id.getNamespace().equals(MagicStorage.MODID))
-                        .toList().equals(expectedAdapterIds));
+                actualAdapterIds.size() >= expectedAdapterIds.size()
+                        && actualAdapterIds.subList(0, expectedAdapterIds.size())
+                        .equals(expectedAdapterIds));
 
         ShapelessRecipe customFamily = new ShapelessRecipe(
                 "", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
@@ -884,7 +942,8 @@ class SelfTest {
                 EnergyType.FURNACE_FUEL.representativeStack().is(Items.COAL));
         assertTrue("Brew Energy uses blaze rod as its representative item",
                 EnergyType.BLAZE_FUEL.representativeStack().is(Items.BLAZE_ROD));
-        assertTrue("9 station and consumable mappings", MachineEnergyTable.size() == 9);
+        assertTrue("all built-in station and consumable mappings are present",
+                MachineEnergyTable.size() >= 9);
         assertTrue("Furnace maps to smelting", MachineEnergyTable.get(0).representativeStack().is(Items.FURNACE)
                 && MachineEnergyTable.get(0).energyType() == EnergyType.SMELTING_ENERGY
                 && MachineEnergyTable.get(0).accepts(new ItemStack(Items.FURNACE)));
@@ -918,7 +977,105 @@ class SelfTest {
                 MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT).category()
                         == MachineEnergyTable.Category.CONSUMABLE
                         && MachineEnergyTable.get(MachineEnergyTable.AXE_SLOT).maxInstalledCount() == 0);
-        assertTrue("machine rate is one per installed block", MachineEnergyTable.get(0).energyPerTick() == 1);
+        assertTrue("machine rate is one per installed block",
+                MachineEnergyTable.get(0).rateFor(new ItemStack(Items.FURNACE))
+                        .orElseThrow().equals(MachineWorkRate.ONE));
+    }
+
+    private static void testMachineVariantContract() {
+        MachineWorkRate reduced = MachineWorkRate.of(200, 160);
+        assertTrue("machine work rates normalize exact fractions",
+                reduced.numerator() == 5 && reduced.denominator() == 4);
+        assertTrue("machine work rates retain slow fractional generation",
+                MachineWorkRate.of(200, 720).equals(MachineWorkRate.of(5, 18)));
+
+        MachineVariant copper = MachineVariant.of(
+                new ItemStack(Items.COPPER_BLOCK), MachineWorkRate.of(10, 9));
+        MachineVariant iron = MachineVariant.of(
+                new ItemStack(Items.IRON_BLOCK), MachineWorkRate.of(5, 4));
+        ResourceLocation id = testRecipeId("variant_station");
+        MachineDescriptor descriptor = MachineDescriptor.installableVariants(
+                id,
+                () -> List.of(copper, iron),
+                MachineEnergyTable.Category.PROCESS,
+                64,
+                EnergyType.SMELTING_ENERGY);
+
+        assertTrue("one logical descriptor exposes ordered concrete variants",
+                descriptor.variants().size() == 2
+                        && descriptor.variants().get(0).stack().is(Items.COPPER_BLOCK)
+                        && descriptor.variants().get(1).stack().is(Items.IRON_BLOCK));
+        assertTrue("variant descriptor is marked polymorphic", descriptor.isPolymorphic());
+        assertTrue("legacy fixed descriptor is not marked polymorphic",
+                !MachineEnergyTable.get(MachineEnergyTable.BLAST_FURNACE_SLOT).isPolymorphic());
+        assertTrue("variant lookup retains each concrete rate",
+                descriptor.rateFor(new ItemStack(Items.COPPER_BLOCK)).orElseThrow()
+                        .equals(MachineWorkRate.of(10, 9))
+                        && descriptor.rateFor(new ItemStack(Items.IRON_BLOCK)).orElseThrow()
+                        .equals(MachineWorkRate.of(5, 4)));
+        assertTrue("variant lookup rejects unrelated station items",
+                descriptor.rateFor(new ItemStack(Items.GOLD_BLOCK)).isEmpty()
+                        && !descriptor.accepts(new ItemStack(Items.GOLD_BLOCK)));
+
+        boolean duplicateRejected = false;
+        try {
+            MachineDescriptor.installableVariants(
+                    testRecipeId("duplicate_variant_station"),
+                    () -> List.of(
+                            MachineVariant.of(new ItemStack(Items.FURNACE), MachineWorkRate.ONE),
+                            MachineVariant.of(new ItemStack(Items.FURNACE), MachineWorkRate.of(2, 1))),
+                    MachineEnergyTable.Category.PROCESS,
+                    64,
+                    EnergyType.SMELTING_ENERGY).variants();
+        } catch (IllegalArgumentException exception) {
+            duplicateRejected = true;
+        }
+        assertTrue("one logical descriptor rejects duplicate concrete items", duplicateRejected);
+
+        boolean instantRateRejected = false;
+        try {
+            MachineDescriptor.installableVariants(
+                    testRecipeId("invalid_instant_variant_station"),
+                    () -> List.of(MachineVariant.of(
+                            new ItemStack(Items.CRAFTING_TABLE), MachineWorkRate.ONE)),
+                    MachineEnergyTable.Category.INSTANT,
+                    1,
+                    null).variants();
+        } catch (IllegalArgumentException exception) {
+            instantRateRejected = true;
+        }
+        assertTrue("instant variants reject process work rates", instantRateRejected);
+    }
+
+    private static void testMachineWorkAccumulator() {
+        ResourceLocation furnace = ResourceLocation.withDefaultNamespace("furnace");
+        MachineWorkRate slow = MachineWorkRate.of(5, 18);
+        MachineWorkAccumulator.Advance advance = null;
+        MachineWorkAccumulator.Remainder remainder = null;
+        long generated = 0;
+        for (int tick = 0; tick < 18; tick++) {
+            advance = MachineWorkAccumulator.advance(remainder, furnace, slow, 1);
+            generated += advance.wholeWork();
+            remainder = advance.remainder();
+        }
+        assertTrue("fractional station work is exact across ticks",
+                generated == 5 && remainder.remainder() == 0);
+
+        MachineWorkAccumulator.Advance switched = MachineWorkAccumulator.advance(
+                MachineWorkAccumulator.advance(null, furnace, slow, 1).remainder(),
+                ResourceLocation.withDefaultNamespace("blast_furnace"),
+                MachineWorkRate.of(5, 4),
+                1);
+        assertTrue("changing station variants resets incompatible fractional state",
+                switched.wholeWork() == 1 && switched.remainder().remainder() == 1);
+
+        MachineWorkAccumulator.Advance saturated = MachineWorkAccumulator.advance(
+                null,
+                furnace,
+                MachineWorkRate.of(Long.MAX_VALUE, 2),
+                64);
+        assertTrue("station work overflow saturates instead of wrapping",
+                saturated.wholeWork() == Long.MAX_VALUE && saturated.remainder().remainder() == 0);
     }
 
     private static void testTerminalAmountFormatter() {

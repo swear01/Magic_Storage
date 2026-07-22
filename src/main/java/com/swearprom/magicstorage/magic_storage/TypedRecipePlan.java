@@ -42,7 +42,7 @@ public final class TypedRecipePlan {
         if (width < 1 || width > 3 || height < 1 || height > 3 || width * height < inputs.size()) {
             throw new IllegalArgumentException("Typed recipe layout must fit one to nine inputs");
         }
-        requireUniqueKeys(inputs.stream().map(TypedRecipeInput::key).toList(), "input");
+        requireCompatibleInputKeys(inputs);
         requireUniqueKeys(outputs.stream().map(TypedRecipeOutput::key).toList(), "output");
     }
 
@@ -79,6 +79,21 @@ public final class TypedRecipePlan {
         for (StorageResourceKey key : keys) {
             if (!unique.add(key)) {
                 throw new IllegalArgumentException("Typed recipe " + name + " keys must be unique");
+            }
+        }
+    }
+
+    private static void requireCompatibleInputKeys(List<TypedRecipeInput> inputs) {
+        java.util.Map<StorageResourceKey, TypedRecipeInput.Role> roles = new java.util.HashMap<>();
+        for (TypedRecipeInput input : inputs) {
+            for (StorageResourceKey key : input.alternatives()) {
+                TypedRecipeInput.Role previous = roles.putIfAbsent(key, input.role());
+                if (previous != null
+                        && (previous != TypedRecipeInput.Role.CONSUME
+                        || input.role() != TypedRecipeInput.Role.CONSUME)) {
+                    throw new IllegalArgumentException(
+                            "Retained typed recipe input keys cannot overlap");
+                }
             }
         }
     }

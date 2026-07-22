@@ -263,22 +263,41 @@ record RecipeAdapterMatch(
         }
     }
 
-    record Cost(Optional<EnergyCost> energyCost, Optional<ToolCost> toolCost) {
+    record Cost(
+            Optional<EnergyCost> energyCost,
+            Optional<ToolCost> toolCost,
+            Optional<StationWorkCost> stationWorkCost
+    ) {
         Cost {
             Objects.requireNonNull(energyCost, "energyCost");
             Objects.requireNonNull(toolCost, "toolCost");
+            Objects.requireNonNull(stationWorkCost, "stationWorkCost");
         }
 
         static Cost free() {
-            return new Cost(Optional.empty(), Optional.empty());
+            return new Cost(Optional.empty(), Optional.empty(), Optional.empty());
         }
 
         static Cost energy(EnergyCost energyCost) {
-            return new Cost(Optional.of(Objects.requireNonNull(energyCost, "energyCost")), Optional.empty());
+            return new Cost(Optional.of(Objects.requireNonNull(energyCost, "energyCost")),
+                    Optional.empty(), Optional.empty());
         }
 
         static Cost tool(ToolCost toolCost) {
-            return new Cost(Optional.empty(), Optional.of(Objects.requireNonNull(toolCost, "toolCost")));
+            return new Cost(Optional.empty(), Optional.of(Objects.requireNonNull(toolCost, "toolCost")),
+                    Optional.empty());
+        }
+
+        static Cost stationWork(StationWorkCost stationWorkCost) {
+            return new Cost(Optional.empty(), Optional.empty(),
+                    Optional.of(Objects.requireNonNull(stationWorkCost, "stationWorkCost")));
+        }
+    }
+
+    record StationWorkCost(ResourceLocation descriptorId, long amountPerCraft) {
+        StationWorkCost {
+            Objects.requireNonNull(descriptorId, "descriptorId");
+            if (amountPerCraft <= 0) throw new IllegalArgumentException("Station work cost must be positive");
         }
     }
 

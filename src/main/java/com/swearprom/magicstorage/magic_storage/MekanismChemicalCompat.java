@@ -126,7 +126,7 @@ public final class MekanismChemicalCompat {
         return created;
     }
 
-    private static StorageResourceKey key(ChemicalStack stack) {
+    static StorageResourceKey key(ChemicalStack stack) {
         ResourceLocation chemicalId = stack.getChemicalHolder().unwrapKey()
                 .orElseThrow(() -> new IllegalArgumentException("Unregistered chemical cannot be stored"))
                 .location();

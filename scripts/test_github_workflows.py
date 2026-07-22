@@ -5,10 +5,61 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class GitHubWorkflowTests(unittest.TestCase):
+    GAME_TEST_STEPS = (
+        (
+            "Run GameTest server",
+            "./gradlew runGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/gametest.log",
+        ),
+        (
+            "Run recipe addon GameTest server",
+            "./gradlew runRecipeAddonGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/recipe-addon-gametest.log",
+        ),
+        (
+            "Run Mekanism GameTest server",
+            "./gradlew runMekanismGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/mekanism-gametest.log",
+        ),
+        (
+            "Run Iron Furnaces GameTest server",
+            "./gradlew runIronFurnacesGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/iron-furnaces-gametest.log",
+        ),
+        (
+            "Run Farmer's Delight GameTest server",
+            "./gradlew runFarmersDelightGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/farmers-delight-gametest.log",
+        ),
+    )
+    CLEAR_GAME_TEST_WORLD = (
+        "python3 -c 'import shutil; shutil.rmtree(\"run/world\", ignore_errors=True)'"
+    )
+
     def read_required(self, relative_path: str) -> str:
         path = ROOT / relative_path
         self.assertTrue(path.exists(), f"missing {relative_path}")
         return path.read_text()
+
+    def assert_isolated_sequential_game_test_steps(self, text: str):
+        previous_end = -1
+        for name, command in self.GAME_TEST_STEPS:
+            marker = f"      - name: {name}\n        run: |\n"
+            start = text.find(marker)
+            self.assertGreater(start, previous_end, f"missing or out-of-order step: {name}")
+            body_start = start + len(marker)
+            body_end = text.find("\n      - name:", body_start)
+            if body_end == -1:
+                body_end = len(text)
+            body = [line.strip() for line in text[body_start:body_end].splitlines()]
+            self.assertEqual(
+                ["set -o pipefail", self.CLEAR_GAME_TEST_WORLD, command],
+                body,
+                f"{name} must be an isolated step that clears only run/world first",
+            )
+            previous_end = body_end
+
+    def test_ci_and_release_run_all_game_test_fixtures_in_isolated_sequential_steps(self):
+        for relative_path in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
+            with self.subTest(workflow=relative_path):
+                self.assert_isolated_sequential_game_test_steps(
+                    self.read_required(relative_path)
+                )
 
     def test_ci_workflow_runs_full_project_verification_and_uploads_jar(self):
         text = self.read_required(".github/workflows/ci.yml")

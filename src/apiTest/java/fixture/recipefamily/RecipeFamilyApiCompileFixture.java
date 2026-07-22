@@ -1,6 +1,11 @@
 package fixture.recipefamily;
 
 import com.swearprom.magicstorage.magic_storage.MachineEnergyTable;
+import com.swearprom.magicstorage.magic_storage.MachineDescriptor;
+import com.swearprom.magicstorage.magic_storage.MachineVariant;
+import com.swearprom.magicstorage.magic_storage.MachineWorkRate;
+import com.swearprom.magicstorage.magic_storage.EnergyCost;
+import com.swearprom.magicstorage.magic_storage.EnergyType;
 import com.swearprom.magicstorage.magic_storage.RecipeFamily;
 import com.swearprom.magicstorage.magic_storage.RecipeFamilyApi;
 import com.swearprom.magicstorage.magic_storage.RecipeFamilyCost;
@@ -59,12 +64,36 @@ public final class RecipeFamilyApiCompileFixture {
                 MachineEnergyTable.STONECUTTER_ID,
                 (recipe, registries) -> TypedRecipePlan.builder()
                         .input(TypedRecipeInput.consume(resource("mana", "blue"), 100))
+                        .input(TypedRecipeInput.consumeAnyWithRemainders(
+                                List.of(
+                                        resource("mana", "red"),
+                                        resource("mana", "green")),
+                                1,
+                                java.util.Map.of(
+                                        resource("mana", "red"),
+                                        TypedRecipeOutput.remainder(resource("mana", "blue"), 1))))
                         .input(TypedRecipeInput.catalyst(resource("item", "diamond"), 1))
                         .input(TypedRecipeInput.tool(resource("item", "iron_pickaxe"), 1))
                         .output(TypedRecipeOutput.primary(resource("item", "redstone"), 2))
                         .output(TypedRecipeOutput.remainder(resource("mana", "blue"), 25))
                         .presentationOutput(new ItemStack(Items.REDSTONE, 2))
-                        .layout(3, 1, false)
+                        .layout(2, 2, false)
+                        .build(),
+                recipe -> RecipeFamilyCost.free(),
+                RecipePresentationKind.STONECUTTING);
+    }
+
+    public static RecipeFamily createConditionalTyped() {
+        return RecipeFamilyFactories.deterministicResources(
+                StonecutterRecipe.class,
+                () -> RecipeType.STONECUTTING,
+                MachineEnergyTable.STONECUTTER_ID,
+                recipe -> !recipe.getGroup().isEmpty(),
+                (recipe, registries) -> TypedRecipePlan.builder()
+                        .input(TypedRecipeInput.consume(resource("item", "stone"), 1))
+                        .output(TypedRecipeOutput.primary(resource("item", "stone_bricks"), 1))
+                        .presentationOutput(new ItemStack(Items.STONE_BRICKS))
+                        .layout(1, 1, false)
                         .build(),
                 recipe -> RecipeFamilyCost.free(),
                 RecipePresentationKind.STONECUTTING);
@@ -74,6 +103,27 @@ public final class RecipeFamilyApiCompileFixture {
         DeferredRegister<RecipeFamily> families = RecipeFamilyApi.createDeferredRegister("fixture_mod");
         families.register("stonecutting", RecipeFamilyApiCompileFixture::create);
         return families;
+    }
+
+    public static MachineDescriptor polymorphicStation() {
+        return MachineDescriptor.installableVariants(
+                ResourceLocation.fromNamespaceAndPath("fixture_mod", "polymorphic_station"),
+                () -> List.of(
+                        MachineVariant.of(new ItemStack(Items.COPPER_BLOCK), MachineWorkRate.of(10, 9)),
+                        MachineVariant.of(new ItemStack(Items.IRON_BLOCK), MachineWorkRate.of(5, 4))),
+                MachineEnergyTable.Category.PROCESS,
+                64,
+                null);
+    }
+
+    public static RecipeFamilyCost stationWorkCost() {
+        return RecipeFamilyCost.stationWorkAndEnergy(
+                200,
+                new EnergyCost(
+                        EnergyType.SMELTING_ENERGY,
+                        0,
+                        EnergyType.FURNACE_FUEL,
+                        200));
     }
 
     public static DeferredRegister<StorageResourceKind> registerResourceKinds() {
