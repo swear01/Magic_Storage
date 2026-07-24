@@ -1,12 +1,12 @@
 # Typed Resource Storage Architecture
 
-> Status: implemented foundation under GitHub [#9](https://github.com/swear01/Magic_Storage/issues/9). Item, fluid, NeoForge Energy, optional Mekanism chemical, and registered addon kinds now share one live ledger and transaction domain. Terminal listing and its resource selector, passive Bus capabilities, Creative unlimited type capacity, the public resource-kind API, and deterministic typed recipe families are connected.
+> Status: implemented foundation under GitHub [#9](https://github.com/swear01/Magic_Storage/issues/9). Item, fluid, NeoForge Energy, optional Mekanism chemical, Botania Mana, Ars Nouveau Source, and registered addon kinds now share one live ledger and transaction domain. Terminal listing and its resource selector, passive Bus capabilities, Creative unlimited type capacity, the public resource-kind API, and deterministic typed recipe families are connected.
 
 ## Product boundary
 
 Magic Storage owns stored resources and executes supported recipes immediately inside its server-owned transaction engine. It does not export ingredients to an external machine and wait for that machine to finish.
 
-Items, fluids, NeoForge Energy, and Mekanism chemicals are the first required kinds. They are not a closed enum. Future addons must be able to register other deterministic resources without adding another hardcoded Core field.
+Items, fluids, NeoForge Energy, Mekanism chemicals, Botania Mana, and Ars Nouveau Source are the implemented kinds. They are not a closed enum. Future addons must be able to register other deterministic resources without adding another hardcoded Core field.
 
 ## Universal identity
 
@@ -27,6 +27,7 @@ Variant data is part of identity. Item and fluid components cannot be discarded 
 
 - Identity: exact item registry ID plus exact data components.
 - Amount: item count as `long`.
+- Canonical variant NBT encodes the reconstructed one-count `ItemStack`'s `DataComponentPatch` relative to its item prototype, not the full effective `DataComponentMap`. Third-party prototypes may contain valid in-memory defaults whose codecs reject explicit serialization; writing only the patch preserves the same effective identity without serializing those defaults.
 - `ItemKey` remains the exact item adapter, but live counts are stored only in the universal ledger. The old segmented item NBT is now a persistence compatibility encoding, not a second runtime map.
 
 ### Fluid
@@ -44,10 +45,20 @@ Variant data is part of identity. Item and fluid components cannot be discarded 
 ### Chemical
 
 - Identity: exact Mekanism chemical registry ID.
-- The persisted resource-kind ID remains `mekanism:chemical` for compatibility with 0.1.31 worlds. The built-in registry entry is exposed through a NeoForge alias from `mekanism:chemical` to `magic_storage:chemical`; do not rename it or silently migrate saved keys.
+- The persisted resource-kind ID remains `mekanism:chemical` for compatibility with 0.1.31 worlds. The built-in registry entry is exposed through a NeoForge alias from `mekanism:chemical` to `magic_storage:chemical`; both IDs are classified as the Gas view, and that view is registered only when the Mekanism provider is loaded. Do not rename either ID or silently migrate saved keys.
 - Amount: chemical amount as `long`.
 - The compatibility module uses `ChemicalStack` and `IChemicalHandler` only when Mekanism is present. The normal build and dedicated server must remain safe when it is absent.
 - The player-facing dependency is not pinned to the one representative version exercised by CI. No Mekanism multi-version CI matrix is planned; incompatibilities outside that representative fixture are handled from user reports.
+
+### Botania Mana
+
+GitHub [#13](https://github.com/swear01/Magic_Storage/issues/13) now has its first safe production slice. `botania:mana` is a conditional variantless resource kind in the same long Core ledger and appears under Other only while Botania is loaded. Held transfer currently accepts only a finite local Mana Tablet. It applies public `ManaItem.LOOKUP` to a private one-count copy, requires the exact requested delta to be observable after mutation, and then commits the cursor replacement and Core delta together. Creative/infinite tablets, Mana Mirrors bound to an external pool, and every other container whose exact local delta cannot be proven are rejected.
+
+Mana recipe costs join the same typed transaction as items, water, catalysts, container remainders, and every output. The implemented families and exact fail-closed boundaries are documented in [`botania-compatibility.md`](botania-compatibility.md). Passive Bus transfer to Botania block receivers remains excluded: the audited `receiveMana(int)` contract has no simulation operation, so calling it during planning would violate simulate-then-commit.
+
+### Ars Nouveau Source
+
+`ars_nouveau:source` is a conditional variantless resource kind in the same long Core ledger and appears under Other only while Ars Nouveau is loaded. Source Jar transfer uses Ars Nouveau's public `ISourceCap` simulation-aware `receiveSource` and `extractSource` operations, so directional Buses and recipe execution retain the shared simulate-then-commit contract. Imbuement and Enchanting Apparatus Source costs join the same atomic transaction as exact items, catalysts, remainders, station work, and outputs. See [`ars-nouveau-compatibility.md`](ars-nouveau-compatibility.md).
 
 ## Ledger and transaction rules
 
@@ -65,9 +76,11 @@ Variant data is part of identity. Item and fluid components cannot be discarded 
 
 Registration does not grant Core/player mutation callbacks. `StorageResourceHandler` exposes bounded list/amount/insert/extract operations; `StorageResourceTransaction` is the only public multi-key mutation request. Magic Storage still owns validation, capacity, persistence, synchronization, and all-or-nothing commit. Missing providers remain raw on disk and are omitted from terminal presentation until their kind is registered again; new live mutations reject unregistered kinds instead of guessing or fabricating a representative.
 
-Terminal entries carry the exact key and long amount in display-only metadata. A server-owned menu value selects exactly one presentation group: Item, Fluid, NeoForge Energy, Mekanism Chemical/Gas, or Other. Other contains registered addon kinds not promoted to a built-in group; missing providers remain omitted. The selector appears on Storage views in both terminal types, resets to Item, and is hidden/rejected on Craftable and Fuel. Clicking a non-item representative never extracts its icon or selects an item recipe, and EMI excludes those representatives from item inputs. A player may deposit into or withdraw from a supported fluid, FE, chemical, or addon container held on the cursor; the server rejects spectator, stale, wrong-view, hidden-slot, out-of-range, and otherwise invalid-menu packets before mutation, plans against a private one-item copy, simulates Core capacity, then atomically commits the Core delta and exact replacement container. Cursor/inventory placement and the Core delta share one mutation batch, so listeners cannot observe a half-committed transfer. It never stores container state on the client.
+Terminal entries carry the exact key and long amount in display-only metadata. A server-owned menu value selects exactly one available presentation group in stable Item, Fluid, NeoForge Energy, Mekanism Chemical/Gas, Other order. Base registers only Item/Fluid/Energy; the Mekanism provider enables Gas, and Botania Mana, Ars Nouveau Source, or an independently registered addon kind enables Other. Both persisted and registry-canonical chemical IDs map to Gas. Missing providers remain omitted. The selector appears on Storage and Craftable views in both terminal types, resets to Item, and is hidden/rejected only on Fuel. Clicking a non-item representative in Storage never extracts its icon or selects an item recipe; clicking one in Craftable may select the exact typed-output recipe represented by that key. EMI excludes every non-item representative from item inputs. A player may deposit into or withdraw from a supported fluid, FE, chemical, or addon container held on the cursor; the server rejects spectator, stale, wrong-view, hidden-slot, out-of-range, and otherwise invalid-menu packets before mutation, plans against a private one-item copy, simulates Core capacity, then atomically commits the Core delta and exact replacement container. Cursor/inventory placement and the Core delta share one mutation batch, so listeners cannot observe a half-committed transfer. It never stores container state on the client.
 
-Directional Import and Export Buses scan the front block for both the generic addon capability and every matching native fluid/FE/chemical endpoint; a block exposing generic mana and native fluid at the same time therefore transfers both rather than letting the generic endpoint mask the native one. Passive Import is insert-only. Directionless Export exposes filtered extract-only generic/native capabilities plus a safe one-slot item view capped to a normal stack. Generic typed capability paths reject the Item kind so item automation cannot bypass `IItemHandler` stack limits. Existing item rules are not reinterpreted as typed filters: non-item resources pass under empty `DENY`, while item-only `ALLOW` rules match no typed resource. Creative Storage makes the same shared type domain unlimited for every kind.
+Typed recipe selection preserves the exact primary `StorageResourceKey` and exact positive long amount per craft. If a deterministic plan has an item primary, that item remains its selectable identity. Otherwise it must have exactly one non-item primary. A non-item selected primary is Storage-only: the direct terminal control displays Storage and is disabled for that selection without overwriting the saved item-output preference; explicit Storage requests commit to the Core, while Cursor, Player, Inventory, and EMI inventory requests reject before mutation. Primary and remainder roles are kept separate through checked multiplication and final transaction construction, including mixed item/non-item outputs and `Long.MAX_VALUE` overflow checks.
+
+Directional Import and Export Buses scan the front block for both the generic addon capability and every matching native fluid/FE/chemical endpoint; a block exposing generic Mana or Source and native fluid at the same time therefore transfers both rather than letting the generic endpoint mask the native one. Passive Import is insert-only. Directionless Export exposes filtered extract-only generic/native capabilities plus a safe one-slot item view capped to a normal stack. Generic typed capability paths reject the Item kind so item automation cannot bypass `IItemHandler` stack limits. Existing item rules are not reinterpreted as typed filters: non-item resources pass under empty `DENY`, while item-only `ALLOW` rules match no typed resource. Creative Storage makes the same shared type domain unlimited for every kind.
 
 ### Public handler and strategy contract
 
@@ -93,7 +106,7 @@ Escrow is saved in the Bus BlockEntity and owner-stripped Bus drop. Each live Bu
 
 `RecipeFamilyFactories.deterministicResources(...)` resolves a `TypedRecipePlan` from the current exact recipe holder and server registries. A plan declares one to nine exact inputs, multiple exact outputs, a selectable primary item output, layout, and explicit roles. Inputs may have ordered exact alternatives; overlapping `CONSUME` alternatives use one deterministic max-flow allocation, and each chosen alternative may return its own exact remainder. `CONSUME` multiplies by craft count; `CATALYST` and `TOOL` are retained and reusable across a batch; `PRIMARY` item outputs follow the selected Player/Storage destination, while non-item outputs and typed remainders return to Core. Checked multiplication, descriptor station work/Fuel, destination capacity, every consumed item/non-item, and every Core output are simulated and committed as one ledger transaction.
 
-Current built-in optional recipe bridges are Farmer's Delight Cooking Pot and Mekanism Crushing, Enriching, Smelting, Combining, plus deterministic item-output Pressurized Reaction. Pressurized Reaction consumes exact item/fluid/chemical keys, total recipe-specific FE (`energyRequired × duration`), and descriptor station work in one plan and may return a chemical co-output. Chemical-only terminal outputs and chance/per-tick-use families remain unsupported.
+Current optional recipe bridges cover Farmer's Delight, Mekanism, Botania, Modern Industrialization, Ars Nouveau, EvilCraft, Powah, Industrial Foregoing, and Create. Their exact family lists and fail-closed boundaries are maintained in the corresponding compatibility documents. EvilCraft Blood uses the existing Fluid kind rather than introducing another resource kind. Powah Energizing consumes the existing NeoForge Energy kind rather than introducing a Powah-specific power key. Industrial Foregoing reuses the existing Fluid and NeoForge Energy kinds; it does not create machine-specific resource keys. Create reuses Item and Fluid and does not invent RPM/stress/FE resources. PneumaticCraft Air is not registered because its handler has no simulation/result contract, permits negative values, and derives pressure from mutable volume. Every accepted plan uses the same typed transaction and preserves its provider's exact input, output, catalyst, remainder, work, and resource-unit contracts.
 
 Chance, dynamic world/player callbacks, arbitrary mutation callbacks, and external-machine send-and-wait remain unsupported. Multi-step graph planning is still future work under GitHub [#1](https://github.com/swear01/Magic_Storage/issues/1).
 
@@ -118,8 +131,16 @@ Every phase starts RED-first. The final phase gate remains:
 ./gradlew runGameTestServer
 ./gradlew runRecipeAddonGameTestServer
 ./gradlew runMekanismGameTestServer
+./gradlew runBotaniaGameTestServer
 ./gradlew runIronFurnacesGameTestServer
 ./gradlew runFarmersDelightGameTestServer
+./gradlew runModernIndustrializationGameTestServer
+./gradlew runArsNouveauGameTestServer
+./gradlew runEvilCraftGameTestServer
+./gradlew runPowahGameTestServer
+./gradlew runIndustrialForegoingGameTestServer
+./gradlew runCreateGameTestServer
+./gradlew runPneumaticCraftGameTestServer
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover scripts
 ./gradlew runData
 ```

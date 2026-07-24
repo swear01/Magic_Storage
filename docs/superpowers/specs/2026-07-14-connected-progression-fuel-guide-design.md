@@ -97,7 +97,7 @@ Each adjacent pair must differ outside the old capacity-bar region. Automated as
 
 ### Status markers
 
-Only binary on/off controls use a colored status light. `Use Player Inventory` may show the light because it is a boolean. Sort mode, sort order, search mode, Fuel Target, and Craft Output are value selectors and never show a green/blue on-state marker. Page tabs use a neutral selected-tab treatment, not an on/off light.
+Only binary on/off controls use a colored status light. `Use Player Inventory` may show the light because it is a boolean. Sort mode, sort order, Search Sync, Fuel Target, and Craft Output are value selectors and never show a green/blue on-state marker. Page tabs use a neutral selected-tab treatment, not an on/off light.
 
 ### Cycle controls and reset
 
@@ -108,7 +108,7 @@ Every cyclic value selector follows one shared contract:
 - wheel down/up: next/previous while hovered;
 - middle click: reset to that control's documented default.
 
-Defaults are Name sort, Ascending order, normal name search, Auto Fuel Target, Player craft output, and the existing default for player-inventory ingredient sourcing. Middle reset is sent as an explicit server-approved action; the client never changes session state locally.
+Defaults are Name sort, Ascending order, Search Sync Off, Auto Focus On, Auto Fuel Target, Player craft output, and the existing default for player-inventory ingredient sourcing. Middle reset is sent as an explicit server-approved action; the client never changes session state locally.
 
 Tooltips remain concise: control name plus current value. Mouse gesture instructions belong in the guide, not persistent UI text.
 

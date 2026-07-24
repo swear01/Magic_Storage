@@ -21,20 +21,23 @@ python3 scripts/run_prism_gui_session.py --scenario crafting-fuel-page
 runner 會：
 
 1. 先從明確的 `/Applications/Prism Launcher.app` 讀版本並要求11.0.3+。
-2. 要求一般Prism Launcher已開啟且account initialization完成；若沒有warm normal-root process，runner在改世界與啟client前fail。這避免Prism cold start即使帶`-o`仍刷新Microsoft/Xbox ownership。runner不建立`-d` data root，也不建立或改寫`accounts.json`。Offline-only root沒有owning account，Prism會進Demo/account-selection，不能拿來啟動完整遊戲。
-3. 對該已執行process送出 `"/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher" -l dev -w MagicStorageGuiTest -o MagicStorageBot`。這是Prism官方CLI的既有instance離線launch路徑，不透過`open -n`。
-4. launcher subprocess只帶HOME/PATH/TMPDIR/locale等必要環境；run artifact會移除Prism列出的process/native environment。
-5. 寫入 `fullscreen:true`，移除任何舊的 `fullscreenResolution`；`overrideWidth=1280`、`overrideHeight=720` 僅供離開全螢幕後的 windowed fallback。
-6. 在準備世界時記錄 macOS 桌面 display mode（點數、像素、refresh、depth）。
-7. 等 `MS_GUI_TEST_READY` 後只掃normal-root `PrismLauncher-0.log`的本次cursor片段；任何`AuthFlow:`實際step或Microsoft/Xbox/XSTS/Minecraft-services endpoint都fail closed。generic Offline task與`RefreshSchedule` bookkeeping不代表網路登入。
-8. 再讀一次 desktop mode；任一欄不同也fail closed。
-9. 將 `manifest.json`、`session.json`、`checklist.md`、Minecraft log、已清理的`prism-launcher.log` 與 shutdown artifacts 寫進同一run directory。
+2. `crafting-fuel-page`先驗證Prism dev中的15份optional-mod support jars各只有一份，且SHA-256和`./gradlew stagePrismGuiSupportMods`產生的`build/prism-gui-mods`完全一致；其中GuideME與Curios各只部署一份。PneumaticCraft因零accepted production contract不加入；EvilCraft/Cyclops Core因TMRV 0.9.0 JEI stub會讓EvilCraft 1.2.91 Spirit Furnace packet在registrar建立前造成client FATAL，也不加入combined pack。任何JEI jar都會因與TMRV不相容而fail。`python3 scripts/deploy_prism_dev.py`會把全部support jars與Magic Storage、Fusion放在同一transaction部署/rollback，成功時移除舊JEI、EvilCraft與Cyclops Core。
+3. 要求一般Prism Launcher已開啟且account initialization完成；若沒有warm normal-root process，runner在改世界與啟client前fail。這避免Prism cold start即使帶`-o`仍刷新Microsoft/Xbox ownership。runner不建立`-d` data root，也不建立或改寫`accounts.json`。Offline-only root沒有owning account，Prism會進Demo/account-selection，不能拿來啟動完整遊戲。
+4. 對該已執行process送出 `"/Applications/Prism Launcher.app/Contents/MacOS/prismlauncher" -l dev -w MagicStorageGuiTest -o MagicStorageBot`。這是Prism官方CLI的既有instance離線launch路徑，不透過`open -n`。
+5. launcher subprocess只帶HOME/PATH/TMPDIR/locale等必要環境；run artifact會移除Prism列出的process/native environment。
+6. 寫入 `fullscreen:true`，移除任何舊的 `fullscreenResolution`；`overrideWidth=1280`、`overrideHeight=720` 僅供離開全螢幕後的 windowed fallback。
+7. 在準備世界時記錄 macOS 桌面 display mode（點數、像素、refresh、depth）。
+8. 等 `MS_GUI_TEST_READY` 後只掃normal-root `PrismLauncher-0.log`的本次cursor片段；任何`AuthFlow:`實際step或Microsoft/Xbox/XSTS/Minecraft-services endpoint都fail closed。generic Offline task與`RefreshSchedule` bookkeeping不代表網路登入。
+9. 再讀一次 desktop mode；任一欄不同也fail closed。
+10. 將 `manifest.json`、`session.json`、`checklist.md`、Minecraft log、已清理的`prism-launcher.log` 與 shutdown artifacts 寫進同一run directory。
 
 visual scenario 的 owner 是使用者。READY、GameTest 或 client smoke 都不等於 GUI 視覺驗收。
 
 ## 使用者全螢幕 gate
 
 READY 後先確認完整遊戲內容、左下版本文字、底部 hotbar 與 GUI 坐標都沒有被裁切；通過後才可執行該次 `checklist.md` 的 `u`、hotbar、點擊、滾輪或截圖步驟。
+
+`crafting-fuel-page`是一個batched visual gate。世界在handoff前已把Oak Log/Cobblestone/Mushroom Stew/Smithing材料、vanilla與optional stations、Fuel/Brew/process reserves、finite Axe Energy、water/lava、FE、oxygen/hydrogen、Source、Mana及#14–#15/#17–#19代表性station/resources全部寫入唯一server-owned Core repository record；玩家inventory刻意清空，只保留hotbar `1`/`2`導航物。不得再要求使用者逐台安裝、逐項加Fuel、等待能量或先完成craft；這些行為由GameTest/fixture負責。使用者只需開Storage/Craftable/Fuel與代表配方，確認station badge從已安裝variant開始並以每1000ms一格輪播；Iron Furnaces的JEI plugin catalysts由TMRV接到EMI並顯示為Smelting workstations，而Magic Storage沒有冒充metadata owner；machine rate一律顯示小數（例如`1.25/tick`，正值不誤顯示`0.00`）；Fuel tooltip不重疊；右下Fuel搜尋啟用後把reserves與Consumables/Timed/Instant三類合成一個結果grid，名稱、`@mod`與`#tag`都可搜尋，關閉後三區原位恢復；recipe ledger的available/required以兩行完整原字級呈現；Cooking Pot、Mekanism、Modern Industrialization、Ars Nouveau、Powah、Industrial Foregoing與Create代表配方可直接查看；resource selector只顯示目前provider存在的群組。EvilCraft GUI不在本次combined gate，僅使用隔離GameTest證據。這些仍由使用者目視判定。
 
 禁止使用 macOS 綠色按鈕、Control-Command-F，或將 macOS native fullscreen 與 Minecraft F11 疊加。
 
