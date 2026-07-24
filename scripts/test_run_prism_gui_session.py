@@ -32,19 +32,44 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             module.require_running_normal_prism = lambda: None
         return module
 
-    def fake_prepare(self, minecraft_dir: Path, source_world: str, target_world: str):
+    def fake_prepare(
+        self,
+        minecraft_dir: Path,
+        source_world: str,
+        target_world: str,
+        scenario_name: str | None = None,
+    ):
         world_dir = minecraft_dir / "saves" / target_world
         world_dir.mkdir(parents=True, exist_ok=True)
-        return {
-            "world_name": target_world,
-            "world_dir": str(world_dir),
-            "hotbar_views": {
+        hotbar_views = {
+            "terminal-left-rail": {
                 "1": {"slot": 0, "function": "view_storage_terminal", "target": "storage_terminal"},
                 "2": {"slot": 1, "function": "view_crafting_terminal", "target": "crafting_terminal"},
-                "7": {"slot": 6, "function": "view_texture_gallery", "target": "texture_gallery"},
-                "8": {"slot": 7, "function": "home", "target": "overview"},
+            },
+            "bus-configuration": {
+                "5": {"slot": 4, "function": "view_import_bus", "target": "import_bus"},
+                "6": {"slot": 5, "function": "view_export_bus", "target": "export_bus"},
+                "7": {"slot": 6, "function": "view_import_bus", "target": "import_bus"},
                 "9": {"slot": 8, "function": "reset_from_hotbar", "target": "reset"},
             },
+            "crafting-fuel-page": {
+                "1": {"slot": 0, "function": "view_storage_terminal", "target": "storage_terminal"},
+                "2": {"slot": 1, "function": "view_crafting_terminal", "target": "crafting_terminal"},
+            },
+        }.get(scenario_name, {})
+        return {
+            "schema_version": 5,
+            "scenario": scenario_name,
+            "world_name": target_world,
+            "world_dir": str(world_dir),
+            "start_target": {
+                "terminal-left-rail": "storage_terminal",
+                "bus-configuration": "import_bus",
+                "crafting-fuel-page": "crafting_terminal",
+                "patchouli-guide": "overview",
+            }.get(scenario_name, "overview"),
+            "player_kit": {"hotbar": {}, "inventory": []},
+            "hotbar_views": hotbar_views,
             "world_generator": {
                 "type": "minecraft:flat",
                 "biome": "minecraft:the_void",
@@ -70,6 +95,31 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "depth": 24,
             },
         }
+
+    def test_run_session_passes_scenario_into_world_preparation(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            minecraft_dir = root / "minecraft"
+            (minecraft_dir / "logs").mkdir(parents=True)
+            received = []
+
+            def prepare(minecraft, source, target, *, scenario_name):
+                received.append(scenario_name)
+                return self.fake_prepare(minecraft, source, target, scenario_name)
+
+            mod.run_session(
+                scenario_name="bus-configuration",
+                minecraft_dir=minecraft_dir,
+                instance_dir=root / "instances" / "dev",
+                run_root=root / "gui-runs",
+                prepare_world_func=prepare,
+                configure_instance_func=lambda instance_dir: True,
+                no_launch=True,
+                timestamp_func=lambda: "20260723-150000",
+            )
+
+            self.assertEqual(["bus-configuration"], received)
 
     def configure_matching_deployment(self, mod, root: Path, minecraft_dir: Path) -> None:
         project_dir = root / "project"
@@ -160,9 +210,12 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             self.assertIn("fullscreen gate", checklist)
             self.assertIn("hotbar `1`", checklist)
             self.assertIn("hotbar `2`", checklist)
-            self.assertIn("Items, Fluids, Energy, Gases, and Other", checklist)
+            self.assertIn("registered resource kinds only", checklist)
+            self.assertIn("Gases appears only when a chemical provider", checklist)
+            self.assertIn("Other appears only when an addon", checklist)
             self.assertIn("middle-click resets it to Items", checklist)
-            self.assertIn("Craftable and Fuel hide the resource selector", checklist)
+            self.assertIn("Storage and Craftable expose the resource selector", checklist)
+            self.assertIn("Fuel hides the resource selector", checklist)
             self.assertIn("reopen Storage Terminal", checklist)
             self.assertIn("restart the client", checklist)
             self.assertIn("Crafting-only page, source, output, and Fuel Target", checklist)
@@ -179,6 +232,8 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             self.assertNotIn("native fullscreen or F11 fullscreen", checklist)
             self.assertIn("Stop automation here and hand control to the user", checklist)
             self.assertIn("known offline profile-properties 401", checklist)
+            self.assertIn("Botania snapshot README", checklist)
+            self.assertIn("Industrial Foregoing Curios", checklist)
             self.assertIn("no non-whitelisted", checklist)
             self.assertNotIn("no advanced_container_set_data, ERROR, FATAL, or Caused by", checklist)
             self.assertNotIn("Computer Use bundle id", checklist)
@@ -506,17 +561,15 @@ class RunPrismGuiSessionTests(unittest.TestCase):
 
             self.assertTrue(result.manual_gui_required)
             checklist = (result.run_dir / "checklist.md").read_text()
-            self.assertIn("fresh empty Core record", checklist)
+            self.assertIn("preloaded Core record", checklist)
+            self.assertIn("player inventory is intentionally empty", checklist)
             self.assertNotIn("legacy iron axe converted", checklist)
-            self.assertNotIn("preinstalled instant stations", checklist)
             for expected in [
                 "fullscreen gate",
                 "true-void",
                 "hotbar `1`",
                 "hotbar `2`",
-                "hotbar `7`",
-                "hotbar `8`",
-                "hotbar `9`",
+                "already aimed at the Crafting Terminal",
                 "Fuel page",
                 "Storage tab",
                 "Craftable tab",
@@ -525,14 +578,12 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "Auto",
                 "Blaze Rod",
                 "Oak Logs",
-                "runtime burn time",
                 "Charcoal",
                 "zero stored",
                 "EMI",
-                "cursor/inventory",
                 "visible outer margins",
                 "frame and left rail are centered as one group",
-                "timed-station slots",
+                "timed-station and instant-station slots",
                 "currently registered reserve",
                 "scroll its panel",
                 "Consumables",
@@ -550,29 +601,12 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "Crafting Table",
                 "Stonecutter",
                 "Smithing Table",
-                "accept only one",
                 "Axe Energy",
-                "consumed immediately",
-                "Unbreaking",
-                "infinity marker",
                 "Smithing Transform",
                 "strip",
-                "16×16",
-                "80×16",
-                "isolated row",
-                "contiguous connected row",
                 "Creative Storage Unit",
-                "cyan-amethyst infinity motif",
                 "localized unlimited type capacity",
-                "does not generate items",
                 "Creative Storage Unit icon",
-                "shared casing borders",
-                "center motifs remain",
-                "directional front",
-                "Wrench",
-                "normal right-click",
-                "sneak-right-click",
-                "stays at zero",
                 "hover tooltip",
                 "Brew Energy",
                 "white focus border",
@@ -602,17 +636,60 @@ class RunPrismGuiSessionTests(unittest.TestCase):
                 "selected row",
                 "bounded scrolling",
                 "outside the popup",
+                "bottom-right Fuel search",
+                "single unified result grid",
+                "search Fuel reserves, Consumables, Timed Stations, and Instant Stations together",
                 "right-click",
                 "actual station slot or reserve icon",
                 "fill the available space evenly",
                 "×8",
                 "×64",
                 "Max",
-                "magnifier",
-                "#",
-                "@",
+                "@minecraft",
+                "#minecraft:logs",
+                "Auto Focus",
+                "immediately receives keyboard input",
+                "Search Sync",
+                "Off",
+                "EMI Two-way",
+                "Iron Furnace",
+                "installed variant first",
+                "exactly once per real-time second",
+                "complete station-icon cycle",
+                "Cooking Pot",
+                "Mushroom Stew",
+                "brown mushroom",
+                "red mushroom",
+                "bowl",
+                "third-party recipe",
+                "fixed two-decimal",
+                "1.25/tick",
+                "never a fraction",
+                "full-size lines",
+                "121K",
+                "/200",
+                "TMRV",
+                "Iron Furnaces owns",
+                "Magic Storage does not register",
+                "Mekanism",
+                "Gases appears because",
+                "Other remains hidden",
+                "preinstalled",
+                "preloaded",
+                "no setup action",
             ]:
                 self.assertIn(expected, checklist)
+            for forbidden in [
+                "Shift-click",
+                "install the supplied",
+                "add Coal",
+                "wait until Smelting Energy",
+                "Use hotbar `9`",
+                "Repeat from hotbar",
+                "Remove the Furnace",
+                "Cycle Search Sync through Auto",
+            ]:
+                self.assertNotIn(forbidden, checklist)
             self.assertNotIn("Cooking Energy", checklist)
             self.assertNotIn("Installed Machines", checklist)
             self.assertNotIn("reinstalled axe", checklist)
@@ -621,9 +698,57 @@ class RunPrismGuiSessionTests(unittest.TestCase):
             self.assertNotIn("different fill levels", checklist)
             self.assertNotIn("all five", checklist)
             self.assertNotIn("all eight", checklist)
-            self.assertIn("- hotbar `7` → `texture_gallery`", checklist)
-            self.assertIn("- hotbar `8` → `overview`", checklist)
-            self.assertIn("- hotbar `9` → `reset`", checklist)
+            self.assertNotIn("- hotbar `7`", checklist)
+            self.assertNotIn("- hotbar `8`", checklist)
+            self.assertNotIn("- hotbar `9`", checklist)
+
+    def test_crafting_fuel_page_support_mod_preflight_requires_exact_staged_jars(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            minecraft = root / "minecraft"
+            staged = project / "build" / "prism-gui-mods"
+            mods = minecraft / "mods"
+            staged.mkdir(parents=True)
+            mods.mkdir(parents=True)
+            self.assertEqual(15, len(mod.SUPPORT_ARTIFACTS))
+            self.assertFalse(any(
+                "pneumatic" in filename for filename, _ in mod.SUPPORT_ARTIFACTS
+            ))
+            self.assertFalse(any(
+                "evilcraft" in filename or "cyclops" in filename
+                for filename, _ in mod.SUPPORT_ARTIFACTS
+            ))
+            contents = {}
+            for index, (filename, _) in enumerate(mod.SUPPORT_ARTIFACTS):
+                content = f"support-{index}".encode()
+                contents[filename] = content
+                (staged / filename).write_bytes(content)
+                (mods / filename).write_bytes(content)
+
+            mod.verify_deployed_gui_support_jars(project, minecraft)
+
+            (mods / "botania-gui-test.jar").unlink()
+            with self.assertRaisesRegex(
+                    RuntimeError, "Expected exactly one Botania GUI support jar"):
+                mod.verify_deployed_gui_support_jars(project, minecraft)
+            (mods / "botania-gui-test.jar").write_bytes(
+                contents["botania-gui-test.jar"])
+
+            (mods / mod.IRON_FURNACES_FILENAME).write_bytes(b"stale")
+            with self.assertRaisesRegex(RuntimeError, "Iron Furnaces GUI support jar contents differ"):
+                mod.verify_deployed_gui_support_jars(project, minecraft)
+
+            (mods / mod.IRON_FURNACES_FILENAME).unlink()
+            with self.assertRaisesRegex(RuntimeError, "Expected exactly one Iron Furnaces GUI support jar"):
+                mod.verify_deployed_gui_support_jars(project, minecraft)
+
+            (mods / mod.IRON_FURNACES_FILENAME).write_bytes(
+                contents[mod.IRON_FURNACES_FILENAME])
+            (mods / "jei-incompatible.jar").write_bytes(b"jei")
+            with self.assertRaisesRegex(RuntimeError, "JEI is incompatible with TMRV"):
+                mod.verify_deployed_gui_support_jars(project, minecraft)
 
     def test_configure_instance_for_manual_handoff_disables_wrapper_and_error_console(self):
         mod = self.load_script()
@@ -1181,6 +1306,91 @@ class RunPrismGuiSessionTests(unittest.TestCase):
 
             cursor = mod.log_cursor(log)
             log.write_text(log.read_text() + "[11Jul2026 00:54:39.000] [Render thread/ERROR] [other/]: real failure\n")
+            with self.assertRaisesRegex(RuntimeError, "forbidden log pattern"):
+                mod.wait_for_log_patterns(
+                    log_path=log,
+                    offset=cursor,
+                    required_patterns=["SelfTest:"],
+                    forbidden_patterns=["ERROR"],
+                    timeout_seconds=0,
+                    poll_seconds=0,
+                    sleep_func=lambda seconds: None,
+                )
+
+    def test_log_wait_allows_only_botania_snapshot_readme_pack_noise(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "latest.log"
+            log.write_text("")
+            cursor = mod.log_cursor(log)
+            log.write_text(
+                "[24Jul2026 21:11:27.837] [Worker-Main-7/ERROR] [net.minecraft.Util/]: "
+                "Invalid path in pack: botania:patchouli_books/lexica_botania/en_us/README, ignoring\n"
+                "[24Jul2026 21:11:28.356] [Render thread/INFO] "
+                "[com.swearprom.magicstorage.magic_storage.MagicStorage/]: "
+                "SelfTest: 104 passed, 0 failed, 104 total\n"
+                "[24Jul2026 21:11:29.000] [Server thread/INFO] "
+                "[net.minecraft.server.MinecraftServer/]: [MagicStorageBot] MS_GUI_TEST_READY\n"
+            )
+
+            mod.wait_for_log_patterns(
+                log_path=log,
+                offset=cursor,
+                required_patterns=["SelfTest:", "MS_GUI_TEST_READY"],
+                forbidden_patterns=["ERROR"],
+                timeout_seconds=0,
+                poll_seconds=0,
+                sleep_func=lambda seconds: None,
+            )
+
+            cursor = mod.log_cursor(log)
+            log.write_text(
+                log.read_text()
+                + "[24Jul2026 21:11:30.000] [Worker-Main-7/ERROR] [net.minecraft.Util/]: "
+                "Invalid path in pack: botania:other_invalid_path, ignoring\n"
+            )
+            with self.assertRaisesRegex(RuntimeError, "forbidden log pattern"):
+                mod.wait_for_log_patterns(
+                    log_path=log,
+                    offset=cursor,
+                    required_patterns=["SelfTest:"],
+                    forbidden_patterns=["ERROR"],
+                    timeout_seconds=0,
+                    poll_seconds=0,
+                    sleep_func=lambda seconds: None,
+                )
+
+    def test_log_wait_allows_only_industrial_foregoing_unregistered_curios_slots(self):
+        mod = self.load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "latest.log"
+            log.write_text("")
+            cursor = mod.log_cursor(log)
+            log.write_text(
+                "[24Jul2026 21:14:36.901] [Render thread/ERROR] [Curios API/]: "
+                "example is not a registered slot type!\n"
+                "[24Jul2026 21:14:36.901] [Render thread/ERROR] [Curios API/]: "
+                "feet is not a registered slot type!\n"
+                "SelfTest: 104 passed, 0 failed, 104 total\n"
+                "MS_GUI_TEST_READY\n"
+            )
+
+            mod.wait_for_log_patterns(
+                log_path=log,
+                offset=cursor,
+                required_patterns=["SelfTest:", "MS_GUI_TEST_READY"],
+                forbidden_patterns=["ERROR"],
+                timeout_seconds=0,
+                poll_seconds=0,
+                sleep_func=lambda seconds: None,
+            )
+
+            cursor = mod.log_cursor(log)
+            log.write_text(
+                log.read_text()
+                + "[24Jul2026 21:14:37.000] [Render thread/ERROR] [Curios API/]: "
+                "back is not a registered slot type!\n"
+            )
             with self.assertRaisesRegex(RuntimeError, "forbidden log pattern"):
                 mod.wait_for_log_patterns(
                     log_path=log,

@@ -17,9 +17,25 @@ except ModuleNotFoundError:
     from scripts.prepare_prism_gui_world import DisplayMode, DEFAULT_PRISM_MINECRAFT_DIR, DEFAULT_SOURCE_WORLD, DEFAULT_WORLD_NAME, current_macos_main_display_mode, prepare_world
 
 try:
-    from deploy_prism_dev import FUSION_FILENAME, FUSION_SHA512, fusion_jars, sha512
+    from deploy_prism_dev import (
+        FUSION_FILENAME,
+        FUSION_SHA512,
+        IRON_FURNACES_FILENAME,
+        SUPPORT_ARTIFACTS,
+        fusion_jars,
+        jei_jars,
+        sha512,
+    )
 except ModuleNotFoundError:
-    from scripts.deploy_prism_dev import FUSION_FILENAME, FUSION_SHA512, fusion_jars, sha512
+    from scripts.deploy_prism_dev import (
+        FUSION_FILENAME,
+        FUSION_SHA512,
+        IRON_FURNACES_FILENAME,
+        SUPPORT_ARTIFACTS,
+        fusion_jars,
+        jei_jars,
+        sha512,
+    )
 
 DEFAULT_INSTANCE_DIR = Path.home() / "Library/Application Support/PrismLauncher/instances/dev"
 DEFAULT_PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -43,11 +59,16 @@ DEFAULT_REQUIRED_PATTERNS = ["SelfTest:", "MS_GUI_TEST_READY"]
 DEFAULT_FORBIDDEN_PATTERNS = ["advanced_container_set_data", "ERROR", "FATAL", "Caused by"]
 MANUAL_HANDOFF_MESSAGE = "Minecraft is ready in the fixed test world. Please take over for the fullscreen visual checks; close with F11, wait for the normal window, then Command-Q."
 OFFLINE_AUTH_PROPERTY_ERROR = "[net.minecraft.client.Minecraft/]: Failed to fetch user properties"
+ALLOWED_SINGLE_LINE_LOG_NOISE = (
+    "[net.minecraft.Util/]: Invalid path in pack: botania:patchouli_books/lexica_botania/en_us/README, ignoring",
+    "[Curios API/]: example is not a registered slot type!",
+    "[Curios API/]: feet is not a registered slot type!",
+)
 PRIMARY_MONITOR_ERROR = "glfwGetPrimaryMonitor failed"
 STOPPING_LOG_PATTERN = "[net.minecraft.client.Minecraft/]: Stopping!"
 LOG_TIMESTAMP_PATTERN = re.compile(r"^\[\d{1,2}[A-Za-z]{3}\d{4} ")
 DEPLOY_REQUIRED_MESSAGE = "Run `python3 scripts/deploy_prism_dev.py` before launching Prism."
-CURRENT_RUN_LOG_CHECK = "Check latest.log for no non-whitelisted advanced_container_set_data, ERROR, FATAL, or Caused by during the current run; the known offline profile-properties 401 is allowed only in its exact authlib stack."
+CURRENT_RUN_LOG_CHECK = "Check latest.log for no non-whitelisted advanced_container_set_data, ERROR, FATAL, or Caused by during the current run; only the known offline profile-properties 401 exact stack, Botania snapshot README path line, and Industrial Foregoing Curios example/feet slot lines are allowed."
 
 SCENARIOS = {
     "boot-smoke": {
@@ -67,9 +88,9 @@ SCENARIOS = {
             "Pass the fullscreen gate before pressing hotbar/use/click/scroll.",
             "hotbar `1`, then `u`: Storage Terminal opens with left-side view buttons and no clipping.",
             "hotbar `2`, then `u`: Crafting Terminal opens with left-side view buttons and no EMI overlap.",
-            "On each Storage view, cycle the single resource selector through Items, Fluids, Energy, Gases, and Other; confirm the grid changes group, right-click goes backward, and middle-click resets it to Items.",
-            "On the Crafting Terminal, confirm Craftable and Fuel hide the resource selector while returning to Storage restores it without moving the shared rail.",
-            "In Storage Terminal choose non-default sort order, sort mode, search mode, and resource view; close and reopen Storage Terminal, then open Crafting Terminal and confirm those four common choices are shared.",
+            "On each Storage view, cycle through registered resource kinds only; confirm the grid changes group, right-click goes backward, and middle-click resets it to Items. Gases appears only when a chemical provider such as Mekanism is loaded, and Other appears only when an addon registers another resource kind.",
+            "On the Crafting Terminal, confirm Storage and Craftable expose the resource selector while Fuel hides the resource selector; switching pages must not move the shared rail.",
+            "In Storage Terminal choose non-default sort order, sort mode, Search Sync, and resource view; close and reopen Storage Terminal, then open Crafting Terminal and confirm those four common choices are shared.",
             "In Crafting Terminal choose non-default Crafting-only page, source, output, and Fuel Target values; close and reopen it and confirm those choices return without changing the common Storage choices.",
             "Safely close and restart the client, reopen Storage Terminal and Crafting Terminal, and confirm both the common choices and Crafting-only page, source, output, and Fuel Target choices survived on disk; search text, scroll, and item/recipe selection must start as session state instead of returning.",
             CURRENT_RUN_LOG_CHECK,
@@ -96,54 +117,44 @@ SCENARIOS = {
         ],
     },
     "crafting-fuel-page": {
-        "description": "Verify the adaptive Crafting Terminal, vanilla-like full-height paged Fuel/recipe workspaces, runtime Fuel, station-gated recipes, EMI action, native 16×16 art backed by Fusion 80×16 connected sheets, and focus behavior.",
+        "description": "Verify the adaptive Crafting Terminal, runtime Fuel, station-gated recipes, optional-mod recipe ownership, dynamic resource kinds, and recipe readability.",
         "manual_gui_required": True,
-        "hotbar_keys": ["1", "2", "7", "8", "9"],
+        "hotbar_keys": ["1", "2"],
         "checks": [
             "Pass the fullscreen gate before pressing hotbar/use/click/scroll.",
-            "Use hotbar `8` and confirm the prepared world is at the true-void ready baseline: one active network backed by a fresh empty Core record owned by the repository, six connected finite Storage Unit tiers plus one Creative Storage Unit, empty timed-station slots and instant-station slots, zero Axe Energy, and zero timed/Fuel reserves.",
+            "The true-void scenario starts already aimed at the Crafting Terminal with a deterministic preloaded Core record. Every item, station, Fuel reserve, process reserve, typed resource, and recipe ingredient needed below is already in storage; the player inventory is intentionally empty, so visual acceptance requires no setup action.",
             "hotbar `1`, then `u`: open the Storage Terminal and confirm the active Creative Storage Unit makes the capacity line show localized unlimited type capacity rather than a large finite sentinel.",
             "hotbar `2`, then `u`: open the Crafting Terminal; confirm the frame and left rail are centered as one group, retain visible outer margins, and use the side-by-side layout without clipping at this fullscreen size.",
-            "On the Storage tab, confirm only stored stacks appear and the recipe panel, player inventory, scrollbar, and slot grid are aligned to one geometry; the EMI overlay covers neither the frame nor left rail.",
-            "Cycle the resource selector through Items, Fluids, Energy, Gases, and Other; confirm each group has one clear semantic icon, right-click goes backward, middle-click resets to Items, and Craftable/Fuel hide the selector.",
+            "On the Storage tab, confirm only stored stacks appear and the recipe panel, empty player inventory, scrollbar, and slot grid are aligned to one geometry; the EMI overlay covers neither the frame nor left rail.",
+            "Confirm preloaded Oak Logs show the compact large item counts form `121K`, Cobblestone is also compact, and all amounts automatically shrink/right-align inside their own slot without entering neighboring item cells.",
+            "On both Storage and Craftable, confirm the resource selector exposes registered resource kinds only. With this scenario's Mekanism fixture, Gases appears because a chemical provider is loaded; Other remains hidden because no addon registers another kind. Items uses the Chest icon while Use Player Inventory uses the distinct Bundle icon, right-click goes backward, and middle-click resets to Items. Fuel hides the resource selector.",
             "Confirm the first three page tabs are Storage, Craftable, and Fuel, followed by a clear visual gap before the item-page sorting/search controls; every rail icon occupies the same visual size inside identical buttons.",
-            "Cycle search mode and confirm Name uses a magnifier, Tag uses #, and Mod uses @; none may look like a crosshair or an overlay inside the magnifier.",
+            "Type ordinary text, `@minecraft`, and `#minecraft:logs` directly in the search bar; confirm the server-owned grid applies each prefix without a separate Name/Tag/Mod selector.",
+            "Confirm Auto Focus is a separate on/off control: with it enabled, opening either terminal immediately receives keyboard input in the search field and clicking another control does not release that keyboard focus; disable it and confirm ordinary focus behavior returns.",
+            "Cycle Search Sync through Off, EMI, and EMI Two-way. Off must leave EMI search untouched; EMI must copy terminal text to EMI; EMI Two-way must additionally copy EMI edits back into the terminal and refresh the storage results.",
             "Click a left-rail toggle, then click empty panel space: no white focus border may remain on the button.",
             "Use the Fuel page tab; confirm its left rail contains only Storage, Craftable, and Fuel page tabs, while search/grid/recipe controls hide.",
             "Confirm Consumables, Timed Stations, and Instant Stations form three full-width category panels in that order, all using the same light vanilla container panels, inset wells, slot frames, and dark-gray label text as the player inventory; they start immediately below the Crafting Terminal heading, fill the complete vertical span down to the player-inventory label band, and leave no dead blank quadrant. Each name stays inside a bounded left label strip; cells fill the available space evenly within each page, and every descriptor area supports multi-row pages with a visible page indicator and panel-local wheel paging when its category overflows.",
-            "Confirm Consumables contains Fuel input, Fuel, Brew Energy, and Axe Energy; Timed Stations contains the five energy-producing stations; Instant Stations contains Crafting Table, Stonecutter, and Smithing Table without fake energy totals.",
+            "Confirm the preinstalled timed-station and instant-station slots are already populated: Timed Stations includes Iron Furnace, Blast Furnace, Smoker, Campfire, Brewing Stand, Cooking Pot, and the supported Mekanism machines; Instant Stations contains Crafting Table, Stonecutter, and Smithing Table without fake energy totals.",
+            "Confirm Consumables contains Fuel input plus preloaded Fuel, Brew Energy, and finite Axe Energy. Coal and Blaze Rod remain the only representative items for the two reserve types; every currently registered reserve is reachable, and overflow can scroll its panel without moving another category.",
             "Confirm the compact Fuel Target bar is visually separate above the Consumables content row: left-click or wheel-down cycles forward, right-click or wheel-up cycles backward, and middle-click resets to Auto without scrolling the row.",
-            "Confirm every cyclic sort/search/source/output selector also resets to its documented default on middle-click; page tabs do not pretend to be on/off controls.",
+            "Confirm every cyclic sort/search-sync/source/output selector also resets to its documented default on middle-click; page tabs do not pretend to be on/off controls.",
             "Use the separate Fuel Target list button; confirm the popup contains Auto plus every current target with its representative item, marks the selected row, uses bounded scrolling when needed, stays clear of the left rail/EMI overlay, and closes on selection, Escape, or a click outside the popup without leaving a focus border.",
+            "Use the bottom-right Fuel search and enter ordinary text, `@mekanism`, and a matching item tag. While search is active, confirm the three upper category panels become a single unified result grid that can search Fuel reserves, Consumables, Timed Stations, and Instant Stations together; clearing or closing search restores the three categories without moving or duplicating any installed station.",
             "Confirm Fuel shows no permanent rate formula, no per-tile explanatory labels, and no shadow behind reserve values; exact identity, rate, and stored amount remain available in the hover tooltip.",
             "Confirm station/reserve hover details appear only over the actual station slot or reserve icon, not over unused space in the wider flow cell.",
-            "Confirm Consumables uses representative items—Coal and Blaze Rod—as the only fuel reserves; no third reserve appears.",
-            "On Storage and Craftable, confirm large item counts use compact units and automatically shrink/right-align inside their own slot without entering neighboring item cells.",
             "On Fuel, confirm stored types / total type capacity appears in an independent information box immediately to the right of the player inventory, aligned to the inventory's top and bottom, readable without hover, and matching the Storage Core. The active network must show localized unlimited type capacity with the Creative Storage Unit icon; finite networks continue to use the Tier 1 icon. Instant Stations uses its full category width and never reserves a station cell for this information.",
-            "At the reset baseline, confirm every Timed and Instant Stations slot shows a dim representative station item without looking installed, the Axe Energy input contains no retrievable axe, and every machine-generated or consumable total stays at zero.",
-            "Shift-click the supplied stack of three Furnaces into Timed Stations; the hover tooltip must report the exact rate and only Smelting Energy may rise.",
-            "Remove the Furnace stack and confirm generation stops while the accumulated Smelting Energy remains.",
-            "Shift-click each supplied pair of instant stations and confirm they accept only one Crafting Table, Stonecutter, and Smithing Table while the second copy remains in the player inventory. Remove the installed copy to make its recipes disappear, then reinstall one copy to restore them; none may increase a machine-generated energy total.",
-            "Shift-click the supplied plain iron axe into the Axe Energy input and confirm it is consumed immediately, no retrievable axe remains, and finite Axe Energy increases by its exact remaining durability. Repeat with the supplied damaged Unbreaking II axe and confirm the increase is remaining durability multiplied by three.",
-            "With player-inventory ingredients enabled, verify station gating dynamically: Crafting Table exposes an Oak Log crafting recipe, Stonecutter exposes a cobblestone result, Smithing Table exposes the Netherite Smithing Transform, and stored Axe Energy exposes an Oak Log strip transformation.",
-            "Select each expanded recipe once and confirm the light vanilla-style recipe workspace contains one compact raised panel: the EMI recipe diagram is used for represented standard recipes while the internal axe transformation uses the native diagram, and the material ledger follows immediately below without an oversized empty panel. Required resources align from the ledger's top edge, use at most four columns, and recipes with more than eight total item/energy/tool resources continue into a third row without clipping. Both clearly show input resources, operation arrow, exact output count, Ready/Missing state, Available / Required values, explicit vanilla-style navigation buttons, and vanilla-style ×1/×8/×64/Max buttons. A dim station icon stays in the diagram's lower-right corner without covering recipe content.",
+            "Hover the preinstalled Iron Furnace stack and confirm one tooltip reports a fixed two-decimal rate such as 1.25/tick, never a fraction, and never overlaps a second vanilla tooltip. Open the Charcoal recipe and confirm its dim representative station item starts with the installed variant first, advances exactly once per real-time second like EMI/JEI, then returns to Iron Furnace after one complete station-icon cycle.",
+            "Open EMI's Smelting category and confirm TMRV imports the workstation catalysts that Iron Furnaces owns through JEI. Magic Storage does not register third-party EMI workstations.",
+            "Open the Craftable tab and confirm the already installed Crafting Table exposes an Oak Log recipe, Stonecutter exposes a Cobblestone result, Smithing Table exposes the Netherite Smithing Transform, and preloaded Axe Energy exposes the Oak Log strip transformation.",
+            "Confirm Charcoal is present in Craftable even though its zero stored count is not rendered, then select it to open the exact smelting Available / Required preview.",
+            "Select the preloaded Cooking Pot Mushroom Stew recipe. Confirm EMI renders the third-party recipe, the station badge is Cooking Pot, and the ledger separates brown mushroom, red mushroom, and bowl from Cooking Pot work and Fuel.",
+            "Select each expanded recipe once and confirm the light vanilla-style recipe workspace contains one compact raised panel: the EMI recipe diagram is used for represented standard recipes while the internal axe transformation uses the native diagram, and the material ledger follows immediately below without an oversized empty panel. Required resources align from the ledger's top edge, use at most four columns, and recipes with more than eight total item/energy/tool resources continue into a third row without clipping. Every resource keeps two full-size lines—available such as `121K`, then required such as `/200`—without truncating digits, shrinking the font, or entering the neighboring cell. Both diagrams clearly show input resources, operation arrow, exact output count, Ready/Missing state, explicit vanilla-style navigation buttons, and vanilla-style ×1/×8/×64/Max buttons. A dim station icon stays in the diagram's lower-right corner without covering recipe content.",
             "Select no item and confirm the complete wrapped prompt is centered in that same compact card without losing its final character; select a stored item with no supported recipe and confirm the panel shows a neutral No supported recipe message instead of an empty panel, white fallback surface, or red error.",
             "Toggle Craft Output and confirm Player uses a player-head icon while Storage uses the Storage Core icon; Craft Output: Storage has no status light, while the genuine Use Player Inventory on/off control may show one.",
-            "For the axe strip recipe, confirm Axe Energy appears as a distinct required energy resource and one successful finite craft decrements Axe Energy by exactly one without storing or mutating an axe item.",
-            "Use hotbar `9` reset, then Shift-click the supplied Unbreakable axe into the Axe Energy input; it must be consumed and display an infinity marker. A later axe must be rejected unchanged, and a successful axe recipe must not decrement infinite Axe Energy.",
-            "Confirm every currently registered reserve total is reachable (scroll its panel if paging is shown), and the only fuel-reserve labels are Fuel and Brew Energy rather than implementation names.",
-            "Confirm the single Fuel Target selector shows Auto, then Shift-click a Blaze Rod and verify only Brew Energy increases; use hotbar `9` reset before another case if needed.",
-            "Use hotbar `9` reset, re-open Fuel, select Fuel in the Fuel Target selector, and Shift-click Oak Logs; the stack must be accepted and add its current runtime burn time multiplied by the accepted count.",
-            "Use hotbar `9` reset again; install three Furnaces, add Coal to Fuel, and wait until Smelting Energy reaches at least one Charcoal recipe cooking time.",
-            "Return to the Storage tab and confirm Charcoal with zero stored count is absent; then enable player-inventory ingredients and open the Craftable tab, where Charcoal must appear because supplied Oak Logs make its exact recipe currently craftable.",
-            "Shift-click the synthetic Charcoal entry and confirm no item is extracted; normal-click it and confirm the exact smelting preview opens with an Available / Required table.",
-            "With fewer than eight legal crafts, confirm ×8 and ×64 are dim while ×1 and Max reflect the live capacity; use Max once and confirm it crafts the complete currently possible amount without a partial ×8 craft.",
             "In that table, confirm Oak Log shows its current available count and 1 required, while Smelting Energy and Fuel each show their current reserve and the exact recipe cooking time required for one craft.",
-            "Change an ingredient or energy reserve and confirm the corresponding available value refreshes while required-for-one stays recipe-derived.",
-            "Open the Charcoal recipe in EMI: NONE selection must preserve resources, then a cursor/inventory craft action must perform one immediate server-authoritative craft without recursively crafting intermediates.",
-            "Use hotbar `7` to inspect both gallery rows and the supplied Creative Storage Unit item in the player inventory. Its item texture and the Creative Storage Unit block in the isolated row must use crisp native 16×16 pixel art with a centered cyan-amethyst infinity motif distinct from all six finite tiers; its localized tooltip must state unlimited distinct item types and that it does not generate items. The Storage Core, six finite tiers, both terminals, and Import/Export Bus faces must retain their existing family grammar.",
-            "Inspect the contiguous connected row behind it: the Fusion 80×16 five-tile sheets must remove shared casing borders between every adjacent network role, including the Creative Storage Unit, while its centered cyan-amethyst infinity motif and all other center motifs remain intact. The connected row intentionally has no Storage Core, so it cannot become a second active network. Import and Export must keep a readable directional front instead of connecting that face.",
-            "While holding the Wrench on hotbar `7`, normal right-click the gallery Import or Export Bus and confirm its directional front rotates once. Then sneak-right-click one gallery block and confirm it dismantles directly into the inventory without losing its state or contents; use hotbar `9` to restore the complete gallery immediately afterward.",
+            "Cycle the resource selector through preloaded Fluids, Energy, and Gases; confirm water/lava, NeoForge power, and Mekanism oxygen/hydrogen render with readable long amounts while Other remains hidden.",
+            "Confirm each preinstalled Mekanism representative exposes its deterministic recipe family without manual per-machine registration.",
             "Return between Storage, Craftable, and Fuel once more and confirm search, sort, item grid, adaptive recipe panel, machine slots, and crafting controls restore without drifting.",
             CURRENT_RUN_LOG_CHECK,
         ],
@@ -208,6 +219,8 @@ def remove_allowed_log_noise(text: str) -> str:
     filtered = []
     skipping_offline_auth_error = False
     for line in lines:
+        if any(noise in line for noise in ALLOWED_SINGLE_LINE_LOG_NOISE):
+            continue
         if OFFLINE_AUTH_PROPERTY_ERROR in line:
             skipping_offline_auth_error = True
             continue
@@ -697,6 +710,45 @@ def verify_deployed_fusion_jar(minecraft_dir: Path) -> None:
         )
 
 
+def verify_deployed_gui_support_jars(project_dir: Path, minecraft_dir: Path) -> None:
+    project_dir = project_dir.expanduser().resolve()
+    mods_dir = minecraft_dir.expanduser().resolve() / "mods"
+    staged_dir = project_dir / "build" / "prism-gui-mods"
+    incompatible_jei = jei_jars(mods_dir) if mods_dir.is_dir() else []
+    if incompatible_jei:
+        found = ", ".join(path.name for path in incompatible_jei)
+        raise RuntimeError(
+            f"JEI is incompatible with TMRV and must not be installed in Prism dev mods: {found}. "
+            f"{DEPLOY_REQUIRED_MESSAGE}"
+        )
+    labels = {
+        "iron-furnaces": "Iron Furnaces",
+        "farmers-delight": "Farmer's Delight",
+        "tmrv": "TMRV",
+        "guideme": "GuideME",
+    }
+    for filename, finder in SUPPORT_ARTIFACTS:
+        key = filename.removesuffix("-gui-test.jar")
+        label = labels.get(key, key.replace("-", " ").title())
+        staged = staged_dir / filename
+        if not staged.is_file():
+            raise RuntimeError(
+                f"Staged {label} GUI support jar not found: {staged}. {DEPLOY_REQUIRED_MESSAGE}"
+            )
+        deployed = finder(mods_dir) if mods_dir.is_dir() else []
+        expected = mods_dir / filename
+        if deployed != [expected]:
+            found = ", ".join(path.name for path in deployed) or "none"
+            raise RuntimeError(
+                f"Expected exactly one {label} GUI support jar named {filename} in {mods_dir}, "
+                f"found {len(deployed)}: {found}. {DEPLOY_REQUIRED_MESSAGE}"
+            )
+        if sha256_file(staged) != sha256_file(expected):
+            raise RuntimeError(
+                f"{label} GUI support jar contents differ for {filename}. {DEPLOY_REQUIRED_MESSAGE}"
+            )
+
+
 def configure_instance_for_manual_handoff(instance_dir: Path) -> bool:
     instance_cfg = instance_dir.expanduser().resolve() / "instance.cfg"
     if not instance_cfg.is_file():
@@ -848,9 +900,16 @@ def run_session(
         require_running_normal_prism()
         verify_deployed_magic_storage_jar(DEFAULT_PROJECT_DIR, minecraft_dir)
         verify_deployed_fusion_jar(minecraft_dir)
+        if scenario_name == "crafting-fuel-page":
+            verify_deployed_gui_support_jars(DEFAULT_PROJECT_DIR, minecraft_dir)
         cleanup_existing_func(instance_dir, minecraft_dir, instance, world)
     instance_cfg_changed = configure_instance_func(instance_dir)
-    manifest = prepare_world_func(minecraft_dir, source_world, world)
+    manifest = prepare_world_func(
+        minecraft_dir,
+        source_world,
+        world,
+        scenario_name=scenario_name,
+    )
     log_path = minecraft_dir / "logs" / "latest.log"
     offset = log_cursor(log_path)
 
