@@ -39,11 +39,13 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 
 public final class ArsNouveauCompat {
@@ -137,7 +139,9 @@ public final class ArsNouveauCompat {
                 && 1 + recipe.getPedestalItems().size()
                 + (recipe.getSource() > 0 ? 1 : 0) <= 9
                 && exact(recipe.getInput())
-                && allExact(recipe.getPedestalItems());
+                && allExact(recipe.getPedestalItems())
+                && retainedInputsAreCompatible(
+                        List.of(recipe.getInput()), recipe.getPedestalItems());
     }
 
     private static boolean supportsApparatus(EnchantingApparatusRecipe recipe) {
@@ -158,7 +162,17 @@ public final class ArsNouveauCompat {
                 return false;
             }
         }
-        return true;
+        List<Ingredient> consumed = new ArrayList<>();
+        consumed.add(recipe.reagent());
+        List<Ingredient> retained = new ArrayList<>();
+        for (Ingredient ingredient : recipe.pedestalItems()) {
+            if (representatives(ingredient).getFirst().is(APPARATUS_NOT_CONSUMED)) {
+                retained.add(ingredient);
+            } else {
+                consumed.add(ingredient);
+            }
+        }
+        return retainedInputsAreCompatible(consumed, retained);
     }
 
     private static TypedRecipePlan imbuementPlan(
@@ -322,6 +336,40 @@ public final class ArsNouveauCompat {
 
     private static boolean allExact(List<Ingredient> ingredients) {
         return ingredients.stream().allMatch(ArsNouveauCompat::exact);
+    }
+
+    private static boolean retainedInputsAreCompatible(
+            List<Ingredient> consumed,
+            List<Ingredient> retained
+    ) {
+        Set<Item> consumedItems = ingredientItems(consumed);
+        List<Set<Item>> retainedGroups = retained.stream()
+                .map(ingredient -> Set.copyOf(ingredientItems(List.of(ingredient))))
+                .toList();
+        if (retainedGroups.stream().flatMap(Set::stream).anyMatch(consumedItems::contains)) {
+            return false;
+        }
+        for (int first = 0; first < retainedGroups.size(); first++) {
+            for (int second = first + 1; second < retainedGroups.size(); second++) {
+                Set<Item> overlap = new HashSet<>(retainedGroups.get(first));
+                overlap.retainAll(retainedGroups.get(second));
+                if (!overlap.isEmpty()
+                        && !retainedGroups.get(first).equals(retainedGroups.get(second))) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static Set<Item> ingredientItems(List<Ingredient> ingredients) {
+        Set<Item> items = new HashSet<>();
+        ingredients.stream()
+                .flatMap(ingredient -> Arrays.stream(ingredient.getItems()))
+                .filter(stack -> !stack.isEmpty())
+                .map(ItemStack::getItem)
+                .forEach(items::add);
+        return items;
     }
 
     private static boolean exact(Ingredient ingredient) {

@@ -70,6 +70,10 @@ sourceSets {
         compileClasspath += sourceSets.main.output + configurations.compileClasspath
         runtimeClasspath += output + sourceSets.main.runtimeClasspath
     }
+    compatibilityMatrixFixture {
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += output + sourceSets.main.runtimeClasspath
+    }
 }
 
 base {
@@ -93,6 +97,7 @@ neoForge {
     addModdingDependenciesTo sourceSets.industrialForegoingFixture
     addModdingDependenciesTo sourceSets.createFixture
     addModdingDependenciesTo sourceSets.pneumaticCraftFixture
+    addModdingDependenciesTo sourceSets.compatibilityMatrixFixture
 
     mods {
         "${mod_id}" {
@@ -133,6 +138,9 @@ neoForge {
         }
         magic_storage_pneumaticcraft_fixture {
             sourceSet(sourceSets.pneumaticCraftFixture)
+        }
+        magic_storage_compatibility_matrix_fixture {
+            sourceSet(sourceSets.compatibilityMatrixFixture)
         }
     }
 
@@ -251,6 +259,14 @@ neoForge {
             loadedMods = [mods."${mod_id}", mods.magic_storage_pneumaticcraft_fixture]
             systemProperty 'neoforge.enabledGameTestNamespaces',
                     'magic_storage_pneumaticcraft_fixture'
+        }
+
+        compatibilityMatrixGameTestServer {
+            type = "gameTestServer"
+            sourceSet = sourceSets.compatibilityMatrixFixture
+            loadedMods = [mods."${mod_id}", mods.magic_storage_compatibility_matrix_fixture]
+            systemProperty 'neoforge.enabledGameTestNamespaces',
+                    'magic_storage_compatibility_matrix_fixture'
         }
 
         data {
@@ -425,6 +441,32 @@ dependencies {
     industrialForegoingFixtureRuntimeOnly "maven.modrinth:titanium:${titanium_ci_version}"
     createFixtureRuntimeOnly "maven.modrinth:create:${create_ci_version}"
     pneumaticCraftFixtureRuntimeOnly "maven.modrinth:pneumaticcraft-repressurized:${pneumaticcraft_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:mekanism:${mekanism_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly(
+            "vazkii.botania:botania-neoforge-1.21.1:${botania_ci_version}") {
+        exclude group: "vazkii.patchouli", module: "Patchouli"
+        exclude group: "mezz.jei", module: "jei-1.21.1-neoforge"
+    }
+    compatibilityMatrixFixtureRuntimeOnly(
+            "top.theillusivec4.curios:curios-neoforge:${botania_curios_ci_version}")
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:iron-furnaces:${iron_furnaces_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:farmers-delight:${farmers_delight_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly(
+            "maven.modrinth:modern-industrialization:${modern_industrialization_ci_version}")
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:guideme:${guideme_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:ars-nouveau:${ars_nouveau_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:geckolib:${geckolib_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:evilcraft:${evilcraft_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:cyclops-core:${cyclops_core_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:powah:${powah_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly(
+            "maven.modrinth:cloth-config:${powah_cloth_config_ci_version}")
+    compatibilityMatrixFixtureRuntimeOnly(
+            "maven.modrinth:industrial-foregoing:${industrial_foregoing_ci_version}")
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:titanium:${titanium_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly "maven.modrinth:create:${create_ci_version}"
+    compatibilityMatrixFixtureRuntimeOnly(
+            "maven.modrinth:pneumaticcraft-repressurized:${pneumaticcraft_ci_version}")
     fusionRuntimeRuntimeOnly "maven.modrinth:emi:${emi_runtime_version}"
     emiRuntime "maven.modrinth:emi:${emi_runtime_version}"
     fusionRuntimeRuntimeOnly "maven.modrinth:fusion-connected-textures:h2GrA0Ku"
@@ -597,7 +639,7 @@ tasks.named('runGameTestServer').configure {
             throw new GradleException('Base GameTest did not produce run/logs/latest.log')
         }
         def text = baseGameTestLatestLog.getText('UTF-8')
-        if (!text.contains('All 380 required tests passed')
+        if (!text.contains('All 381 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException('Base GameTest or SelfTest did not pass; inspect run/logs/latest.log')
@@ -642,7 +684,7 @@ tasks.named('runBotaniaGameTestServer').configure {
             throw new GradleException('Botania GameTest did not produce run/logs/latest.log')
         }
         def text = botaniaLatestLog.getText('UTF-8')
-        if (!text.contains('All 12 required tests passed')
+        if (!text.contains('All 13 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException('Botania GameTest or SelfTest did not pass; inspect run/logs/latest.log')
@@ -689,7 +731,7 @@ tasks.named('runModernIndustrializationGameTestServer').configure {
                     'Modern Industrialization GameTest did not produce run/logs/latest.log')
         }
         def text = modernIndustrializationLatestLog.getText('UTF-8')
-        if (!text.contains('All 6 required tests passed')
+        if (!text.contains('All 7 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException(
@@ -705,7 +747,7 @@ tasks.named('runArsNouveauGameTestServer').configure {
             throw new GradleException('Ars Nouveau GameTest did not produce run/logs/latest.log')
         }
         def text = arsNouveauLatestLog.getText('UTF-8')
-        if (!text.contains('All 10 required tests passed')
+        if (!text.contains('All 11 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException(
@@ -721,7 +763,7 @@ tasks.named('runEvilCraftGameTestServer').configure {
             throw new GradleException('EvilCraft GameTest did not produce run/logs/latest.log')
         }
         def text = evilCraftLatestLog.getText('UTF-8')
-        if (!text.contains('All 9 required tests passed')
+        if (!text.contains('All 10 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException(
@@ -771,7 +813,7 @@ tasks.named('runCreateGameTestServer').configure {
             throw new GradleException('Create GameTest did not produce run/logs/latest.log')
         }
         def text = createLatestLog.getText('UTF-8')
-        if (!text.contains('All 12 required tests passed')
+        if (!text.contains('All 13 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException(
@@ -788,11 +830,30 @@ tasks.named('runPneumaticCraftGameTestServer').configure {
                     'PneumaticCraft GameTest did not produce run/logs/latest.log')
         }
         def text = pneumaticCraftLatestLog.getText('UTF-8')
-        if (!text.contains('All 8 required tests passed')
+        if (!text.contains('All 9 required tests passed')
                 || !text.contains(expectedSelfTestSummary)
                 || text.contains('TESTS FAILED!')) {
             throw new GradleException(
                     'PneumaticCraft GameTest or SelfTest did not pass; inspect run/logs/latest.log')
+        }
+    }
+}
+
+def compatibilityMatrixLatestLog =
+        layout.projectDirectory.file('run/logs/latest.log').asFile
+tasks.named('runCompatibilityMatrixGameTestServer').configure {
+    dependsOn tasks.named('verifyBotaniaFixtureArtifact')
+    doLast {
+        if (!compatibilityMatrixLatestLog.exists()) {
+            throw new GradleException(
+                    'Compatibility matrix GameTest did not produce run/logs/latest.log')
+        }
+        def text = compatibilityMatrixLatestLog.getText('UTF-8')
+        if (!text.contains('All 2 required tests passed')
+                || !text.contains(expectedSelfTestSummary)
+                || text.contains('TESTS FAILED!')) {
+            throw new GradleException(
+                    'Compatibility matrix GameTest or SelfTest did not pass; inspect run/logs/latest.log')
         }
     }
 }

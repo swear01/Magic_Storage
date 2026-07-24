@@ -2,6 +2,7 @@ package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -22,6 +23,28 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class TypedResourcePersistenceTests {
     private TypedResourcePersistenceTests() {
+    }
+
+    @GameTest(template = "behavioraltests.platform")
+    public static void typed_item_output_rejects_a_different_presentation_item(
+            GameTestHelper helper
+    ) {
+        StorageResourceKey diamond = StorageResourceKey.of(
+                StorageResourceKindApi.ITEM_KIND,
+                BuiltInRegistries.ITEM.getKey(Items.DIAMOND),
+                new CompoundTag());
+        try {
+            TypedRecipePlan.builder()
+                    .input(TypedRecipeInput.consume(StorageResourceKey.neoforgeEnergy(), 1))
+                    .output(TypedRecipeOutput.primary(diamond, 1))
+                    .presentationOutput(new ItemStack(Items.EMERALD))
+                    .layout(1, 1, true)
+                    .build();
+        } catch (IllegalArgumentException expected) {
+            helper.succeed();
+            return;
+        }
+        helper.fail("Typed item output accepted a different presentation item identity");
     }
 
     @GameTest(template = "behavioraltests.platform")

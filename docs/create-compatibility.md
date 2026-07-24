@@ -39,7 +39,7 @@ Magic Storage does not register Create workstations into EMI. Create owns its re
 
 ## Verification
 
-The isolated fixture loads the real representative mod. Twelve GameTests cover all five exact families, station registration and Core reload, item remainder, duplicate-output merge, item/fluid transactions, work/fluid shortages, output overflow, chance rejection, unsupported families, and zero-duration rejection.
+The isolated fixture loads the real representative mod. Thirteen GameTests cover all five exact families, station registration and Core reload, item remainder, duplicate-output merge, preservation of distinct deterministic outputs, item/fluid transactions, work/fluid shortages, output overflow, chance rejection, unsupported families, and zero-duration rejection.
 
 ```bash
 ./gradlew runCreateGameTestServer

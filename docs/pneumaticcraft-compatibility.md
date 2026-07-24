@@ -40,7 +40,7 @@ Support can be reconsidered only after a generic contract can express retained s
 
 ## Verification
 
-The isolated fixture loads the real representative mod and runs eight GameTests covering registry absence, positive and multi-output Pressure Chamber recipes, negative Air/vacuum semantics, Thermo Plant, Fluid Mixer, Assembly, Refinery, Heat Frame, and Explosion fail-closed behavior.
+The isolated fixture loads the real representative mod and runs nine GameTests covering registry absence, positive and multi-output Pressure Chamber recipes, negative Air/vacuum semantics, Thermo Plant, Fluid Mixer, Assembly, Refinery, Heat Frame, Explosion, and an exhaustive scan that every loaded recipe in each audited machine type remains fail closed.
 
 ```bash
 ./gradlew runPneumaticCraftGameTestServer

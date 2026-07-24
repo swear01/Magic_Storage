@@ -40,6 +40,8 @@ public final class EvilCraftIntegrationGameTests {
     private static final ResourceLocation BLOOD_INFUSER = stationId("blood_infuser");
     private static final ResourceLocation TIERED_BATCH = fixtureRecipe("tiered_blood_batch");
     private static final ResourceLocation FLUID_ONLY = fixtureRecipe("fluid_only");
+    private static final ResourceLocation PROMISE_INPUT_OVERLAP =
+            fixtureRecipe("promise_input_overlap");
 
     private EvilCraftIntegrationGameTests() {
     }
@@ -65,6 +67,23 @@ public final class EvilCraftIntegrationGameTests {
                 || supports(helper, fixtureRecipe("over_tier"))
                 || MagicStorage.RECIPE_FAMILY_REGISTRY.containsKey(stationId("purifier"))) {
             helper.fail("EvilCraft unsupported XP/tag/tier/Purifier behavior did not fail closed");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void promise_input_and_catalyst_overlap_fails_closed(
+            GameTestHelper helper
+    ) {
+        var overlap = helper.getLevel().getRecipeManager()
+                .byKey(PROMISE_INPUT_OVERLAP).orElse(null);
+        if (overlap == null) {
+            helper.fail("Promise overlap fixture was not loaded");
+            return;
+        }
+        if (CraftingTerminalMenu.supportsRecipeHolder(overlap)) {
+            helper.fail("Blood Infuser accepted one Promise as input and retained catalyst");
             return;
         }
         helper.succeed();

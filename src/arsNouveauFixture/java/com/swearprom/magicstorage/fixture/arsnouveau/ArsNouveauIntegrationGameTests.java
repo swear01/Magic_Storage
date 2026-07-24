@@ -53,6 +53,8 @@ public final class ArsNouveauIntegrationGameTests {
             fixtureRecipe("apparatus_keep_components");
     private static final ResourceLocation TOO_MANY_INPUTS =
             fixtureRecipe("apparatus_too_many_inputs");
+    private static final ResourceLocation RETAINED_INPUT_OVERLAP =
+            fixtureRecipe("imbuement_retained_input_overlap");
 
     private ArsNouveauIntegrationGameTests() {
     }
@@ -365,6 +367,23 @@ public final class ArsNouveauIntegrationGameTests {
                 helper.fail("Unsafe Ars Nouveau family was registered: " + path);
                 return;
             }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void retained_imbuement_input_overlap_fails_closed(
+            GameTestHelper helper
+    ) {
+        var overlap = helper.getLevel().getRecipeManager()
+                .byKey(RETAINED_INPUT_OVERLAP).orElse(null);
+        if (overlap == null) {
+            helper.fail("Retained Imbuement overlap fixture was not loaded");
+            return;
+        }
+        if (CraftingTerminalMenu.supportsRecipeHolder(overlap)) {
+            helper.fail("Imbuement accepted one item as consumed input and retained catalyst");
+            return;
         }
         helper.succeed();
     }

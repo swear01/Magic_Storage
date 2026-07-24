@@ -71,7 +71,8 @@ python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
 ```
 
 The isolated run requires the current SelfTest summary and
-`All 6 required tests passed`. It covers all 14 registrations and tier rates,
-real item and fluid recipes, retained catalysts, slot/probability/tier rejection,
+`All 7 required tests passed`. It covers all 14 registrations and tier rates,
+real item and fluid recipes, retained catalysts, rejection of non-positive
+amounts and retained/consumed key overlap, slot/probability/tier rejection,
 mixed item/fluid/EU multi-output persistence and commit, plus full rollback when
 one output cannot fit.

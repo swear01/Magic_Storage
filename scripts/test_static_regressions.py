@@ -890,19 +890,20 @@ class StaticRegressionTests(unittest.TestCase):
     def test_all_gametest_gates_reject_any_selftest_failure(self):
         build = self.read_required("build.gradle")
         expected = {
-            "runGameTestServer": 380,
+            "runGameTestServer": 381,
             "runRecipeAddonGameTestServer": 17,
             "runMekanismGameTestServer": 47,
-            "runBotaniaGameTestServer": 12,
+            "runBotaniaGameTestServer": 13,
             "runIronFurnacesGameTestServer": 3,
             "runFarmersDelightGameTestServer": 7,
-            "runModernIndustrializationGameTestServer": 6,
-            "runArsNouveauGameTestServer": 10,
-            "runEvilCraftGameTestServer": 9,
+            "runModernIndustrializationGameTestServer": 7,
+            "runArsNouveauGameTestServer": 11,
+            "runEvilCraftGameTestServer": 10,
             "runPowahGameTestServer": 9,
             "runIndustrialForegoingGameTestServer": 9,
-            "runCreateGameTestServer": 12,
-            "runPneumaticCraftGameTestServer": 8,
+            "runCreateGameTestServer": 13,
+            "runPneumaticCraftGameTestServer": 9,
+            "runCompatibilityMatrixGameTestServer": 2,
         }
         for task, count in expected.items():
             match = re.search(
@@ -1179,7 +1180,7 @@ class StaticRegressionTests(unittest.TestCase):
             "tasks.named('runArsNouveauGameTestServer').configure",
             build,
         )
-        self.assertIn("All 10 required tests passed", build)
+        self.assertIn("All 11 required tests passed", build)
         self.assertNotIn('modId="ars_nouveau"', metadata)
         self.assertIn("ModList.get().isLoaded(ARS_NOUVEAU_MOD_ID)", bootstrap)
         self.assertNotIn("import com.hollingsworth.arsnouveau.", bootstrap)
@@ -1242,7 +1243,7 @@ class StaticRegressionTests(unittest.TestCase):
             r"sourceSets\.main\.runtimeClasspath.*?\}",
         )
         self.assertIn("tasks.named('runEvilCraftGameTestServer').configure", build)
-        self.assertIn("All 9 required tests passed", build)
+        self.assertIn("All 10 required tests passed", build)
         self.assertNotIn('modId="evilcraft"', metadata)
         self.assertIn("ModList.get().isLoaded(EVILCRAFT_MOD_ID)", bootstrap)
         self.assertNotIn("import org.cyclops.", bootstrap)
@@ -1435,7 +1436,7 @@ class StaticRegressionTests(unittest.TestCase):
             r"sourceSets\.main\.runtimeClasspath.*?\}",
         )
         self.assertIn("tasks.named('runCreateGameTestServer').configure", build)
-        self.assertIn("All 12 required tests passed", build)
+        self.assertIn("All 13 required tests passed", build)
         self.assertNotIn('modId="create"', metadata)
         self.assertIn("ModList.get().isLoaded(CREATE_MOD_ID)", bootstrap)
         self.assertNotIn("import com.simibubi.create.", bootstrap)
@@ -1497,7 +1498,7 @@ class StaticRegressionTests(unittest.TestCase):
             "tasks.named('runPneumaticCraftGameTestServer').configure",
             build,
         )
-        self.assertIn("All 8 required tests passed", build)
+        self.assertIn("All 9 required tests passed", build)
         self.assertNotIn('modId="pneumaticcraft"', metadata)
         self.assertIn('modId="pneumaticcraft"', fixture_metadata)
         self.assertIn('versionRange="[8.2,)"', fixture_metadata)

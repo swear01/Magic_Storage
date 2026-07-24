@@ -24,7 +24,7 @@ The official 1.2.91 data set currently leaves Bloody Cobblestone as the one exac
 
 CI uses EvilCraft 1.2.91 (`Shx1BSHZ`) plus Cyclops Core 1.29.1 (`vEjxRv40`) as one representative CI artifact pair. These coordinates are reproducible test evidence, not an exact player dependency pin. Other compatible versions are accepted; incompatibilities are handled from user reports rather than a multi-version matrix.
 
-`runEvilCraftGameTestServer` runs nine isolated tests covering conditional registration, unsupported-recipe rejection, standard Blood fluid capability behavior, terminal display and persistence, tiered batching, retained Promises, fluid-only and official recipes, shortages, and overflow rollback.
+`runEvilCraftGameTestServer` runs ten isolated tests covering conditional registration, unsupported-recipe rejection, standard Blood fluid capability behavior, terminal display and persistence, tiered batching, retained Promises, consumed-input/Promise overlap rejection, fluid-only and official recipes, shortages, and overflow rollback.
 
 ## Combined client-pack boundary
 

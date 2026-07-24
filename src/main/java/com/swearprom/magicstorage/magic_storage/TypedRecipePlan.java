@@ -1,5 +1,6 @@
 package com.swearprom.magicstorage.magic_storage;
 
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
@@ -47,6 +48,12 @@ public final class TypedRecipePlan {
         }
         if (presentationOutput.isEmpty()) {
             throw new IllegalArgumentException("Typed recipe plan requires a presentation output");
+        }
+        if (selectionOutput.key().kindId().equals(StorageResourceKindApi.ITEM_KIND)
+                && !selectionOutput.key().resourceId().equals(
+                BuiltInRegistries.ITEM.getKey(presentationOutput.getItem()))) {
+            throw new IllegalArgumentException(
+                    "Typed item selection output must match its presentation item");
         }
         if (width < 1 || width > 3 || height < 1 || height > 3 || width * height < inputs.size()) {
             throw new IllegalArgumentException("Typed recipe layout must fit one to nine inputs");

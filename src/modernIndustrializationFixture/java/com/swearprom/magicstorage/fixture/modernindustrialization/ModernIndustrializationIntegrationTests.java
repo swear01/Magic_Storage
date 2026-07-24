@@ -59,6 +59,9 @@ public final class ModernIndustrializationIntegrationTests {
             "modern_industrialization", "benzene");
     private static final ResourceLocation OVER_SLOT_RECIPE = ResourceLocation.fromNamespaceAndPath(
             ModernIndustrializationFixtureMod.MODID, "over_slot_compressor");
+    private static final ResourceLocation RETAINED_INPUT_OVERLAP =
+            ResourceLocation.fromNamespaceAndPath(
+                    ModernIndustrializationFixtureMod.MODID, "retained_input_overlap");
     private static final ResourceLocation RANDOM_RECIPE = ResourceLocation.fromNamespaceAndPath(
             "modern_industrialization", "materials/antimony/macerator/raw_metal");
     private static final ResourceLocation OVER_TIER_RECIPE = ResourceLocation.fromNamespaceAndPath(
@@ -327,6 +330,23 @@ public final class ModernIndustrializationIntegrationTests {
                 || CraftingTerminalMenu.supportsRecipeHolder(random)
                 || CraftingTerminalMenu.supportsRecipeHolder(overTier)) {
             helper.fail("Unsupported slot, chance, or machine-tier recipe was classified");
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void retained_machine_input_overlap_fails_closed(
+            GameTestHelper helper
+    ) {
+        var overlap = helper.getLevel().getRecipeManager()
+                .byKey(RETAINED_INPUT_OVERLAP).orElse(null);
+        if (overlap == null) {
+            helper.fail("Modern Industrialization retained-input overlap fixture was not loaded");
+            return;
+        }
+        if (CraftingTerminalMenu.supportsRecipeHolder(overlap)) {
+            helper.fail("Machine recipe accepted one resource as consumed input and catalyst");
             return;
         }
         helper.succeed();

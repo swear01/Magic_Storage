@@ -214,7 +214,8 @@ public final class BotaniaCompat {
     private static boolean supportsManaInfusion(ManaInfusionRecipe recipe) {
         if (recipe.getManaToConsume() <= 0
                 || recipe.getIngredients().size() != 1
-                || !isExactIngredient(recipe.getIngredients().getFirst())) {
+                || !isExactIngredient(recipe.getIngredients().getFirst())
+                || recipe.getResultItem(null).isEmpty()) {
             return false;
         }
         StateIngredient catalyst = recipe.getRecipeCatalyst();

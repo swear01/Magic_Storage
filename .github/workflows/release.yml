@@ -133,6 +133,12 @@ jobs:
           python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
           ./gradlew runPneumaticCraftGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/pneumaticcraft-gametest.log
 
+      - name: Run optional compatibility matrix GameTest server
+        run: |
+          set -o pipefail
+          python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
+          ./gradlew runCompatibilityMatrixGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/compatibility-matrix-gametest.log
+
       - name: Run script tests
         run: |
           set -o pipefail

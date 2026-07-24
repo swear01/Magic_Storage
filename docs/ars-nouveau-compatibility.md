@@ -56,8 +56,9 @@ python3 -c 'import shutil; shutil.rmtree("run/world", ignore_errors=True)'
 ```
 
 The isolated run requires the current SelfTest summary and
-`All 10 required tests passed`. It covers conditional registration, exact
+`All 11 required tests passed`. It covers conditional registration, exact
 Source Jar simulation/commit, terminal listing and persistence, Imbuement
 batching with retained catalysts, Apparatus remainders and component copying,
 station and work persistence, insufficient-Source rejection, overflow rollback,
-and dynamic/world/over-input fail-closed behavior.
+retained/consumed ingredient-overlap rejection, and dynamic/world/over-input
+fail-closed behavior.

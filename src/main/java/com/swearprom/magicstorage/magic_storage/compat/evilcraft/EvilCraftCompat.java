@@ -88,7 +88,8 @@ public final class EvilCraftCompat {
                 && recipe.getInputIngredient().map(EvilCraftCompat::exact).orElse(true)
                 && recipe.getInputFluid().map(EvilCraftCompat::exact).orElse(true)
                 && !output.isEmpty()
-                && inputCount(recipe) <= 3;
+                && inputCount(recipe) <= 3
+                && promiseDoesNotOverlapInput(recipe);
     }
 
     private static TypedRecipePlan plan(
@@ -135,6 +136,15 @@ public final class EvilCraftCompat {
         return (recipe.getInputIngredient().isPresent() ? 1 : 0)
                 + (recipe.getInputFluid().isPresent() ? 1 : 0)
                 + (recipe.getInputTier().orElse(0) > 0 ? 1 : 0);
+    }
+
+    private static boolean promiseDoesNotOverlapInput(RecipeBloodInfuser recipe) {
+        int tier = recipe.getInputTier().orElse(0);
+        if (tier <= 0 || recipe.getInputIngredient().isEmpty()) return true;
+        List<ItemStack> inputs = representatives(recipe.getInputIngredient().orElseThrow());
+        return java.util.stream.IntStream.rangeClosed(tier, 3)
+                .mapToObj(value -> requiredItem("promise_tier_" + value))
+                .noneMatch(promise -> inputs.stream().anyMatch(stack -> stack.is(promise)));
     }
 
     private static boolean exact(Ingredient ingredient) {

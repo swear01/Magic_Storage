@@ -58,6 +58,10 @@ class GitHubWorkflowTests(unittest.TestCase):
             "Run PneumaticCraft GameTest server",
             "./gradlew runPneumaticCraftGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/pneumaticcraft-gametest.log",
         ),
+        (
+            "Run optional compatibility matrix GameTest server",
+            "./gradlew runCompatibilityMatrixGameTestServer --console=plain --no-daemon 2>&1 | tee build/ci-logs/compatibility-matrix-gametest.log",
+        ),
     )
     CLEAR_GAME_TEST_WORLD = (
         "python3 -c 'import shutil; shutil.rmtree(\"run/world\", ignore_errors=True)'"

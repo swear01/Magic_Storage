@@ -114,6 +114,26 @@ public final class CreateIntegrationGameTests {
     }
 
     @GameTest(template = "craftingtests.platform")
+    public static void crushing_preserves_each_distinct_deterministic_output(
+            GameTestHelper helper
+    ) {
+        withCore(helper, context -> {
+            seedItem(context.core(), Items.STONE, 1);
+            installStation(context, "crushing_wheel");
+            tick(context.core(), 40);
+            if (!craft(context, fixtureRecipe("distinct_crushing"))
+                    || itemCount(context.core(), Items.STONE) != 0
+                    || itemCount(context.core(), Items.GRAVEL) != 2
+                    || itemCount(context.core(), Items.FLINT) != 1
+                    || context.core().getStationWork(stationId("crushing")) != 0) {
+                helper.fail("Create Crushing lost a distinct deterministic output");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
     public static void cutting_uses_recipe_duration_and_output_count(GameTestHelper helper) {
         withCore(helper, context -> {
             seedItem(context.core(), createItem("andesite_alloy"), 1);

@@ -31,9 +31,11 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 public final class ModernIndustrializationCompat {
@@ -124,16 +126,23 @@ public final class ModernIndustrializationCompat {
                 && (!recipe.itemOutputs.isEmpty() || !recipe.fluidOutputs.isEmpty())
                 && recipe.conditions.isEmpty()
                 && recipe.itemInputs.stream().allMatch(input ->
-                        isDeterministicInput(input.probability())
+                        input.amount() > 0
+                                && isDeterministicInput(input.probability())
                                 && hasRepresentatives(input.ingredient()))
                 && recipe.fluidInputs.stream().allMatch(input ->
-                        isDeterministicInput(input.probability())
+                        input.amount() > 0
+                                && isDeterministicInput(input.probability())
                                 && Arrays.stream(input.fluid().getStacks())
                                 .anyMatch(stack -> !stack.isEmpty()))
                 && recipe.itemOutputs.stream().allMatch(output ->
-                        output.probability() == 1f && !output.getStack().isEmpty())
+                        output.probability() == 1f
+                                && !output.getStack().isEmpty()
+                                && output.getStack().getCount() > 0)
                 && recipe.fluidOutputs.stream().allMatch(output ->
-                        output.probability() == 1f && output.fluid() != null);
+                        output.probability() == 1f
+                                && output.fluid() != null
+                                && output.amount() > 0)
+                && retainedInputsAreCompatible(recipe);
     }
 
     private static long coldWork(Family family, MachineRecipe recipe) {
@@ -214,6 +223,34 @@ public final class ModernIndustrializationCompat {
 
     private static boolean isDeterministicInput(float probability) {
         return probability == 0f || probability == 1f;
+    }
+
+    private static boolean retainedInputsAreCompatible(MachineRecipe recipe) {
+        Set<Item> consumedItems = new HashSet<>();
+        Set<Item> retainedItems = new HashSet<>();
+        for (MachineRecipe.ItemInput input : recipe.itemInputs) {
+            Set<Item> target = input.probability() == 0f ? retainedItems : consumedItems;
+            for (ItemStack stack : input.ingredient().getItems()) {
+                if (!stack.isEmpty() && !target.add(stack.getItem())
+                        && input.probability() == 0f) {
+                    return false;
+                }
+            }
+        }
+        if (retainedItems.stream().anyMatch(consumedItems::contains)) return false;
+
+        Set<Fluid> consumedFluids = new HashSet<>();
+        Set<Fluid> retainedFluids = new HashSet<>();
+        for (MachineRecipe.FluidInput input : recipe.fluidInputs) {
+            Set<Fluid> target = input.probability() == 0f ? retainedFluids : consumedFluids;
+            for (FluidStack stack : input.fluid().getStacks()) {
+                if (!stack.isEmpty() && !target.add(stack.getFluid())
+                        && input.probability() == 0f) {
+                    return false;
+                }
+            }
+        }
+        return retainedFluids.stream().noneMatch(consumedFluids::contains);
     }
 
     private static ItemStack machine(String path) {

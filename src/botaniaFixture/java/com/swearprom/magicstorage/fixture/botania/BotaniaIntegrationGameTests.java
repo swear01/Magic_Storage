@@ -25,6 +25,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.material.Fluids;
@@ -32,6 +33,8 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import vazkii.botania.api.mana.ManaItem;
+import vazkii.botania.common.crafting.ManaInfusionRecipe;
+import vazkii.botania.common.crafting.StateIngredients;
 import vazkii.botania.common.component.BotaniaDataComponents;
 import vazkii.botania.common.item.ManaTabletItem;
 
@@ -56,6 +59,23 @@ public final class BotaniaIntegrationGameTests {
             stationId("elven_gateway");
 
     private BotaniaIntegrationGameTests() {
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void mana_infusion_with_an_empty_output_fails_closed(
+            GameTestHelper helper
+    ) {
+        var recipe = new ManaInfusionRecipe(
+                ItemStack.EMPTY,
+                Ingredient.of(Items.DIAMOND),
+                500,
+                "",
+                StateIngredients.NONE);
+        if (CraftingTerminalMenu.supportsRecipeContract(recipe)) {
+            helper.fail("Mana Infusion accepted an empty output");
+            return;
+        }
+        helper.succeed();
     }
 
     @GameTest(template = "craftingtests.platform")

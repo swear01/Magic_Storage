@@ -10,6 +10,9 @@ import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
+import java.util.LinkedHashSet;
+import java.util.List;
+
 @GameTestHolder(PneumaticCraftFixtureMod.MODID)
 @PrefixGameTestTemplate(false)
 public final class PneumaticCraftIntegrationGameTests {
@@ -85,6 +88,46 @@ public final class PneumaticCraftIntegrationGameTests {
         assertUnsupported(helper,
                 pnc("heat_frame_cooling/ice"),
                 pnc("explosion_crafting/compressed_iron_ingot"));
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static void every_recipe_in_each_audited_machine_type_fails_closed(
+            GameTestHelper helper
+    ) {
+        var manager = helper.getLevel().getRecipeManager();
+        var types = new LinkedHashSet<net.minecraft.world.item.crafting.RecipeType<?>>();
+        for (ResourceLocation recipeId : List.of(
+                pnc("pressure_chamber/coal_to_diamond"),
+                pnc("thermo_plant/upgrade_matrix"),
+                pnc("fluid_mixer/mix_obsidian"),
+                pnc("assembly/solar_cell"),
+                pnc("refinery/oil_2"),
+                pnc("heat_frame_cooling/ice"),
+                pnc("explosion_crafting/compressed_iron_ingot"))) {
+            var holder = manager.byKey(recipeId).orElse(null);
+            if (holder == null) {
+                helper.fail("Missing audited PneumaticCraft recipe " + recipeId);
+                return;
+            }
+            types.add(holder.value().getType());
+        }
+        for (var type : types) {
+            var holders = manager.getAllRecipesFor(
+                    (net.minecraft.world.item.crafting.RecipeType) type);
+            if (holders.isEmpty()) {
+                helper.fail("Audited PneumaticCraft recipe type is empty: " + type);
+                return;
+            }
+            for (Object raw : holders) {
+                var holder = (net.minecraft.world.item.crafting.RecipeHolder<?>) raw;
+                if (CraftingTerminalMenu.supportsRecipeHolder(holder)) {
+                    helper.fail("Unsafe PneumaticCraft recipe type accepted " + holder.id());
+                    return;
+                }
+            }
+        }
+        helper.succeed();
     }
 
     private static void assertUnsupported(
