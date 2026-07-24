@@ -2,6 +2,7 @@ package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponentMap;
+import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
@@ -31,10 +32,11 @@ final class StorageResourceBridge {
     ) {
         ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(key.item());
         if (itemId == null) throw new IllegalArgumentException("Item is not registered");
+        ItemStack stack = key.toStack(1);
         return StorageResourceKey.of(
                 ITEM_KIND,
                 itemId,
-                encodeComponents(key.components(), registries));
+                encodeComponentPatch(stack.getComponentsPatch(), registries));
     }
 
     static Optional<ItemKey> itemKey(
@@ -44,10 +46,10 @@ final class StorageResourceBridge {
         if (!key.kindId().equals(ITEM_KIND)) return Optional.empty();
         var item = BuiltInRegistries.ITEM.getOptional(key.resourceId()).orElse(null);
         if (item == null) return Optional.empty();
-        Optional<DataComponentMap> components = decodeComponents(key, registries);
-        if (components.isEmpty()) return Optional.empty();
+        Optional<DataComponentPatch> componentPatch = decodeComponentPatch(key, registries);
+        if (componentPatch.isEmpty()) return Optional.empty();
         ItemStack stack = new ItemStack(item);
-        stack.applyComponents(components.get());
+        stack.applyComponents(componentPatch.get());
         return Optional.of(ItemKey.of(stack));
     }
 
@@ -85,6 +87,26 @@ final class StorageResourceBridge {
     ) {
         return DataComponentMap.CODEC.parse(
                 RegistryOps.create(NbtOps.INSTANCE, registries), key.variantData()).result();
+    }
+
+    private static Optional<DataComponentPatch> decodeComponentPatch(
+            StorageResourceKey key,
+            HolderLookup.Provider registries
+    ) {
+        return DataComponentPatch.CODEC.parse(
+                RegistryOps.create(NbtOps.INSTANCE, registries), key.variantData()).result();
+    }
+
+    private static CompoundTag encodeComponentPatch(
+            DataComponentPatch components,
+            HolderLookup.Provider registries
+    ) {
+        Tag encoded = DataComponentPatch.CODEC.encodeStart(
+                RegistryOps.create(NbtOps.INSTANCE, registries), components).getOrThrow();
+        if (!(encoded instanceof CompoundTag compound)) {
+            throw new IllegalArgumentException("Resource component patch did not encode as a compound");
+        }
+        return compound;
     }
 
     private static CompoundTag encodeComponents(

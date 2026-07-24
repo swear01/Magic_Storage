@@ -52,6 +52,16 @@ record RecipeAdapterMatch(
         return Optional.ofNullable(contract.typedRecipePlan());
     }
 
+    Optional<StorageResourceKey> selectionOutputKey(Level level) {
+        if (level == null) return Optional.empty();
+        TypedRecipePlan plan = contract.typedRecipePlan();
+        if (plan != null) return Optional.of(plan.selectionOutputKey());
+        ItemStack output = presentationOutput(List.of(), level);
+        return output.isEmpty()
+                ? Optional.empty()
+                : Optional.of(StorageResourceKey.item(output, level.registryAccess()));
+    }
+
     boolean isCurrentHolder(RecipeHolder<?> currentHolder) {
         return holder == currentHolder;
     }
@@ -328,17 +338,21 @@ record RecipeAdapterMatch(
     record CheckedOutput(
             Map<ItemKey, Long> primaryOutputs,
             Map<ItemKey, Long> remainders,
-            Map<StorageResourceKey, Long> resourceOutputs
+            Map<StorageResourceKey, Long> resourcePrimaryOutputs,
+            Map<StorageResourceKey, Long> resourceRemainders
     ) {
         CheckedOutput(Map<ItemKey, Long> primaryOutputs, Map<ItemKey, Long> remainders) {
-            this(primaryOutputs, remainders, Map.of());
+            this(primaryOutputs, remainders, Map.of(), Map.of());
         }
 
         CheckedOutput {
             primaryOutputs = checkedAmounts(primaryOutputs, "primaryOutputs");
             remainders = checkedAmounts(remainders, "remainders");
-            resourceOutputs = checkedResourceAmounts(resourceOutputs);
-            if (primaryOutputs.isEmpty()) {
+            resourcePrimaryOutputs = checkedResourceAmounts(
+                    resourcePrimaryOutputs, "resourcePrimaryOutputs");
+            resourceRemainders = checkedResourceAmounts(
+                    resourceRemainders, "resourceRemainders");
+            if (primaryOutputs.isEmpty() && resourcePrimaryOutputs.isEmpty()) {
                 throw new IllegalArgumentException("Checked output requires a primary output");
             }
         }
@@ -355,13 +369,14 @@ record RecipeAdapterMatch(
         }
 
         private static Map<StorageResourceKey, Long> checkedResourceAmounts(
-                Map<StorageResourceKey, Long> amounts
+                Map<StorageResourceKey, Long> amounts,
+                String name
         ) {
-            Objects.requireNonNull(amounts, "resourceOutputs");
+            Objects.requireNonNull(amounts, name);
             for (Map.Entry<StorageResourceKey, Long> entry : amounts.entrySet()) {
-                Objects.requireNonNull(entry.getKey(), "resourceOutputs.key");
+                Objects.requireNonNull(entry.getKey(), name + ".key");
                 if (entry.getValue() == null || entry.getValue() <= 0) {
-                    throw new IllegalArgumentException("resourceOutputs amounts must be positive");
+                    throw new IllegalArgumentException(name + " amounts must be positive");
                 }
             }
             return Map.copyOf(amounts);

@@ -33,24 +33,28 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     private static final int SB_TEXTURE_HEIGHT = 16;
     private static final int SCROLL_TRACK_INSET = 2;
     private static final int SCROLLER_UV_X = 232;
+    private static final int SEARCH_DEBOUNCE_TICKS = 2;
 
     private final List<Slot> semanticSlots;
     private final TerminalPreferenceSession preferenceSession;
+    private final TerminalSearchSynchronizer searchSynchronizer;
     private EditBox searchBox;
     private boolean isScrolling;
     private int lastRequestedScroll = Integer.MIN_VALUE;
     private int searchTimer;
     private String lastSentSearch = "";
+    private boolean searchBoxAutoSelected;
     private float networkAmountScale = 1.0F;
     protected int visibleRows;
     protected TerminalLayout.Geometry geometry;
-    private SearchMode lastSeenSearchMode = SearchMode.NORMAL;
+    private SearchMode lastSeenSearchMode = SearchMode.OFF;
     private SortMode lastSeenSortMode = SortMode.NAME;
     private SortOrder lastSeenSortOrder = SortOrder.ASCENDING;
     private TerminalResourceView lastSeenResourceView = TerminalResourceView.ITEM;
 
     private TerminalCycleButton sortOrderBtn;
     private TerminalCycleButton sortModeBtn;
+    private TerminalIconButton autoFocusBtn;
     private TerminalCycleButton searchModeBtn;
     private TerminalCycleButton resourceViewBtn;
 
@@ -63,6 +67,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
                 menu instanceof CraftingTerminalMenu
                         ? TerminalPreferenceSession.Scope.CRAFTING
                         : TerminalPreferenceSession.Scope.STORAGE);
+        this.searchSynchronizer = ClientSetup.createTerminalSearchSynchronizer();
     }
 
     protected TerminalLayout.Geometry createGeometry() {
@@ -123,10 +128,12 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         this.searchBox.setVisible(true);
         this.searchBox.setTextColor(0xFFFFFF);
         this.searchBox.setMaxLength(50);
+        this.searchBox.setTooltip(Tooltip.create(
+                Component.translatable("tooltip.magic_storage.search_help")));
         this.searchBox.setValue(previousSearchValue);
-        this.searchBox.setFocused(previousSearchFocused);
+        this.searchBoxAutoSelected = TerminalClientPreferences.searchBoxAutoSelected();
         this.addRenderableWidget(searchBox);
-        if (previousSearchFocused) setFocused(searchBox);
+        configureSearchBoxFocus(searchBoxAutoSelected || previousSearchFocused);
 
         addTerminalProfileControls();
         int viewStart = terminalProfile().viewControlStartIndex();
@@ -144,10 +151,15 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
                         ? StorageTerminalMenu.NEXT_SORT_MODE_BUTTON
                         : StorageTerminalMenu.PREVIOUS_SORT_MODE_BUTTON),
                 () -> sendButton(StorageTerminalMenu.RESET_SORT_MODE_BUTTON));
-        searchModeBtn = addCycleButton(
-                TerminalControlIcon.SEARCH,
-                Component.translatable("tooltip.magic_storage.search_mode"),
+        autoFocusBtn = addItemButton(
+                Items.TARGET.getDefaultInstance(),
+                Component.translatable("tooltip.magic_storage.search_auto_focus"),
                 railButton(viewStart + 2),
+                button -> toggleSearchBoxAutoSelected());
+        searchModeBtn = addCycleButton(
+                TerminalControlIcon.SEARCH_OFF,
+                Component.translatable("tooltip.magic_storage.search_sync"),
+                railButton(viewStart + 3),
                 direction -> sendButton(direction == TerminalCycleDirection.NEXT
                         ? StorageTerminalMenu.NEXT_SEARCH_MODE_BUTTON
                         : StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON),
@@ -155,7 +167,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         resourceViewBtn = addItemCycleButton(
                 Items.CHEST.getDefaultInstance(),
                 Component.translatable("tooltip.magic_storage.resource_view"),
-                railButton(viewStart + 3),
+                railButton(viewStart + 4),
                 direction -> sendButton(direction == TerminalCycleDirection.NEXT
                         ? StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON
                         : StorageTerminalMenu.PREVIOUS_RESOURCE_VIEW_BUTTON),
@@ -174,12 +186,16 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     protected void setSearchControlVisible(boolean visible) {
         if (searchBox != null) {
+            boolean wasActive = searchBox.active;
             searchBox.visible = visible;
             searchBox.active = visible;
             if (!visible) {
+                searchBox.setCanLoseFocus(true);
                 searchBox.setFocused(false);
                 searchTimer = 0;
                 setFocused(null);
+            } else if (!wasActive) {
+                configureSearchBoxFocus(searchBoxAutoSelected);
             }
         }
     }
@@ -187,6 +203,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     protected void setViewButtonsVisible(boolean visible) {
         setWidgetVisible(sortOrderBtn, visible);
         setWidgetVisible(sortModeBtn, visible);
+        setWidgetVisible(autoFocusBtn, visible);
         setWidgetVisible(searchModeBtn, visible);
         setWidgetVisible(resourceViewBtn, visible && isResourceViewControlActive());
     }
@@ -361,9 +378,10 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     private Component searchModeLabel() {
         return switch (displayedPreferences().searchMode()) {
-            case NORMAL -> Component.translatable("gui.magic_storage.search_mode.name");
-            case TAG -> Component.translatable("gui.magic_storage.search_mode.tag");
-            case MOD -> Component.translatable("gui.magic_storage.search_mode.mod");
+            case OFF -> Component.translatable("gui.magic_storage.search_mode.off");
+            case EMI -> Component.translatable("gui.magic_storage.search_mode.emi");
+            case EMI_TWO_WAY ->
+                    Component.translatable("gui.magic_storage.search_mode.emi_two_way");
         };
     }
 
@@ -398,7 +416,8 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     private void updateViewSettingButtons() {
-        if (sortOrderBtn == null || sortModeBtn == null || searchModeBtn == null
+        if (sortOrderBtn == null || sortModeBtn == null || autoFocusBtn == null
+                || searchModeBtn == null
                 || resourceViewBtn == null) return;
         TerminalPreferences preferences = displayedPreferences();
         lastSeenSortOrder = preferences.sortOrder();
@@ -414,15 +433,38 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
             case ID -> TerminalControlIcon.SORT_ID;
         });
         searchModeBtn.setIcon(switch (preferences.searchMode()) {
-            case NORMAL -> TerminalControlIcon.SEARCH;
-            case TAG -> TerminalControlIcon.SEARCH_TAG;
-            case MOD -> TerminalControlIcon.SEARCH_MOD;
+            case OFF -> TerminalControlIcon.SEARCH_OFF;
+            case EMI -> TerminalControlIcon.SEARCH_EMI;
+            case EMI_TWO_WAY -> TerminalControlIcon.SEARCH_EMI_TWO_WAY;
         });
         resourceViewBtn.setItemIcon(resourceViewIcon());
+        updateCycleTooltip(
+                autoFocusBtn,
+                "tooltip.magic_storage.search_auto_focus",
+                Component.translatable(searchBoxAutoSelected
+                        ? "gui.magic_storage.state_on"
+                        : "gui.magic_storage.state_off"));
         updateCycleTooltip(sortOrderBtn, "tooltip.magic_storage.sort_order", sortOrderLabel());
         updateCycleTooltip(sortModeBtn, "tooltip.magic_storage.sort_mode", sortModeLabel());
-        updateCycleTooltip(searchModeBtn, "tooltip.magic_storage.search_mode", searchModeLabel());
+        updateCycleTooltip(searchModeBtn, "tooltip.magic_storage.search_sync", searchModeLabel());
         updateCycleTooltip(resourceViewBtn, "tooltip.magic_storage.resource_view", resourceViewLabel());
+    }
+
+    private void toggleSearchBoxAutoSelected() {
+        searchBoxAutoSelected = !searchBoxAutoSelected;
+        TerminalClientPreferences.saveSearchBoxAutoSelected(searchBoxAutoSelected);
+        configureSearchBoxFocus(searchBoxAutoSelected);
+        updateViewSettingButtons();
+    }
+
+    private void configureSearchBoxFocus(boolean focused) {
+        searchBox.setCanLoseFocus(!searchBoxAutoSelected);
+        searchBox.setFocused(focused);
+        if (focused) {
+            setFocused(searchBox);
+        } else if (getFocused() == searchBox) {
+            setFocused(null);
+        }
     }
 
     protected static void updateCycleTooltip(
@@ -449,6 +491,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     public void refreshSearch(String text) {
         searchBox.setValue(text);
+        scheduleSearch();
     }
 
     @Override
@@ -461,6 +504,7 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         drawPanels(graphics, leftPos, topPos);
         if (!isItemViewActive()) return;
+        if (searchBoxAutoSelected) drawAutoFocusMarker(graphics);
         int totalItems = menu.getTotalItemTypes();
         int maxOffset = Math.max(0,
                 totalItems - visibleRows * StorageTerminalMenu.DISPLAY_COLS);
@@ -478,6 +522,13 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
 
     private int scrollTrackTop() {
         return topPos + geometry.scrollbar().y() + SCROLL_TRACK_INSET;
+    }
+
+    private void drawAutoFocusMarker(GuiGraphics graphics) {
+        TerminalLayout.Rect button = railButton(terminalProfile().viewControlStartIndex() + 2);
+        int x = leftPos + button.x() - 2;
+        int y = topPos + button.y() + 3;
+        graphics.fill(x, y, x + 2, y + button.height() - 6, 0xFF2E7D32);
     }
 
     private int scrollTrackHeight() {
@@ -705,7 +756,9 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
     }
 
     private void scheduleSearch() {
-        searchTimer = 8;
+        searchSynchronizer.synchronizeFromTerminal(
+                displayedPreferences().searchMode(), searchBox.getValue());
+        searchTimer = SEARCH_DEBOUNCE_TICKS;
     }
 
     @Override
@@ -721,13 +774,26 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
                 || preferences.resourceView() != lastSeenResourceView) {
             boolean searchModeChanged = preferences.searchMode() != lastSeenSearchMode;
             updateViewSettingButtons();
-            if (searchModeChanged) sendSearchPacket();
+            if (searchModeChanged) {
+                searchSynchronizer.synchronizeFromTerminal(
+                        preferences.searchMode(), searchBox.getValue());
+            }
         }
+        synchronizeSearchFromEmi();
         if (searchTimer > 0 && --searchTimer == 0) sendSearchPacket();
     }
 
+    private void synchronizeSearchFromEmi() {
+        String text = searchSynchronizer.textToSynchronizeToTerminal(
+                displayedPreferences().searchMode());
+        if (text == null || text.equals(searchBox.getValue())) return;
+        searchBox.setValue(text);
+        searchTimer = 0;
+        sendSearchPacket();
+    }
+
     private void sendSearchPacket() {
-        String text = displayedPreferences().searchMode().apply(searchBox.getValue());
+        String text = searchBox.getValue();
         if (text.equals(lastSentSearch)) return;
         lastSentSearch = text;
         if (minecraft != null && minecraft.player != null && minecraft.getConnection() != null) {
@@ -801,9 +867,9 @@ public class StorageTerminalScreen<T extends StorageTerminalMenu> extends Abstra
         SORT_QUANTITY(3),
         SORT_MOD(4),
         SORT_ID(5),
-        SEARCH(6),
-        SEARCH_TAG(7),
-        SEARCH_MOD(8),
+        SEARCH_OFF(6),
+        SEARCH_EMI(7),
+        SEARCH_EMI_TWO_WAY(8),
         PREVIOUS(9),
         NEXT(10);
 

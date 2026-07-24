@@ -49,7 +49,7 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     private int visibleRows = 6;
     private SortMode sortMode = SortMode.NAME;
     private SortOrder sortOrder = SortOrder.ASCENDING;
-    private SearchMode searchMode = SearchMode.NORMAL;
+    private SearchMode searchMode = SearchMode.OFF;
     private TerminalResourceView resourceView = TerminalResourceView.ITEM;
     private StorageCoreBlockEntity observedCore;
     private long observedTopologyRevision;
@@ -575,9 +575,9 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
                     case PREVIOUS_SEARCH_MODE_BUTTON -> searchMode = searchMode.previous();
                     case RESET_SORT_ORDER_BUTTON -> sortOrder = SortOrder.ASCENDING;
                     case RESET_SORT_MODE_BUTTON -> sortMode = SortMode.NAME;
-                    case RESET_SEARCH_MODE_BUTTON -> searchMode = SearchMode.NORMAL;
-                    case NEXT_RESOURCE_VIEW_BUTTON -> resourceView = resourceView.next();
-                    case PREVIOUS_RESOURCE_VIEW_BUTTON -> resourceView = resourceView.previous();
+                    case RESET_SEARCH_MODE_BUTTON -> searchMode = SearchMode.OFF;
+                    case NEXT_RESOURCE_VIEW_BUTTON -> resourceView = resourceView.nextAvailable();
+                    case PREVIOUS_RESOURCE_VIEW_BUTTON -> resourceView = resourceView.previousAvailable();
                     case RESET_RESOURCE_VIEW_BUTTON -> resourceView = TerminalResourceView.ITEM;
                 }
                 refreshDisplayItems(core);
@@ -589,16 +589,17 @@ public class StorageTerminalMenu extends AbstractContainerMenu {
     public boolean applySettings(TerminalSettingsPacket packet, Player player) {
         int rows = Math.clamp(packet.visibleRows(), 3, MAX_DISPLAY_ROWS);
         TerminalPreferences preferences = packet.preferences();
+        TerminalResourceView requestedView = preferences.resourceView().availableOrItem();
         boolean changed = rows != visibleRows
                 || sortMode != preferences.sortMode()
                 || sortOrder != preferences.sortOrder()
                 || searchMode != preferences.searchMode()
-                || resourceView != preferences.resourceView();
+                || resourceView != requestedView;
         visibleRows = rows;
         sortMode = preferences.sortMode();
         sortOrder = preferences.sortOrder();
         searchMode = preferences.searchMode();
-        resourceView = preferences.resourceView();
+        resourceView = requestedView;
         return changed;
     }
 

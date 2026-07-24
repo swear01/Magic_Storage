@@ -63,16 +63,20 @@ public final class MachineEnergyTable {
                         List.of(MachineVariant.of(
                                 new ItemStack(Items.FURNACE), MachineWorkRate.ONE))),
                 Category.PROCESS,
-                64,
+                MachineDescriptorApi.MAX_INSTALLED_COUNT,
                 EnergyType.SMELTING_ENERGY));
         descriptors.register(BLAST_FURNACE_ID.getPath(), () -> installable(
-                BLAST_FURNACE_ID, new ItemStack(Items.BLAST_FURNACE), EnergyType.BLASTING_ENERGY, 1, Category.PROCESS, 64));
+                BLAST_FURNACE_ID, new ItemStack(Items.BLAST_FURNACE), EnergyType.BLASTING_ENERGY, 1,
+                Category.PROCESS, MachineDescriptorApi.MAX_INSTALLED_COUNT));
         descriptors.register(SMOKER_ID.getPath(), () -> installable(
-                SMOKER_ID, new ItemStack(Items.SMOKER), EnergyType.SMOKING_ENERGY, 1, Category.PROCESS, 64));
+                SMOKER_ID, new ItemStack(Items.SMOKER), EnergyType.SMOKING_ENERGY, 1,
+                Category.PROCESS, MachineDescriptorApi.MAX_INSTALLED_COUNT));
         descriptors.register(CAMPFIRE_ID.getPath(), () -> installable(
-                CAMPFIRE_ID, new ItemStack(Items.CAMPFIRE), EnergyType.CAMPFIRE_ENERGY, 1, Category.PROCESS, 64));
+                CAMPFIRE_ID, new ItemStack(Items.CAMPFIRE), EnergyType.CAMPFIRE_ENERGY, 1,
+                Category.PROCESS, MachineDescriptorApi.MAX_INSTALLED_COUNT));
         descriptors.register(BREWING_STAND_ID.getPath(), () -> installable(
-                BREWING_STAND_ID, new ItemStack(Items.BREWING_STAND), EnergyType.BREW_ENERGY, 1, Category.PROCESS, 64));
+                BREWING_STAND_ID, new ItemStack(Items.BREWING_STAND), EnergyType.BREW_ENERGY, 1,
+                Category.PROCESS, MachineDescriptorApi.MAX_INSTALLED_COUNT));
         descriptors.register(CRAFTING_TABLE_ID.getPath(), () -> installable(
                 CRAFTING_TABLE_ID, new ItemStack(Items.CRAFTING_TABLE), null, 0, Category.INSTANT, 1));
         descriptors.register(STONECUTTER_ID.getPath(), () -> installable(

@@ -30,7 +30,9 @@ import java.util.List;
 @PrefixGameTestTemplate(false)
 public final class FarmersDelightCookingPotGameTests {
     private static final int STORAGE_PAGE_BUTTON = 14;
+    private static final int CRAFTABLE_PAGE_BUTTON = 6;
     private static final int FUEL_PAGE_BUTTON = 15;
+    private static final int PLAYER_INVENTORY_BUTTON = 7;
     private static final int COOK_TIME = 40;
     private static final ResourceLocation RECIPE_ID = ResourceLocation.fromNamespaceAndPath(
             FarmersDelightFixtureMod.MODID, "cooking_pot_fixture");
@@ -168,6 +170,99 @@ public final class FarmersDelightCookingPotGameTests {
         });
     }
 
+    @GameTest(template = "craftingtests.platform")
+    public static void cooking_pot_lists_and_consumes_typed_inputs_from_player_inventory(
+            GameTestHelper helper
+    ) {
+        withFixture(helper, context -> {
+            context.player().getInventory().setItem(0, new ItemStack(Items.CARROT));
+            context.player().getInventory().setItem(1, new ItemStack(Items.WATER_BUCKET));
+            context.player().getInventory().setItem(2, new ItemStack(Items.BOWL));
+            addFuel(context);
+            addWork(context, COOK_TIME);
+
+            context.menu().clickMenuButton(
+                    context.player(), CRAFTABLE_PAGE_BUTTON);
+            context.menu().refreshDisplayItems(context.core());
+            if (displayContains(context, Items.GOLDEN_CARROT)) {
+                helper.fail("Cooking Pot typed recipe used player inputs while that source was disabled");
+                return;
+            }
+            context.menu().clickMenuButton(context.player(), PLAYER_INVENTORY_BUTTON);
+            context.menu().refreshDisplayItems(context.core());
+            if (!displayContains(context, Items.GOLDEN_CARROT)
+                    || !select(context)
+                    || context.menu().computeCraftPreview(
+                    context.core(), context.player()).craftable() != 1
+                    || !context.menu().handleRecipeRequest(
+                    context.level(), RECIPE_ID, 1,
+                    CraftingDestination.INVENTORY, context.player())) {
+                helper.fail("Cooking Pot typed recipe ignored enabled player-inventory inputs");
+                return;
+            }
+            if (inventoryCount(context, Items.CARROT) != 0
+                    || inventoryCount(context, Items.WATER_BUCKET) != 0
+                    || inventoryCount(context, Items.BOWL) != 0) {
+                helper.fail("Cooking Pot did not consume its player-inventory typed inputs");
+                return;
+            }
+            assertState(helper, context, 0, 0, 0, 2, 1, 0, 1560);
+        });
+    }
+
+    @GameTest(template = "craftingtests.platform")
+    public static void cooking_pot_player_inventory_inputs_roll_back_with_full_destination(
+            GameTestHelper helper
+    ) {
+        withFixture(helper, context -> {
+            for (var item : List.of(
+                    Items.STONE,
+                    Items.DIRT,
+                    Items.SAND,
+                    Items.OAK_LOG,
+                    Items.IRON_INGOT,
+                    Items.GOLD_INGOT,
+                    Items.DIAMOND,
+                    Items.EMERALD,
+                    Items.COAL,
+                    Items.REDSTONE)) {
+                seed(context.core(), item, 1);
+            }
+            for (int slot = 0; slot < context.player().getInventory().getContainerSize(); slot++) {
+                context.player().getInventory().setItem(slot, new ItemStack(Items.DIRT, 64));
+            }
+            context.player().getInventory().setItem(0, new ItemStack(Items.CARROT, 2));
+            context.player().getInventory().setItem(1, new ItemStack(Items.WATER_BUCKET, 2));
+            context.player().getInventory().setItem(2, new ItemStack(Items.BOWL, 2));
+            context.menu().clickMenuButton(context.player(), PLAYER_INVENTORY_BUTTON);
+            addFuel(context);
+            addWork(context, COOK_TIME);
+
+            if (!select(context)) {
+                helper.fail("Cooking Pot player-inventory recipe was not discovered");
+                return;
+            }
+            if (context.menu().handleRecipeRequest(
+                    context.level(), RECIPE_ID, 1,
+                    CraftingDestination.INVENTORY, context.player())) {
+                helper.fail("Full destination unexpectedly consumed player-inventory typed inputs");
+                return;
+            }
+            if (inventoryCount(context, Items.CARROT) != 2
+                    || inventoryCount(context, Items.WATER_BUCKET) != 2
+                    || inventoryCount(context, Items.BOWL) != 2
+                    || inventoryCount(context, Items.GOLDEN_CARROT) != 0
+                    || inventoryCount(context, Items.BUCKET) != 0
+                    || context.core().getStationWork(
+                    FarmersDelightCookingPotCompat.descriptorId("magic_storage")) != COOK_TIME
+                    || context.core().getEnergy(EnergyType.FURNACE_FUEL) != 1600) {
+                helper.fail("Failed Cooking Pot delivery did not preserve player inputs and costs");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
     private static void withFixture(GameTestHelper helper, FixtureAssertion assertion) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -247,6 +342,14 @@ public final class FarmersDelightCookingPotGameTests {
     private static boolean select(FixtureContext context) {
         return context.menu().handleRecipeRequest(
                 context.level(), RECIPE_ID, 1, CraftingDestination.NONE, context.player());
+    }
+
+    private static boolean displayContains(FixtureContext context, net.minecraft.world.item.Item item) {
+        for (int slot = 0; slot < com.swearprom.magicstorage.magic_storage.StorageTerminalMenu.DISPLAY_SLOTS;
+             slot++) {
+            if (context.menu().getSlot(slot).getItem().is(item)) return true;
+        }
+        return false;
     }
 
     private static void seedInputs(FixtureContext context, int count) {

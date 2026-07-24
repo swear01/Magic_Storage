@@ -46,6 +46,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
 
     private StorageResourceLedger resourceLedger = new StorageResourceLedger();
     private final Map<ItemKey, Long> flatCache = new HashMap<>();
+    private final Map<ItemKey, TerminalSearchEntry> itemSearchCache = new HashMap<>();
     private final CoreStorageResourceHandler resourceHandler = new CoreStorageResourceHandler(this);
     private final CoreFluidHandler fluidHandler = new CoreFluidHandler(this);
     private final CoreEnergyStorage energyStorage = new CoreEnergyStorage(this);
@@ -525,11 +526,15 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private void rebuildCache() {
         if (!cacheDirty) return;
         flatCache.clear();
+        itemSearchCache.clear();
         if (level == null) return;
         for (StorageResourceKey resourceKey : resourceLedger.keys(StorageResourceBridge.ITEM_KIND)) {
             StorageResourceBridge.itemKey(resourceKey, level.registryAccess())
                     .ifPresent(key -> flatCache.merge(
                             key, resourceLedger.amount(resourceKey), Long::sum));
+        }
+        for (ItemKey key : flatCache.keySet()) {
+            itemSearchCache.put(key, TerminalSearchEntry.create(key));
         }
         cacheDirty = false;
     }
@@ -786,11 +791,12 @@ public class StorageCoreBlockEntity extends BlockEntity {
     public List<ItemStack> getDisplayStacks(String filter) {
         if (!isStorageAvailable()) return List.of();
         rebuildCache();
+        TerminalSearchQuery query = TerminalSearchQuery.compile(filter);
         List<ItemStack> result = new ArrayList<>();
         for (var entry : flatCache.entrySet()) {
             ItemKey key = entry.getKey();
             long count = entry.getValue();
-            if (matchesFilter(key, filter, level)) {
+            if (query.matches(itemSearchCache.get(key))) {
                 ItemStack stack = key.toStack(1);
                 if (!stack.isEmpty()) {
                     result.add(TerminalDisplayStack.create(stack, count));
@@ -817,13 +823,14 @@ public class StorageCoreBlockEntity extends BlockEntity {
         }
         List<ItemStack> result = new ArrayList<>();
         if (level == null) return result;
+        TerminalSearchQuery query = TerminalSearchQuery.compile(filter);
         for (Map.Entry<StorageResourceKey, Long> entry : resourceLedger.snapshot().entrySet()) {
             StorageResourceKey key = entry.getKey();
             if (!resourceView.matches(key)) continue;
             if (!StorageResourceKinds.isRegistered(key)) continue;
             ItemStack representative = StorageResourceKinds.representative(
                     key, level.registryAccess());
-            if (!matchesResourceFilter(key, representative, filter)) continue;
+            if (!matchesResourceFilter(key, representative, query)) continue;
             result.add(TerminalResourceDisplay.create(representative, key, entry.getValue()));
         }
         result.sort(TerminalEntryComparator.forMode(mode, order));
@@ -833,15 +840,9 @@ public class StorageCoreBlockEntity extends BlockEntity {
     private static boolean matchesResourceFilter(
             StorageResourceKey key,
             ItemStack representative,
-            String filter
+            TerminalSearchQuery query
     ) {
-        if (filter == null || filter.isBlank()) return true;
-        String identity = (key.kindId() + " " + key.resourceId() + " "
-                + representative.getHoverName().getString()).toLowerCase(Locale.ROOT);
-        for (String token : filter.toLowerCase(Locale.ROOT).split("\\s+")) {
-            if (!token.isEmpty() && !identity.contains(token)) return false;
-        }
-        return true;
+        return query.matches(key, representative);
     }
 
     public long getItemCount(ItemKey key) {
@@ -882,38 +883,7 @@ public class StorageCoreBlockEntity extends BlockEntity {
     }
 
     static boolean matchesFilter(ItemKey key, String filterText, Level level) {
-        if (filterText == null || filterText.isBlank()) return true;
-        ItemStack stack = key.toStack(1);
-
-        for (String token : filterText.toLowerCase(Locale.ROOT).split("\\s+")) {
-            if (token.isEmpty()) continue;
-            if (token.startsWith("@")) {
-                String modid = token.substring(1);
-                if (!stack.getItem().builtInRegistryHolder().key().location().getNamespace().equals(modid))
-                    return false;
-            } else if (token.startsWith("#")) {
-                String tagName = token.substring(1);
-                var tagId = net.minecraft.resources.ResourceLocation.tryParse(tagName);
-                if (tagId == null) return false;
-                boolean found = false;
-                var tags = level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ITEM)
-                        .getTag(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, tagId));
-                if (tags.isPresent()) {
-                    for (var holder : tags.get()) {
-                        if (holder.value() == stack.getItem()) { found = true; break; }
-                    }
-                }
-                if (!found) return false;
-            } else if (token.startsWith("$")) {
-                String keyword = token.substring(1);
-                if (!stack.getHoverName().getString().toLowerCase(Locale.ROOT).contains(keyword))
-                    return false;
-            } else {
-                if (!stack.getHoverName().getString().toLowerCase(Locale.ROOT).contains(token))
-                    return false;
-            }
-        }
-        return true;
+        return TerminalSearchQuery.compile(filterText).matches(TerminalSearchEntry.create(key));
     }
 
     // ===== NBT =====

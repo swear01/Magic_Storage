@@ -65,6 +65,50 @@ public class FuelPageTests {
         helper.succeed();
     }
 
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void fullscreen_fuel_rows_reserve_two_nonoverlapping_page_controls(
+            GameTestHelper helper
+    ) {
+        var geometry = TerminalLayout.forProfile(
+                TerminalProfile.CRAFTING,
+                423, 291, new TerminalLayout.FuelDescriptorCounts(64, 64, 64, 3));
+        var panels = java.util.List.of(
+                geometry.consumablesPanel(),
+                geometry.timedStationsPanel(),
+                geometry.instantStationsPanel());
+        var grids = java.util.List.of(
+                geometry.consumablesGrid(),
+                geometry.timedStationsGrid(),
+                geometry.instantStationsGrid());
+        var controls = java.util.List.of(
+                geometry.consumablesPageControls(),
+                geometry.timedStationsPageControls(),
+                geometry.instantStationsPageControls());
+
+        for (int category = 0; category < controls.size(); category++) {
+            TerminalLayout.Rect label = TerminalLayout.fuelCategoryLabel(
+                    panels.get(category), grids.get(category));
+            TerminalLayout.Rect previous = controls.get(category).previous();
+            TerminalLayout.Rect next = controls.get(category).next();
+            if (!contains(label, previous)
+                    || !contains(label, next)
+                    || previous.overlaps(next)
+                    || previous.overlaps(grids.get(category).bounds())
+                    || next.overlaps(grids.get(category).bounds())
+                    || previous.width() != TerminalLayout.CONTROL_SIZE
+                    || previous.height() != TerminalLayout.CONTROL_SIZE
+                    || next.width() != TerminalLayout.CONTROL_SIZE
+                    || next.height() != TerminalLayout.CONTROL_SIZE) {
+                helper.fail("Fuel row " + category
+                        + " must reserve two distinct 18px page controls inside its label strip: "
+                        + controls.get(category) + ", label=" + label
+                        + ", grid=" + grids.get(category).bounds());
+                return;
+            }
+        }
+        helper.succeed();
+    }
+
     private static TerminalLayout.FuelDescriptorCounts currentFuelDescriptorCounts() {
         int timed = (int) MachineEnergyTable.entries().stream()
                 .filter(entry -> entry.category() == MachineEnergyTable.Category.PROCESS)
@@ -79,6 +123,11 @@ public class FuelPageTests {
                 + 1;
         return new TerminalLayout.FuelDescriptorCounts(
                 consumable, timed, instant, CraftingTerminalMenu.fuelTargets().size() + 1);
+    }
+
+    private static boolean contains(TerminalLayout.Rect outer, TerminalLayout.Rect inner) {
+        return outer.contains(inner.x(), inner.y())
+                && outer.contains(inner.right() - 1, inner.bottom() - 1);
     }
 
     @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
@@ -255,7 +304,7 @@ public class FuelPageTests {
 
             if (menu.getSortMode() != SortMode.QUANTITY
                     || menu.getSortOrder() != SortOrder.DESCENDING
-                    || menu.getSearchMode() != SearchMode.TAG) {
+                    || menu.getSearchMode() != SearchMode.EMI) {
                 helper.fail("Crafting Items page must delegate sort, order, and search controls");
                 return;
             }
@@ -361,6 +410,43 @@ public class FuelPageTests {
                 helper.fail("Shift-clicked Oak Logs must add runtime burn time per item: expected "
                         + expected + " got " + core.getEnergy(EnergyType.FURNACE_FUEL));
                 return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void runtime_fuel_accepts_multiple_vanilla_fuel_shapes_at_exact_burn_time(
+            GameTestHelper helper
+    ) {
+        withCore(helper, (core, player) -> {
+            ItemStack[] fuels = {
+                    new ItemStack(Items.STICK, 4),
+                    new ItemStack(Items.CHARCOAL, 2),
+                    new ItemStack(Items.COAL_BLOCK),
+                    new ItemStack(Items.DRIED_KELP_BLOCK)
+            };
+            long expected = 0;
+            for (ItemStack fuel : fuels) {
+                int burnTime = fuel.getBurnTime(null);
+                if (burnTime <= 0) {
+                    helper.fail("Representative runtime fuel has no burn time: " + fuel);
+                    return;
+                }
+                expected = Math.addExact(
+                        expected,
+                        Math.multiplyExact((long) burnTime, fuel.getCount()));
+                ItemStack input = fuel.copy();
+                if (!core.addFuel(input, EnergyType.FURNACE_FUEL) || !input.isEmpty()) {
+                    helper.fail("Runtime Fuel rejected or partially consumed " + fuel);
+                    return;
+                }
+                if (core.getEnergy(EnergyType.FURNACE_FUEL) != expected) {
+                    helper.fail("Runtime Fuel total drifted after " + fuel
+                            + ": expected " + expected
+                            + " got " + core.getEnergy(EnergyType.FURNACE_FUEL));
+                    return;
+                }
             }
             helper.succeed();
         });
@@ -806,6 +892,153 @@ public class FuelPageTests {
             if (!menu.getSlot(furnaceMachineSlot).getItem().isEmpty()
                     || player.getInventory().countItem(Items.FURNACE) != 3) {
                 helper.fail("Shift-moving an installed machine must return the complete stack to the player");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void fuel_page_shift_move_routes_later_entries_in_all_three_categories_by_descriptor(
+            GameTestHelper helper
+    ) {
+        withCore(helper, (core, player) -> {
+            ItemStack axe = new ItemStack(Items.IRON_AXE);
+            axe.setDamageValue(axe.getMaxDamage() - 7);
+            player.getInventory().setItem(0, new ItemStack(Items.SMOKER, 3));
+            player.getInventory().setItem(1, new ItemStack(Items.SMITHING_TABLE));
+            player.getInventory().setItem(2, axe);
+
+            var menu = new CraftingTerminalMenu(129, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            int smokerSource = findPlayerMenuSlot(menu, Items.SMOKER);
+            int smithingSource = findPlayerMenuSlot(menu, Items.SMITHING_TABLE);
+            int axeSource = findPlayerMenuSlot(menu, Items.IRON_AXE);
+
+            menu.quickMoveStack(player, smokerSource);
+            menu.quickMoveStack(player, smithingSource);
+            menu.quickMoveStack(player, axeSource);
+
+            ItemStack installedSmokers = menu.getSlot(
+                    CraftingTerminalMenu.MACHINE_SLOT_START + MachineEnergyTable.SMOKER_SLOT).getItem();
+            ItemStack installedSmithingTable = menu.getSlot(
+                    CraftingTerminalMenu.MACHINE_SLOT_START + MachineEnergyTable.SMITHING_TABLE_SLOT).getItem();
+            if (!installedSmokers.is(Items.SMOKER) || installedSmokers.getCount() != 3
+                    || !installedSmithingTable.is(Items.SMITHING_TABLE)
+                    || installedSmithingTable.getCount() != 1
+                    || core.getAxeEnergy() != 7) {
+                helper.fail("Fuel-page Shift-click must route later Timed, Instant, and Consumable "
+                        + "entries directly to their descriptors regardless of each panel's visible page: "
+                        + installedSmokers + ", " + installedSmithingTable
+                        + ", axe=" + core.getAxeEnergy());
+                return;
+            }
+            if (!menu.getSlot(smokerSource).getItem().isEmpty()
+                    || !menu.getSlot(smithingSource).getItem().isEmpty()
+                    || !menu.getSlot(axeSource).getItem().isEmpty()) {
+                helper.fail("Descriptor routing must consume each accepted player source exactly once");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void timed_station_shift_move_accumulates_past_one_stack_without_loss(
+            GameTestHelper helper
+    ) {
+        withCore(helper, (core, player) -> {
+            var menu = new CraftingTerminalMenu(130, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            int machineSlot = CraftingTerminalMenu.MACHINE_SLOT_START
+                    + MachineEnergyTable.FURNACE_SLOT;
+            int[] batches = {64, 64, 2};
+
+            for (int batch : batches) {
+                player.getInventory().setItem(0, new ItemStack(Items.FURNACE, batch));
+                int source = findPlayerMenuSlot(menu, Items.FURNACE);
+                menu.quickMoveStack(player, source);
+                if (!menu.getSlot(source).getItem().isEmpty()) {
+                    helper.fail("Timed station must accept repeated Shift-click batches past 64; "
+                            + "rejected source " + menu.getSlot(source).getItem()
+                            + " after installed=" + menu.getSlot(machineSlot).getItem().getCount());
+                    return;
+                }
+            }
+
+            ItemStack installed = menu.getSlot(machineSlot).getItem();
+            if (!installed.is(Items.FURNACE) || installed.getCount() != 130) {
+                helper.fail("Three lossless batches of 64 + 64 + 2 must install exactly 130 Furnaces: "
+                        + installed);
+                return;
+            }
+            long before = core.getEnergy(EnergyType.SMELTING_ENERGY);
+            core.tick();
+            if (core.getEnergy(EnergyType.SMELTING_ENERGY) - before != 130) {
+                helper.fail("130 installed Furnaces must contribute exactly +130 per tick");
+                return;
+            }
+
+            menu.quickMoveStack(player, machineSlot);
+            if (!menu.getSlot(machineSlot).getItem().isEmpty()
+                    || player.getInventory().countItem(Items.FURNACE) != 130) {
+                helper.fail("Removing an over-64 timed station stack must return all 130 machines");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "terminalflowtests.platform", batch = "fuel_page")
+    public static void timed_station_shift_move_stops_at_integer_max_without_overflow_or_loss(
+            GameTestHelper helper
+    ) {
+        withCore(helper, (core, player) -> {
+            int machineSlot = CraftingTerminalMenu.MACHINE_SLOT_START
+                    + MachineEnergyTable.FURNACE_SLOT;
+            core.getMachineContainer().setItem(
+                    MachineEnergyTable.FURNACE_SLOT,
+                    new ItemStack(Items.FURNACE, Integer.MAX_VALUE - 32));
+            if (core.getMachineContainer().getItem(
+                    MachineEnergyTable.FURNACE_SLOT).getCount() != Integer.MAX_VALUE - 32) {
+                helper.fail("Test setup could not seed the near-cap workstation aggregate");
+                return;
+            }
+
+            player.getInventory().setItem(0, new ItemStack(Items.FURNACE, 64));
+            var menu = new CraftingTerminalMenu(183, player.getInventory(), core);
+            menu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
+            int source = findPlayerMenuSlot(menu, Items.FURNACE);
+            ItemStack moved = menu.quickMoveStack(player, source);
+
+            ItemStack installed = menu.getSlot(machineSlot).getItem();
+            ItemStack remainder = menu.getSlot(source).getItem();
+            if (moved.isEmpty()
+                    || !installed.is(Items.FURNACE)
+                    || installed.getCount() != Integer.MAX_VALUE
+                    || !remainder.is(Items.FURNACE)
+                    || remainder.getCount() != 32) {
+                helper.fail("Near-cap Shift-click must install exactly the available 32 slots "
+                        + "and preserve the other 32 machines: installed=" + installed
+                        + ", remainder=" + remainder + ", moved=" + moved);
+                return;
+            }
+
+            ItemStack returned = menu.quickMoveStack(player, machineSlot);
+            ItemStack stillInstalled = menu.getSlot(machineSlot).getItem();
+            int inventoryCount = player.getInventory().countItem(Items.FURNACE);
+            int expectedInventoryCount = StorageTerminalMenu.PLAYER_INVENTORY_SLOTS * 64;
+            int expectedInstalledCount = Integer.MAX_VALUE - (expectedInventoryCount - 32);
+            long conserved = (long) inventoryCount
+                    + (stillInstalled.is(Items.FURNACE) ? stillInstalled.getCount() : 0);
+            if (returned.isEmpty()
+                    || inventoryCount != expectedInventoryCount
+                    || !stillInstalled.is(Items.FURNACE)
+                    || stillInstalled.getCount() != expectedInstalledCount
+                    || conserved != (long) Integer.MAX_VALUE + 32) {
+                helper.fail("Near-cap removal must fill player slots without signed overflow or loss: "
+                        + "installed=" + stillInstalled + ", inventory=" + inventoryCount
+                        + ", returned=" + returned + ", conserved=" + conserved);
                 return;
             }
             helper.succeed();

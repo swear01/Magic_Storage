@@ -6,11 +6,11 @@
   "pages": [
     {
       "type": "patchouli:text",
-      "text": "Open the Crafting Terminal's third page. $(thing)Consumables$(), $(thing)Timed Stations$(), and $(thing)Instant Stations$() fill the area down to Inventory. Each group can use multiple rows and pages independently when more entries are added."
+      "text": "Open the Crafting Terminal's third page. $(thing)Consumables$(), $(thing)Timed Stations$(), and $(thing)Instant Stations$() fill the area down to Inventory. Use each group's arrows or mouse wheel to move through its pages."
     },
     {
       "type": "patchouli:text",
-      "text": "Timed Stations are Furnace, Blast Furnace, Smoker, Campfire, and Brewing Stand. Installed stack count controls how quickly each matching process reserve grows. Removing a machine stops new generation but keeps the energy already accumulated."
+      "text": "Timed Stations are Furnace, Blast Furnace, Smoker, Campfire, and Brewing Stand, plus supported modded machines. Installed totals can exceed one normal stack. Hover the amount to see the installed machine and its total rate."
     },
     {
       "type": "patchouli:text",

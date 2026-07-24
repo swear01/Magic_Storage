@@ -161,7 +161,9 @@ public final class MachineDescriptor {
             }
             return;
         }
-        if (maxInstalledCount < 1 || maxInstalledCount > 64 || consumableValue != null) {
+        if (maxInstalledCount < 1
+                || maxInstalledCount > MachineDescriptorApi.MAX_INSTALLED_COUNT
+                || consumableValue != null) {
             throw new IllegalArgumentException("Invalid installable descriptor count: " + id);
         }
         if (variantSource == null && ((energyType == null) != (energyPerTick == 0) || energyPerTick < 0)) {

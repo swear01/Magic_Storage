@@ -11,6 +11,7 @@ import java.util.Set;
 public final class TypedRecipePlan {
     private final List<TypedRecipeInput> inputs;
     private final List<TypedRecipeOutput> outputs;
+    private final TypedRecipeOutput selectionOutput;
     private final ItemStack presentationOutput;
     private final int width;
     private final int height;
@@ -19,6 +20,17 @@ public final class TypedRecipePlan {
     private TypedRecipePlan(Builder builder) {
         inputs = List.copyOf(builder.inputs);
         outputs = List.copyOf(builder.outputs);
+        List<TypedRecipeOutput> primaryOutputs = outputs.stream()
+                .filter(output -> output.role() == TypedRecipeOutput.Role.PRIMARY)
+                .toList();
+        List<TypedRecipeOutput> primaryItems = primaryOutputs.stream()
+                .filter(output -> output.key().kindId().equals(StorageResourceKindApi.ITEM_KIND))
+                .toList();
+        selectionOutput = primaryItems.size() == 1
+                ? primaryItems.getFirst()
+                : primaryItems.isEmpty() && primaryOutputs.size() == 1
+                        ? primaryOutputs.getFirst()
+                        : null;
         presentationOutput = builder.presentationOutput.copy();
         width = builder.width;
         height = builder.height;
@@ -26,15 +38,12 @@ public final class TypedRecipePlan {
         if (inputs.isEmpty() || inputs.size() > RecipePresentation.MAX_INPUTS) {
             throw new IllegalArgumentException("Typed recipe plan requires one to nine inputs");
         }
-        if (outputs.isEmpty()
-                || outputs.stream().noneMatch(output -> output.role() == TypedRecipeOutput.Role.PRIMARY)) {
+        if (primaryOutputs.isEmpty()) {
             throw new IllegalArgumentException("Typed recipe plan requires a primary output");
         }
-        if (outputs.stream().noneMatch(output ->
-                output.role() == TypedRecipeOutput.Role.PRIMARY
-                        && output.key().kindId().equals(StorageResourceKindApi.ITEM_KIND))) {
+        if (selectionOutput == null) {
             throw new IllegalArgumentException(
-                    "Typed recipe plan requires an item primary output for terminal selection");
+                    "Typed recipe plan requires one unambiguous terminal selection output");
         }
         if (presentationOutput.isEmpty()) {
             throw new IllegalArgumentException("Typed recipe plan requires a presentation output");
@@ -56,6 +65,14 @@ public final class TypedRecipePlan {
 
     public List<TypedRecipeOutput> outputs() {
         return outputs;
+    }
+
+    public StorageResourceKey selectionOutputKey() {
+        return selectionOutput.key();
+    }
+
+    public TypedRecipeOutput selectionOutput() {
+        return selectionOutput;
     }
 
     public ItemStack presentationOutput() {

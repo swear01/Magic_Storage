@@ -13,7 +13,11 @@ final class OptionalModBlockStrategies {
     private static final String MEKANISM_MOD_ID = "mekanism";
     private static final String MEKANISM_COMPAT_CLASS =
             "com.swearprom.magicstorage.magic_storage.MekanismChemicalCompat";
-    private static Method findBlockHandlerMethod;
+    private static final String ARS_NOUVEAU_MOD_ID = "ars_nouveau";
+    private static final String ARS_NOUVEAU_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.arsnouveau.ArsNouveauCompat";
+    private static Method findMekanismBlockHandlerMethod;
+    private static Method findArsNouveauBlockHandlerMethod;
 
     private OptionalModBlockStrategies() {
     }
@@ -25,7 +29,7 @@ final class OptionalModBlockStrategies {
     ) {
         if (!ModList.get().isLoaded(MEKANISM_MOD_ID)) return Optional.empty();
         try {
-            return invoke(findBlockHandlerMethod(), level, pos, side);
+            return invoke(findMekanismBlockHandlerMethod(), level, pos, side);
         } catch (IllegalAccessException exception) {
             throw new IllegalStateException("Failed to access Mekanism block compatibility", exception);
         } catch (InvocationTargetException exception) {
@@ -41,10 +45,34 @@ final class OptionalModBlockStrategies {
         }
     }
 
-    private static synchronized Method findBlockHandlerMethod() {
-        if (findBlockHandlerMethod == null) {
+    static Optional<StorageResourceHandler> findArsNouveauSource(
+            Level level,
+            BlockPos pos,
+            Direction side
+    ) {
+        if (!ModList.get().isLoaded(ARS_NOUVEAU_MOD_ID)) return Optional.empty();
+        try {
+            return invoke(findArsNouveauBlockHandlerMethod(), level, pos, side);
+        } catch (IllegalAccessException exception) {
+            throw new IllegalStateException(
+                    "Failed to access Ars Nouveau block compatibility", exception);
+        } catch (InvocationTargetException exception) {
+            if (exception.getCause() instanceof LinkageError error) {
+                throw new IllegalStateException(
+                        "Ars Nouveau block compatibility is binary-incompatible", error);
+            }
+            throw new IllegalStateException(
+                    "Ars Nouveau block compatibility failed", exception.getCause());
+        } catch (LinkageError error) {
+            throw new IllegalStateException(
+                    "Ars Nouveau block compatibility is binary-incompatible", error);
+        }
+    }
+
+    private static synchronized Method findMekanismBlockHandlerMethod() {
+        if (findMekanismBlockHandlerMethod == null) {
             try {
-                findBlockHandlerMethod = Class.forName(MEKANISM_COMPAT_CLASS).getDeclaredMethod(
+                findMekanismBlockHandlerMethod = Class.forName(MEKANISM_COMPAT_CLASS).getDeclaredMethod(
                         "findBlockHandler", Level.class, BlockPos.class, Direction.class);
             } catch (ClassNotFoundException | NoSuchMethodException exception) {
                 throw new IllegalStateException("Failed to load Mekanism block compatibility", exception);
@@ -53,7 +81,24 @@ final class OptionalModBlockStrategies {
                         "Mekanism block compatibility is binary-incompatible", error);
             }
         }
-        return findBlockHandlerMethod;
+        return findMekanismBlockHandlerMethod;
+    }
+
+    private static synchronized Method findArsNouveauBlockHandlerMethod() {
+        if (findArsNouveauBlockHandlerMethod == null) {
+            try {
+                findArsNouveauBlockHandlerMethod = Class.forName(
+                        ARS_NOUVEAU_COMPAT_CLASS).getDeclaredMethod(
+                        "findSourceBlockHandler", Level.class, BlockPos.class, Direction.class);
+            } catch (ClassNotFoundException | NoSuchMethodException exception) {
+                throw new IllegalStateException(
+                        "Failed to load Ars Nouveau block compatibility", exception);
+            } catch (LinkageError error) {
+                throw new IllegalStateException(
+                        "Ars Nouveau block compatibility is binary-incompatible", error);
+            }
+        }
+        return findArsNouveauBlockHandlerMethod;
     }
 
     @SuppressWarnings("unchecked")

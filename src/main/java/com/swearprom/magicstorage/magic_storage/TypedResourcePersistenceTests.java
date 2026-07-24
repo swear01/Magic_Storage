@@ -158,6 +158,40 @@ public final class TypedResourcePersistenceTests {
     }
 
     @GameTest(template = "behavioraltests.platform")
+    public static void core_record_persists_maximum_installed_machine_count(
+            GameTestHelper helper
+    ) {
+        CoreStorageRecord original = CoreStorageRecord.fresh(UUID.randomUUID());
+        int machineSlot = MachineEnergyTable.FURNACE_SLOT;
+        original.machines().setItem(
+                machineSlot, new ItemStack(Items.FURNACE, Integer.MAX_VALUE));
+        if (original.machines().getItem(machineSlot).getCount() != Integer.MAX_VALUE) {
+            helper.fail("Core machine container did not accept Integer.MAX_VALUE installed machines");
+            return;
+        }
+
+        CompoundTag saved;
+        try {
+            saved = original.save(helper.getLevel().registryAccess());
+        } catch (RuntimeException exception) {
+            helper.fail("Core machine persistence used the vanilla 99-count ItemStack codec: "
+                    + exception.getMessage());
+            return;
+        }
+        CoreStorageRecord.LoadResult loaded = CoreStorageRecord.load(
+                saved, helper.getLevel().registryAccess());
+        ItemStack restored = loaded.success()
+                ? loaded.record().machines().getItem(machineSlot)
+                : ItemStack.EMPTY;
+        if (!restored.is(Items.FURNACE) || restored.getCount() != Integer.MAX_VALUE) {
+            helper.fail("Core record did not restore Integer.MAX_VALUE installed Furnaces: "
+                    + restored + ", load=" + loaded.error());
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "behavioraltests.platform")
     public static void items_share_the_live_typed_ledger_and_mixed_transactions_are_atomic(
             GameTestHelper helper
     ) {
@@ -265,14 +299,9 @@ public final class TypedResourcePersistenceTests {
             core.rebuildNetwork(level);
             StorageResourceKey water = StorageResourceBridge.fluidKey(
                     new FluidStack(Fluids.WATER, 1), level.registryAccess());
-            StorageResourceKey oxygen = StorageResourceKey.of(
-                    StorageResourceKindApi.CHEMICAL_KIND,
-                    ResourceLocation.fromNamespaceAndPath("mekanism", "oxygen"),
-                    new CompoundTag());
             if (core.insertItem(new ItemStack(Items.STONE)) != 1
                     || core.insertResource(water, 1_000, Action.EXECUTE) != 1_000
-                    || core.insertResource(StorageResourceBridge.ENERGY_KEY, 2_000, Action.EXECUTE) != 2_000
-                    || core.insertResource(oxygen, 300, Action.EXECUTE) != 300) {
+                    || core.insertResource(StorageResourceBridge.ENERGY_KEY, 2_000, Action.EXECUTE) != 2_000) {
                 helper.fail("Could not seed terminal typed resources");
                 return;
             }
@@ -311,16 +340,10 @@ public final class TypedResourcePersistenceTests {
                 return;
             }
             menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
-            if (menu.getResourceView() != TerminalResourceView.GAS
+            if (menu.getResourceView() != TerminalResourceView.ITEM
                     || menu.getTotalItemTypes() != 1
-                    || !TerminalResourceDisplay.key(menu.getSlot(0).getItem()).orElseThrow().equals(oxygen)) {
-                helper.fail("Gas view did not isolate stored chemicals");
-                return;
-            }
-            menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
-            if (menu.getResourceView() != TerminalResourceView.OTHER
-                    || menu.getTotalItemTypes() != 0) {
-                helper.fail("Other view must omit unresolved resource providers");
+                    || !menu.getSlot(0).getItem().is(Items.STONE)) {
+                helper.fail("Selector did not skip absent Gas and Other providers");
                 return;
             }
 
@@ -356,9 +379,16 @@ public final class TypedResourcePersistenceTests {
                 return;
             }
             craftingMenu.clickMenuButton(player, CraftingTerminalMenu.CRAFTABLE_PAGE_BUTTON);
+            if (!craftingMenu.clickMenuButton(
+                    player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON)
+                    || craftingMenu.getResourceView() != TerminalResourceView.ENERGY) {
+                helper.fail("Craftable page did not accept the shared typed resource selector");
+                return;
+            }
+            craftingMenu.clickMenuButton(player, CraftingTerminalMenu.FUEL_PAGE_BUTTON);
             if (craftingMenu.clickMenuButton(
                     player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON)) {
-                helper.fail("Craftable page accepted a forged resource-view transition");
+                helper.fail("Fuel page accepted a forged resource-view transition");
                 return;
             }
             helper.succeed();

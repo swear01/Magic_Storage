@@ -19,7 +19,7 @@
     },
     {
       "type": "patchouli:text",
-      "text": "The search field matches names by default. Switch search mode for #tag or @mod queries. Hover a result for its exact stored amount and full details; compact numbers in the grid never replace the exact tooltip value."
+      "text": "The search field parses its own prefixes: use ordinary text for names, @mod, or #tag. Auto Focus starts keyboard input in Search when the terminal opens. Search Sync separately leaves EMI alone, copies terminal text to EMI, or synchronizes both ways."
     },
     {
       "type": "patchouli:text",

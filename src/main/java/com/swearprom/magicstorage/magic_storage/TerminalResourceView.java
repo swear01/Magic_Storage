@@ -17,14 +17,46 @@ public enum TerminalResourceView {
         return values()[(ordinal() - 1 + values().length) % values().length];
     }
 
+    public boolean isAvailable() {
+        return switch (this) {
+            case ITEM -> StorageResourceKinds.isKindAvailable(StorageResourceKindApi.ITEM_KIND);
+            case FLUID -> StorageResourceKinds.isKindAvailable(StorageResourceKindApi.FLUID_KIND);
+            case ENERGY -> StorageResourceKinds.isKindAvailable(StorageResourceKindApi.ENERGY_KIND);
+            case GAS -> StorageResourceKinds.isChemicalKindAvailable();
+            case OTHER -> StorageResourceKinds.hasOtherKind();
+        };
+    }
+
+    public TerminalResourceView nextAvailable() {
+        TerminalResourceView candidate = this;
+        for (int step = 0; step < values().length; step++) {
+            candidate = candidate.next();
+            if (candidate.isAvailable()) return candidate;
+        }
+        return ITEM;
+    }
+
+    public TerminalResourceView previousAvailable() {
+        TerminalResourceView candidate = this;
+        for (int step = 0; step < values().length; step++) {
+            candidate = candidate.previous();
+            if (candidate.isAvailable()) return candidate;
+        }
+        return ITEM;
+    }
+
+    public TerminalResourceView availableOrItem() {
+        return isAvailable() ? this : ITEM;
+    }
+
     public boolean matches(StorageResourceKey key) {
         ResourceLocation kind = key.kindId();
         return switch (this) {
             case ITEM -> kind.equals(StorageResourceKindApi.ITEM_KIND);
             case FLUID -> kind.equals(StorageResourceKindApi.FLUID_KIND);
             case ENERGY -> kind.equals(StorageResourceKindApi.ENERGY_KIND);
-            case GAS -> kind.equals(StorageResourceKindApi.CHEMICAL_KIND);
-            case OTHER -> !isBuiltIn(kind);
+            case GAS -> StorageResourceKinds.isChemicalKindId(kind);
+            case OTHER -> !StorageResourceKinds.isBuiltInKindId(kind);
         };
     }
 
@@ -39,10 +71,4 @@ public enum TerminalResourceView {
         return values()[id];
     }
 
-    private static boolean isBuiltIn(ResourceLocation kind) {
-        return kind.equals(StorageResourceKindApi.ITEM_KIND)
-                || kind.equals(StorageResourceKindApi.FLUID_KIND)
-                || kind.equals(StorageResourceKindApi.ENERGY_KIND)
-                || kind.equals(StorageResourceKindApi.CHEMICAL_KIND);
-    }
 }

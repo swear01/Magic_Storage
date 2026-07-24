@@ -49,6 +49,8 @@ final class TerminalEntryComparator {
     }
 
     private static ResourceLocation id(ItemStack stack) {
-        return BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return TerminalResourceDisplay.key(stack)
+                .map(StorageResourceKey::resourceId)
+                .orElseGet(() -> BuiltInRegistries.ITEM.getKey(stack.getItem()));
     }
 }

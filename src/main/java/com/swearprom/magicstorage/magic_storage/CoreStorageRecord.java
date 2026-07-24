@@ -72,7 +72,21 @@ final class CoreStorageRecord {
         machines = new SimpleContainer(MachineDescriptorApi.MAX_DESCRIPTORS) {
             @Override
             public int getMaxStackSize() {
-                return 64;
+                return MachineDescriptorApi.MAX_INSTALLED_COUNT;
+            }
+
+            @Override
+            public int getMaxStackSize(ItemStack stack) {
+                return MachineDescriptorApi.MAX_INSTALLED_COUNT;
+            }
+
+            @Override
+            public void setItem(int slot, ItemStack stack) {
+                MachineDescriptor descriptor = MachineEnergyTable.get(slot);
+                if (descriptor != null && descriptor.category() != MachineEnergyTable.Category.CONSUMABLE) {
+                    stack.limitSize(descriptor.maxInstalledCount());
+                }
+                super.setItem(slot, stack);
             }
 
             @Override
@@ -191,7 +205,8 @@ final class CoreStorageRecord {
             }
             CompoundTag entry = new CompoundTag();
             entry.putString(TAG_DESCRIPTOR_ID, descriptors.get(slot).id().toString());
-            entry.put(TAG_ITEM, stack.save(registries));
+            entry.put(TAG_ITEM, stack.copyWithCount(1).save(registries));
+            entry.putLong(TAG_COUNT, stack.getCount());
             machineTags.add(entry);
         }
         unresolvedMachineEntries.forEach(entry -> machineTags.add(entry.copy()));
@@ -301,12 +316,16 @@ final class CoreStorageRecord {
                 ResourceLocation descriptorId = ResourceLocation.tryParse(entry.getString(TAG_DESCRIPTOR_ID));
                 MachineDescriptor descriptor = descriptorId == null ? null : MachineEnergyTable.get(descriptorId);
                 ItemStack stack = parsePersistedItem(entry.getCompound(TAG_ITEM), registries);
+                long persistedCount = entry.contains(TAG_COUNT, Tag.TAG_LONG)
+                        ? entry.getLong(TAG_COUNT) : stack.getCount();
                 int slot = descriptorId == null ? -1 : MachineEnergyTable.findSlot(descriptorId);
                 if (descriptor == null || descriptor.category() == MachineEnergyTable.Category.CONSUMABLE
-                        || stack.isEmpty() || slot < 0 || !descriptor.accepts(stack)) {
+                        || stack.isEmpty() || slot < 0 || !descriptor.accepts(stack)
+                        || persistedCount <= 0 || persistedCount > Integer.MAX_VALUE) {
                     unresolvedMachineEntries.add(entry.copy());
                     continue;
                 }
+                stack.setCount((int) persistedCount);
 
                 ItemStack existing = machines.getItem(slot);
                 int room = Math.max(0, descriptor.maxInstalledCount() - existing.getCount());
@@ -316,7 +335,8 @@ final class CoreStorageRecord {
                 }
                 if (accepted < stack.getCount()) {
                     CompoundTag remainder = entry.copy();
-                    remainder.put(TAG_ITEM, stack.copyWithCount(stack.getCount() - accepted).save(registries));
+                    remainder.put(TAG_ITEM, stack.copyWithCount(1).save(registries));
+                    remainder.putLong(TAG_COUNT, stack.getCount() - accepted);
                     unresolvedMachineEntries.add(remainder);
                 }
             }

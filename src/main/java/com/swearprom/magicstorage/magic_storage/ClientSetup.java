@@ -1,6 +1,7 @@
 package com.swearprom.magicstorage.magic_storage;
 
 import com.swearprom.magicstorage.magic_storage.compat.EmiRecipeDiagramBootstrap;
+import com.swearprom.magicstorage.magic_storage.compat.EmiTerminalSearchSynchronizer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackType;
@@ -23,6 +24,13 @@ public class ClientSetup {
             return EmiRecipeDiagramBootstrap.create();
         }
         return new NativeRecipeDiagramRenderer();
+    }
+
+    static TerminalSearchSynchronizer createTerminalSearchSynchronizer() {
+        if (ModList.get().isLoaded("emi")) {
+            return new EmiTerminalSearchSynchronizer();
+        }
+        return TerminalSearchSynchronizer.NONE;
     }
 
     private static void registerScreens(RegisterMenuScreensEvent event) {

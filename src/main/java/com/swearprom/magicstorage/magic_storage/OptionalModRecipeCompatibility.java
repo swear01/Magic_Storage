@@ -18,6 +18,27 @@ final class OptionalModRecipeCompatibility {
     private static final String MEKANISM_MOD_ID = "mekanism";
     private static final String MEKANISM_CLASS =
             "com.swearprom.magicstorage.magic_storage.MekanismRecipeCompat";
+    private static final String BOTANIA_MOD_ID = "botania";
+    private static final String BOTANIA_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.botania.BotaniaCompat";
+    private static final String MODERN_INDUSTRIALIZATION_MOD_ID = "modern_industrialization";
+    private static final String MODERN_INDUSTRIALIZATION_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.modernindustrialization.ModernIndustrializationCompat";
+    private static final String ARS_NOUVEAU_MOD_ID = "ars_nouveau";
+    private static final String ARS_NOUVEAU_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.arsnouveau.ArsNouveauCompat";
+    private static final String EVILCRAFT_MOD_ID = "evilcraft";
+    private static final String EVILCRAFT_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.evilcraft.EvilCraftCompat";
+    private static final String POWAH_MOD_ID = "powah";
+    private static final String POWAH_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.powah.PowahCompat";
+    private static final String INDUSTRIAL_FOREGOING_MOD_ID = "industrialforegoing";
+    private static final String INDUSTRIAL_FOREGOING_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.industrialforegoing.IndustrialForegoingCompat";
+    private static final String CREATE_MOD_ID = "create";
+    private static final String CREATE_COMPAT_CLASS =
+            "com.swearprom.magicstorage.magic_storage.compat.create.CreateCompat";
 
     private OptionalModRecipeCompatibility() {
     }
@@ -41,10 +62,62 @@ final class OptionalModRecipeCompatibility {
                     "register");
         }
         if (ModList.get().isLoaded(MEKANISM_MOD_ID)) {
+            StorageResourceKinds.registerChemical(MagicStorage.RESOURCE_KINDS);
             invokeRegistrar(
                     MEKANISM_MOD_ID,
                     "Mekanism recipe compatibility",
                     MEKANISM_CLASS,
+                    "register");
+        }
+        if (ModList.get().isLoaded(BOTANIA_MOD_ID)) {
+            StorageResourceKinds.registerBotaniaMana(MagicStorage.RESOURCE_KINDS);
+            invokeRegistrar(
+                    BOTANIA_MOD_ID,
+                    "Botania Mana and recipe compatibility",
+                    BOTANIA_COMPAT_CLASS,
+                    "register");
+        }
+        if (ModList.get().isLoaded(MODERN_INDUSTRIALIZATION_MOD_ID)) {
+            invokeRegistrar(
+                    MODERN_INDUSTRIALIZATION_MOD_ID,
+                    "Modern Industrialization recipe compatibility",
+                    MODERN_INDUSTRIALIZATION_COMPAT_CLASS,
+                    "register");
+        }
+        if (ModList.get().isLoaded(ARS_NOUVEAU_MOD_ID)) {
+            StorageResourceKinds.registerArsNouveauSource(MagicStorage.RESOURCE_KINDS);
+            invokeRegistrar(
+                    ARS_NOUVEAU_MOD_ID,
+                    "Ars Nouveau Source and recipe compatibility",
+                    ARS_NOUVEAU_COMPAT_CLASS,
+                    "register");
+        }
+        if (ModList.get().isLoaded(EVILCRAFT_MOD_ID)) {
+            invokeRegistrar(
+                    EVILCRAFT_MOD_ID,
+                    "EvilCraft Blood Infuser compatibility",
+                    EVILCRAFT_COMPAT_CLASS,
+                    "register");
+        }
+        if (ModList.get().isLoaded(POWAH_MOD_ID)) {
+            invokeRegistrar(
+                    POWAH_MOD_ID,
+                    "Powah Energizing compatibility",
+                    POWAH_COMPAT_CLASS,
+                    "register");
+        }
+        if (ModList.get().isLoaded(INDUSTRIAL_FOREGOING_MOD_ID)) {
+            invokeRegistrar(
+                    INDUSTRIAL_FOREGOING_MOD_ID,
+                    "Industrial Foregoing recipe compatibility",
+                    INDUSTRIAL_FOREGOING_COMPAT_CLASS,
+                    "register");
+        }
+        if (ModList.get().isLoaded(CREATE_MOD_ID)) {
+            invokeRegistrar(
+                    CREATE_MOD_ID,
+                    "Create recipe compatibility",
+                    CREATE_COMPAT_CLASS,
                     "register");
         }
     }

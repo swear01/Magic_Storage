@@ -8,12 +8,22 @@ import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
 
 import java.util.Objects;
+import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 public final class RecipeFamilyFactories {
+    @FunctionalInterface
+    public interface PlanVariants<R extends Recipe<?>> {
+        List<TypedRecipePlan> resolve(
+                R recipe,
+                List<ItemStack> availableStacks,
+                HolderLookup.Provider registries
+        );
+    }
+
     private RecipeFamilyFactories() {
     }
 
@@ -57,6 +67,37 @@ public final class RecipeFamilyFactories {
         return deterministicResourcesInternal(
                 exactRecipeClass, recipeType, stationDescriptorId, recipe -> true,
                 plan, cost, presentationKind, false);
+    }
+
+    public static <R extends Recipe<?>> RecipeFamily deterministicResourceVariants(
+            Class<R> exactRecipeClass,
+            Supplier<? extends RecipeType<?>> recipeType,
+            ResourceLocation stationDescriptorId,
+            Predicate<? super R> eligibility,
+            PlanVariants<? super R> plans,
+            Function<? super R, RecipeFamilyCost> cost,
+            RecipePresentationKind presentationKind
+    ) {
+        Objects.requireNonNull(exactRecipeClass, "exactRecipeClass");
+        Objects.requireNonNull(recipeType, "recipeType");
+        Objects.requireNonNull(stationDescriptorId, "stationDescriptorId");
+        Objects.requireNonNull(eligibility, "eligibility");
+        Objects.requireNonNull(plans, "plans");
+        Objects.requireNonNull(cost, "cost");
+        Objects.requireNonNull(presentationKind, "presentationKind");
+        if (presentationKind == RecipePresentationKind.NONE) {
+            throw new IllegalArgumentException("Recipe family presentation cannot be NONE");
+        }
+        return new RecipeFamily(
+                exactRecipeClass,
+                recipeType,
+                stationDescriptorId,
+                recipe -> eligibility.test(exactRecipeClass.cast(recipe)),
+                (recipe, availableStacks, registries) -> plans.resolve(
+                        exactRecipeClass.cast(recipe), availableStacks, registries),
+                recipe -> cost.apply(exactRecipeClass.cast(recipe)),
+                presentationKind,
+                true);
     }
 
     public static <R extends Recipe<?>> RecipeFamily deterministicResources(

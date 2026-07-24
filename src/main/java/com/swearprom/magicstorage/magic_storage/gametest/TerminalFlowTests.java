@@ -522,7 +522,7 @@ public class TerminalFlowTests {
             var preferences = new TerminalPreferences(
                     SortMode.MOD,
                     SortOrder.DESCENDING,
-                    SearchMode.TAG,
+                    SearchMode.EMI,
                     TerminalResourceView.FLUID,
                     CraftingTerminalPage.STORAGE,
                     false,
@@ -567,8 +567,8 @@ public class TerminalFlowTests {
             var preferences = new TerminalPreferences(
                     SortMode.QUANTITY,
                     SortOrder.DESCENDING,
-                    SearchMode.MOD,
-                    TerminalResourceView.GAS,
+                    SearchMode.EMI_TWO_WAY,
+                    TerminalResourceView.FLUID,
                     CraftingTerminalPage.CRAFTABLE,
                     true,
                     TerminalOutputDestination.STORAGE,
@@ -591,6 +591,45 @@ public class TerminalFlowTests {
     }
 
     @GameTest(template = "platform")
+    public static void unavailable_resource_view_is_normalized_without_losing_other_preferences(
+            GameTestHelper helper
+    ) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.east(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        helper.runAfterDelay(3, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core BE not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new StorageTerminalMenu(44, player.getInventory(), core);
+            var unavailable = new TerminalPreferences(
+                    SortMode.MOD,
+                    SortOrder.DESCENDING,
+                    SearchMode.EMI,
+                    TerminalResourceView.GAS,
+                    CraftingTerminalPage.STORAGE,
+                    false,
+                    TerminalOutputDestination.PLAYER,
+                    null);
+            menu.applySettings(new TerminalSettingsPacket(44, 8, unavailable), player);
+            if (menu.getResourceView() != TerminalResourceView.ITEM
+                    || menu.getSortMode() != SortMode.MOD
+                    || menu.getSortOrder() != SortOrder.DESCENDING
+                    || menu.getSearchMode() != SearchMode.EMI
+                    || menu.getVisibleRows() != 8) {
+                helper.fail("Unavailable Gas preference was not normalized independently");
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void view_settings_synced_to_data_slots(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
@@ -605,7 +644,7 @@ public class TerminalFlowTests {
             var menu = new StorageTerminalMenu(7, player.getInventory(), core);
             if (menu.getSortMode() != SortMode.NAME) helper.fail("default sortMode should be NAME, got " + menu.getSortMode());
             if (menu.getSortOrder() != SortOrder.ASCENDING) helper.fail("default sortOrder should be ASCENDING, got " + menu.getSortOrder());
-            if (menu.getSearchMode() != SearchMode.NORMAL) helper.fail("default searchMode should be NORMAL, got " + menu.getSearchMode());
+            if (menu.getSearchMode() != SearchMode.OFF) helper.fail("default searchMode should be OFF, got " + menu.getSearchMode());
             if (menu.getResourceView() != TerminalResourceView.ITEM) helper.fail("default resource view should be ITEM, got " + menu.getResourceView());
             menu.clickMenuButton(player, StorageTerminalMenu.NEXT_SORT_MODE_BUTTON);
             if (menu.getSortMode() != SortMode.QUANTITY)
@@ -620,14 +659,14 @@ public class TerminalFlowTests {
             if (menu.getSortOrder() != SortOrder.DESCENDING)
                 helper.fail("clickMenuButton(11) should sync sortOrder=DESCENDING, got " + menu.getSortOrder());
             menu.clickMenuButton(player, StorageTerminalMenu.NEXT_SEARCH_MODE_BUTTON);
-            if (menu.getSearchMode() != SearchMode.TAG)
-                helper.fail("clickMenuButton(13) should sync searchMode=TAG, got " + menu.getSearchMode());
+            if (menu.getSearchMode() != SearchMode.EMI)
+                helper.fail("clickMenuButton(13) should sync searchMode=EMI, got " + menu.getSearchMode());
             menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON);
-            if (menu.getSearchMode() != SearchMode.NORMAL)
-                helper.fail("previous search button should sync searchMode=NORMAL, got " + menu.getSearchMode());
+            if (menu.getSearchMode() != SearchMode.OFF)
+                helper.fail("previous search button should sync searchMode=OFF, got " + menu.getSearchMode());
             menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_SEARCH_MODE_BUTTON);
-            if (menu.getSearchMode() != SearchMode.MOD)
-                helper.fail("previous search button should wrap NORMAL to MOD, got " + menu.getSearchMode());
+            if (menu.getSearchMode() != SearchMode.EMI_TWO_WAY)
+                helper.fail("previous search button should wrap OFF to EMI_TWO_WAY, got " + menu.getSearchMode());
             menu.clickMenuButton(player, StorageTerminalMenu.NEXT_RESOURCE_VIEW_BUTTON);
             if (menu.getResourceView() != TerminalResourceView.FLUID)
                 helper.fail("next resource button should sync FLUID, got " + menu.getResourceView());
@@ -635,17 +674,18 @@ public class TerminalFlowTests {
             if (menu.getResourceView() != TerminalResourceView.ITEM)
                 helper.fail("previous resource button should sync ITEM, got " + menu.getResourceView());
             menu.clickMenuButton(player, StorageTerminalMenu.PREVIOUS_RESOURCE_VIEW_BUTTON);
-            if (menu.getResourceView() != TerminalResourceView.OTHER)
-                helper.fail("previous resource button should wrap ITEM to OTHER, got " + menu.getResourceView());
+            if (menu.getResourceView() != TerminalResourceView.ENERGY)
+                helper.fail("previous resource button should skip unavailable views and wrap ITEM to ENERGY, got "
+                        + menu.getResourceView());
             menu.clickMenuButton(player, StorageTerminalMenu.RESET_SORT_ORDER_BUTTON);
             menu.clickMenuButton(player, StorageTerminalMenu.RESET_SORT_MODE_BUTTON);
             menu.clickMenuButton(player, StorageTerminalMenu.RESET_SEARCH_MODE_BUTTON);
             menu.clickMenuButton(player, StorageTerminalMenu.RESET_RESOURCE_VIEW_BUTTON);
             if (menu.getSortOrder() != SortOrder.ASCENDING
                     || menu.getSortMode() != SortMode.NAME
-                    || menu.getSearchMode() != SearchMode.NORMAL
+                    || menu.getSearchMode() != SearchMode.OFF
                     || menu.getResourceView() != TerminalResourceView.ITEM) {
-                helper.fail("Middle-reset actions must restore Ascending, Name, Normal, and Item defaults");
+                helper.fail("Middle-reset actions must restore Ascending, Name, Off, and Item defaults");
                 return;
             }
             helper.succeed();

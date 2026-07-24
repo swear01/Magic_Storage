@@ -30,7 +30,7 @@ public record TerminalPreferences(
         return new TerminalPreferences(
                 SortMode.NAME,
                 SortOrder.ASCENDING,
-                SearchMode.NORMAL,
+                SearchMode.OFF,
                 TerminalResourceView.ITEM,
                 CraftingTerminalPage.STORAGE,
                 false,

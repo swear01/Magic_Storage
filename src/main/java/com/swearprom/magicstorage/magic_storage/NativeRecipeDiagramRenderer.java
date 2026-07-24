@@ -2,6 +2,7 @@ package com.swearprom.magicstorage.magic_storage;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
@@ -38,8 +39,21 @@ public final class NativeRecipeDiagramRenderer implements RecipeDiagramRenderer 
         ItemStack output = presentation.output();
         int outputX = left + outputBounds.x() + (outputBounds.width() - 16) / 2;
         int outputY = top + outputBounds.y() + (outputBounds.height() - 16) / 2;
-        graphics.renderItem(output, outputX, outputY);
-        graphics.renderItemDecorations(font, output, outputX, outputY);
+        ItemStack icon = TerminalDisplayStack.strip(output).copyWithCount(1);
+        graphics.renderItem(icon, outputX, outputY);
+        if (TerminalResourceDisplay.isTyped(output)) {
+            String amount = TerminalAmountFormatter.formatCompact(
+                    TerminalDisplayStack.amount(output));
+            graphics.drawString(
+                    font,
+                    amount,
+                    outputX + 17 - font.width(amount),
+                    outputY + 9,
+                    0xFFFFFFFF,
+                    false);
+        } else {
+            graphics.renderItemDecorations(font, output, outputX, outputY);
+        }
     }
 
     @Override
@@ -56,7 +70,17 @@ public final class NativeRecipeDiagramRenderer implements RecipeDiagramRenderer 
         double localX = mouseX - left;
         double localY = mouseY - top;
         if (geometry.output().contains(localX, localY)) {
-            graphics.renderTooltip(font, presentation.output(), mouseX, mouseY);
+            ItemStack output = presentation.output();
+            if (TerminalResourceDisplay.isTyped(output)) {
+                graphics.renderComponentTooltip(font, List.of(
+                        output.getHoverName(),
+                        Component.translatable(
+                                "gui.magic_storage.output_amount",
+                                TerminalDisplayStack.amount(output))
+                ), mouseX, mouseY);
+            } else {
+                graphics.renderTooltip(font, output, mouseX, mouseY);
+            }
             return true;
         }
         ItemStack input = inputAt(presentation, geometry, localX, localY);

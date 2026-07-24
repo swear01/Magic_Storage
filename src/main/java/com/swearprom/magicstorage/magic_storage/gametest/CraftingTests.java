@@ -3272,6 +3272,47 @@ public class CraftingTests {
     }
 
     @GameTest(template = "platform")
+    public static void vanilla_cake_recipe_returns_all_three_milk_buckets(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var corePos = helper.absolutePos(new BlockPos(1, 3, 1));
+        level.setBlock(corePos, MagicStorage.STORAGE_CORE.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(corePos.south(), MagicStorage.STORAGE_UNIT_T1.get().defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAfterDelay(2, () -> {
+            if (!(level.getBlockEntity(corePos) instanceof StorageCoreBlockEntity core)) {
+                helper.fail("Core not found");
+                return;
+            }
+            core.rebuildNetwork(level);
+            installAllRecipeStations(core);
+            core.insertItem(new ItemStack(Items.MILK_BUCKET, 3));
+            core.insertItem(new ItemStack(Items.SUGAR, 2));
+            core.insertItem(new ItemStack(Items.EGG));
+            core.insertItem(new ItemStack(Items.WHEAT, 3));
+
+            var player = helper.makeMockPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            var menu = new CraftingTerminalMenu(184, player.getInventory(), core);
+            ResourceLocation cakeRecipe = ResourceLocation.withDefaultNamespace("cake");
+            if (!menu.handleRecipeRequest(
+                    level, cakeRecipe, 1, CraftingDestination.INVENTORY, player)) {
+                helper.fail("Vanilla Cake recipe was not selected and crafted");
+                return;
+            }
+            if (countInInventory(player, Items.CAKE) != 1
+                    || countInInventory(player, Items.BUCKET) != 3
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.MILK_BUCKET))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.SUGAR))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.EGG))) != 0
+                    || core.getItemCount(ItemKey.of(new ItemStack(Items.WHEAT))) != 0) {
+                helper.fail("Vanilla Cake must consume its exact ingredients and return three buckets: "
+                        + "cake=" + countInInventory(player, Items.CAKE)
+                        + ", buckets=" + countInInventory(player, Items.BUCKET));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "platform")
     public static void fuel_conversion_refreshes_open_crafting_preview(GameTestHelper helper) {
         var level = helper.getLevel();
         var corePos = helper.absolutePos(new BlockPos(1, 3, 1));

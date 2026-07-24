@@ -62,7 +62,7 @@ public final class FarmersDelightCookingPotCompat {
                         new ItemStack(ModItems.COOKING_POT.get()),
                         MachineWorkRate.ONE)),
                 MachineEnergyTable.Category.PROCESS,
-                64,
+                MachineDescriptorApi.MAX_INSTALLED_COUNT,
                 null));
         recipeFamilies.register(REGISTRY_PATH, () -> RecipeFamilyFactories.deterministicResources(
                 CookingPotRecipe.class,
